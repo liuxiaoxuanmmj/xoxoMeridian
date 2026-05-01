@@ -1,0 +1,102 @@
+export type ChatUser = {
+  id: string;
+  displayName: string;
+  avatarLabel: string;
+  profile?: {
+    city: string;
+    country: string;
+    timezone: string;
+    preferences?: unknown;
+  } | null;
+};
+
+export type ChatMessage = {
+  id: string;
+  roomId: string;
+  senderId?: string | null;
+  senderAgentId?: string | null;
+  senderType: "human" | "agent" | "system";
+  content: string;
+  targetType: "all" | "user" | "agent";
+  targetId?: string | null;
+  status: "sent" | "processing" | "failed";
+  metadata?: Record<string, unknown> | null;
+  createdAt: string;
+  sender?: Pick<ChatUser, "id" | "displayName" | "avatarLabel"> | null;
+  senderAgent?: {
+    id: string;
+    displayName: string;
+    slug: string;
+  } | null;
+  finalTask?: {
+    id: string;
+    status: "pending" | "running" | "completed" | "failed";
+    toolCalls?: Array<{
+      id: string;
+      toolName: string;
+      status: string;
+      durationMs?: number | null;
+      error?: string | null;
+    }>;
+    llmCalls?: Array<{
+      id: string;
+      provider: string;
+      model: string;
+      status: string;
+      totalTokens?: number | null;
+    }>;
+  } | null;
+  sourceTask?: {
+    id: string;
+    status: string;
+  } | null;
+};
+
+export type LifeNote = {
+  id: string;
+  content: string;
+  color: string;
+  createdAt: string;
+};
+
+export type LifeMemo = {
+  id: string;
+  title: string;
+  content: string;
+  pinned: boolean;
+  createdAt: string;
+};
+
+export type LifeReminder = {
+  id: string;
+  title: string;
+  body?: string | null;
+  dueAt?: string | null;
+  timezone?: string | null;
+  status: string;
+  createdAt: string;
+};
+
+export type RoomSnapshot = {
+  room: {
+    id: string;
+    name: string;
+    participants: Array<{
+      user: ChatUser;
+    }>;
+  };
+  messages: ChatMessage[];
+  notes: LifeNote[];
+  memos: LifeMemo[];
+  reminders: LifeReminder[];
+  agentStatus: {
+    isWorking: boolean;
+    runningTasks: number;
+    recentTasks: Array<{
+      id: string;
+      status: "pending" | "running" | "completed" | "failed";
+      createdAt: string;
+      error?: string | null;
+    }>;
+  };
+};
