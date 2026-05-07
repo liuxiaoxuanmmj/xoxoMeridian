@@ -6,21 +6,26 @@ type Role = "me" | "her";
 
 export function LoginForm() {
   const [loadingRole, setLoadingRole] = useState<Role | null>(null);
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
 
   async function login(role: Role) {
+    if (!password) {
+      setError("请先输入共享密码。");
+      return;
+    }
     setLoadingRole(role);
     setError("");
 
     const response = await fetch("/api/auth/demo-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ role })
+      body: JSON.stringify({ role, password })
     });
 
     if (!response.ok) {
       const payload = await response.json().catch(() => ({}));
-      setError(payload.error ?? "登录失败，请确认已经运行 seed。");
+      setError(payload.error ?? "登录失败，请确认密码正确并已经运行 seed。");
       setLoadingRole(null);
       return;
     }
@@ -53,6 +58,15 @@ export function LoginForm() {
           </div>
 
           <div className="space-y-3">
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              placeholder="共享密码"
+              autoComplete="current-password"
+              className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
+              disabled={loadingRole !== null}
+            />
             <button
               className="w-full rounded-lg bg-ink px-4 py-3 text-left font-medium text-white transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
               disabled={loadingRole !== null}

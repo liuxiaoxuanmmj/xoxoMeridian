@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentStatusBadge } from "@/components/chat/AgentStatusBadge";
 import { LeftRail } from "@/components/chat/LeftRail";
@@ -8,6 +8,8 @@ import { LifePanel } from "@/components/chat/LifePanel";
 import { MessageComposer } from "@/components/chat/MessageComposer";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatUser, RoomSnapshot } from "@/components/chat/types";
+
+type ConnState = "connecting" | "open" | "reconnecting";
 
 export function ChatApp({
   currentUser,
@@ -18,10 +20,13 @@ export function ChatApp({
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [draftPrompt, setDraftPrompt] = useState("");
+  const [connState, setConnState] = useState<ConnState>("connecting");
   const roomId = snapshot.room.id;
 
   const refresh = useCallback(async () => {
-    const response = await fetch(`/api/rooms/${roomId}/messages`);
+    const response = await fetch(`/api/rooms/${roomId}/messages`, {
+      cache: "no-store"
+    });
     if (response.ok) {
       const payload = await response.json();
       setSnapshot((current) => ({
@@ -31,13 +36,60 @@ export function ChatApp({
     }
   }, [roomId]);
 
+  // Custom reconnect loop. EventSource reconnects by itself, but silently — we
+  // want a visible "reconnecting" state and a GET /messages sync after recovery
+  // so the user never stares at a stale list while nginx has dropped the SSE.
+  const reconnectRef = useRef<{ attempt: number; timer: number | null }>({
+    attempt: 0,
+    timer: null
+  });
+
   useEffect(() => {
-    const source = new EventSource(`/api/rooms/${roomId}/stream`);
-    source.addEventListener("snapshot", (event) => {
-      setSnapshot(JSON.parse((event as MessageEvent).data));
-    });
-    return () => source.close();
-  }, [roomId]);
+    let cancelled = false;
+    let source: EventSource | null = null;
+
+    const connect = () => {
+      if (cancelled) return;
+      setConnState(reconnectRef.current.attempt === 0 ? "connecting" : "reconnecting");
+      source = new EventSource(`/api/rooms/${roomId}/stream`);
+
+      source.addEventListener("open", () => {
+        const wasReconnect = reconnectRef.current.attempt > 0;
+        reconnectRef.current.attempt = 0;
+        setConnState("open");
+        if (wasReconnect) {
+          void refresh();
+        }
+      });
+
+      source.addEventListener("snapshot", (event) => {
+        setSnapshot(JSON.parse((event as MessageEvent).data));
+      });
+
+      source.addEventListener("error", () => {
+        if (cancelled) return;
+        source?.close();
+        source = null;
+        setConnState("reconnecting");
+        const attempt = Math.min(reconnectRef.current.attempt + 1, 6);
+        reconnectRef.current.attempt = attempt;
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 30_000);
+        reconnectRef.current.timer = window.setTimeout(connect, delay);
+      });
+    };
+
+    connect();
+
+    return () => {
+      cancelled = true;
+      if (reconnectRef.current.timer !== null) {
+        window.clearTimeout(reconnectRef.current.timer);
+        reconnectRef.current.timer = null;
+      }
+      reconnectRef.current.attempt = 0;
+      source?.close();
+    };
+  }, [roomId, refresh]);
 
   const participants = useMemo(() => snapshot.room.participants.map((participant) => participant.user), [snapshot.room.participants]);
   const latestStatus = snapshot.agentStatus.recentTasks[0]?.status;
@@ -47,7 +99,15 @@ export function ChatApp({
       <header className="flex h-16 shrink-0 items-center justify-between border-b border-warm-200 bg-white/80 px-4 backdrop-blur">
         <div>
           <h1 className="text-base font-semibold text-ink">{snapshot.room.name}</h1>
-          <p className="text-xs text-ink/50">私密双人聊天室 · 本地 Agent Runtime</p>
+          <p className="text-xs text-ink/50">
+            私密双人聊天室 · 本地 Agent Runtime
+            {connState !== "open" && (
+              <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+                {connState === "connecting" ? "连接中…" : "重连中…"}
+              </span>
+            )}
+          </p>
         </div>
         <AgentStatusBadge isWorking={snapshot.agentStatus.isWorking} latestStatus={latestStatus} />
       </header>
@@ -55,6 +115,7 @@ export function ChatApp({
       <div className="flex min-h-0 flex-1">
         <LeftRail
           currentUser={currentUser}
+          currentRoomId={roomId}
           participants={participants}
           onQuickPrompt={(prompt) => {
             setDraftPrompt(prompt);
@@ -66,7 +127,7 @@ export function ChatApp({
           <MessageComposer externalDraft={draftPrompt} roomId={roomId} onSent={refresh} />
         </section>
 
-        <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} />
+        <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} scheduledJobs={snapshot.scheduledJobs ?? []} />
       </div>
     </main>
   );

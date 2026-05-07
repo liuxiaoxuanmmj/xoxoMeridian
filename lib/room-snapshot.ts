@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 
 export async function getRoomSnapshot(roomId: string) {
-  const [messages, notes, memos, reminders, runningTasks, recentTasks, room] = await Promise.all([
+  const [messages, notes, memos, reminders, scheduledJobs, runningTasks, recentTasks, room] = await Promise.all([
     prisma.message.findMany({
       where: { roomId },
       orderBy: { createdAt: "asc" },
@@ -35,6 +35,11 @@ export async function getRoomSnapshot(roomId: string) {
       orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
       take: 12
     }),
+    prisma.scheduledJob.findMany({
+      where: { roomId, enabled: true },
+      orderBy: { nextRunAt: "asc" },
+      take: 12
+    }),
     prisma.agentTask.count({
       where: { roomId, status: { in: ["pending", "running"] } }
     }),
@@ -63,6 +68,7 @@ export async function getRoomSnapshot(roomId: string) {
     notes,
     memos,
     reminders,
+    scheduledJobs,
     agentStatus: {
       isWorking: runningTasks > 0,
       runningTasks,

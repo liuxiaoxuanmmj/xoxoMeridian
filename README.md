@@ -263,3 +263,58 @@ export interface AgentTool<Input = unknown, Output = unknown> {
 - 上下文压缩：定期生成 `MessageSummary`，把长期偏好写入 `Memory`。
 - 多 Agent 编排：按 Agent 能力选择工具集合与 planner。
 - 权限沙箱：接入文件读写、浏览器自动化、命令执行前增加用户确认、目录白名单和审计策略。
+
+## 15. 上线部署（Docker Compose + Nginx + HTTPS）
+
+### 必填环境变量
+
+启动期 `lib/env.ts` 会用 zod 校验下列变量，缺失或不合法会直接 `process.exit(1)`：
+
+| 变量 | 说明 |
+| --- | --- |
+| `POSTGRES_PASSWORD` | PostgreSQL 密码，建议 `openssl rand -base64 32` 生成 |
+| `SESSION_SECRET` | HMAC 签名 cookie 用，>=32 字节，建议 `openssl rand -base64 48` |
+| `DEMO_LOGIN_PASSWORD` | demo-login 共享密码，>=8 字符，登录页两个用户都要它 |
+| `APP_BASE_URL` | 对外 HTTPS 域名，CSRF Origin 校验依据 |
+| `NEXT_PUBLIC_APP_URL` | 同上，前端可见 |
+
+### 一键部署
+
+```bash
+git checkout release/hardening
+cp .env.example .env
+# 编辑 .env，把所有 __GENERATE/__SET 占位符替换为真实值
+docker compose build
+docker compose up -d
+curl -fsS https://your-domain/api/health
+```
+
+`init` 服务会先跑 `prisma migrate deploy && prisma seed`（idempotent upsert），
+完成后 `web` 与 `agent-worker` 才启动。
+
+### Nginx 反代 + HTTPS
+
+详见 [`docs/deploy-nginx.md`](docs/deploy-nginx.md)。要点：
+
+- 应用容器只绑定 `127.0.0.1:3000`，外部全部经 Nginx
+- `/api/rooms/:id/stream` 必须 `proxy_buffering off`
+- `proxy_set_header X-Forwarded-For` 让限流拿到客户端真实 IP
+- `client_max_body_size 1m`
+
+### 安全基线一览
+
+- 共享密码 + HMAC 签名 cookie + 7 天过期
+- 全部 POST 路由 zod 输入校验 + IP 维度滑动窗口限流
+- `middleware.ts` 强制 `Origin === APP_BASE_URL`（CSRF 二次防御）
+- HSTS / CSP / X-Frame-Options / Referrer-Policy / Permissions-Policy
+- 多阶段 Dockerfile，运行时镜像非 root、`cap_drop: ALL`、`no-new-privileges`
+- PostgreSQL 端口不对外，密码不进镜像层
+- `/api/health` + compose healthcheck
+
+### 上线 checklist
+
+- [ ] `.env` 5 个必填项已替换
+- [ ] `LLM_API_KEY` 已配（否则 Agent 走 mock-local-planner）
+- [ ] Nginx 已配置 + 证书生效
+- [ ] `curl https://your-domain/api/health` 返回 200
+- [ ] 用浏览器以两个账号 + 共享密码 完成 demo 验收（第 10 节）

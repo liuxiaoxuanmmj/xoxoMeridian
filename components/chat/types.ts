@@ -77,6 +77,23 @@ export type LifeReminder = {
   createdAt: string;
 };
 
+export type LifeScheduledJob = {
+  id: string;
+  cron: string;
+  timezone: string;
+  nextRunAt: string;
+  payload?: Record<string, unknown> | null;
+};
+
+export type RoomSummary = {
+  id: string;
+  slug: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+  messageCount: number;
+};
+
 export type RoomSnapshot = {
   room: {
     id: string;
@@ -89,6 +106,7 @@ export type RoomSnapshot = {
   notes: LifeNote[];
   memos: LifeMemo[];
   reminders: LifeReminder[];
+  scheduledJobs: LifeScheduledJob[];
   agentStatus: {
     isWorking: boolean;
     runningTasks: number;

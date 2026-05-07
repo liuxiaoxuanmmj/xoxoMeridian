@@ -1,3 +1,46 @@
+name: xoxo-meridian
+
+x-app-env: &app-env
+  DATABASE_URL: postgresql://xoxo:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@postgres:5432/xoxo_meridian?schema=public
+  DIRECT_URL: postgresql://xoxo:${POSTGRES_PASSWORD}@postgres:5432/xoxo_meridian?schema=public
+  APP_BASE_URL: ${APP_BASE_URL:?APP_BASE_URL is required (e.g. https://your.domain)}
+  NEXT_PUBLIC_APP_URL: ${NEXT_PUBLIC_APP_URL:-${APP_BASE_URL}}
+  ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-}
+  SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required (>=32 chars)}
+  SESSION_MAX_AGE_SECONDS: ${SESSION_MAX_AGE_SECONDS:-604800}
+  DEMO_LOGIN_PASSWORD: ${DEMO_LOGIN_PASSWORD:?DEMO_LOGIN_PASSWORD is required}
+  DEMO_ROOM_SLUG: ${DEMO_ROOM_SLUG:-our-room}
+  LLM_PROVIDER: ${LLM_PROVIDER:-openai-compatible}
+  LLM_API_KEY: ${LLM_API_KEY:-}
+  LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
+  LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
+  LLM_TIMEOUT_MS: ${LLM_TIMEOUT_MS:-20000}
+  WEATHER_PROVIDER: ${WEATHER_PROVIDER:-mock}
+  WEATHER_API_KEY: ${WEATHER_API_KEY:-}
+  WEATHER_BASE_URL: ${WEATHER_BASE_URL:-}
+  QWEATHER_API_HOST: ${QWEATHER_API_HOST:-devapi.qweather.com}
+  QWEATHER_GEOAPI_HOST: ${QWEATHER_GEOAPI_HOST:-geoapi.qweather.com}
+  AGENT_TASK_INLINE_RUN: "false"
+  AGENT_WORKER_POLL_MS: ${AGENT_WORKER_POLL_MS:-3000}
+  NODE_ENV: production
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+x-hardening: &hardening
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  cap_add:
+    - CHOWN
+    - SETGID
+    - SETUID
+    - DAC_OVERRIDE
+
 services:
   postgres:
     image: postgres:16-alpine
@@ -5,68 +48,74 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: xoxo
-      POSTGRES_PASSWORD: xoxo_password
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       POSTGRES_DB: xoxo_meridian
-    ports:
-      - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U xoxo -d xoxo_meridian"]
       interval: 5s
       timeout: 5s
       retries: 20
+    logging: *default-logging
+    <<: *hardening
+
+  init:
+    build:
+      context: .
+      target: worker-runner
+    container_name: xoxo-meridian-init
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      <<: *app-env
+    command: sh -c "npx prisma migrate deploy && npx tsx prisma/seed.ts"
+    logging: *default-logging
+    <<: *hardening
 
   web:
     build:
       context: .
+      target: web-runner
     container_name: xoxo-meridian-web
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
+      init:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://xoxo:xoxo_password@postgres:5432/xoxo_meridian?schema=public
-      DIRECT_URL: postgresql://xoxo:xoxo_password@postgres:5432/xoxo_meridian?schema=public
-      NEXT_PUBLIC_APP_URL: http://localhost:3000
-      APP_BASE_URL: http://localhost:3000
-      DEMO_ROOM_SLUG: our-room
-      LLM_PROVIDER: openai-compatible
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
-      WEATHER_PROVIDER: mock
-      AGENT_TASK_INLINE_RUN: "false"
+      <<: *app-env
     ports:
-      - "3000:3000"
-    command: sh -c "npx prisma migrate deploy && npm run db:seed && npm run start"
+      - "127.0.0.1:3000:3000"
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:3000 >/dev/null 2>&1"]
-      interval: 5s
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null 2>&1"]
+      interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 10s
+      retries: 12
+      start_period: 15s
+    logging: *default-logging
+    <<: *hardening
 
   agent-worker:
     build:
       context: .
+      target: worker-runner
     container_name: xoxo-meridian-agent-worker
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
-      web:
-        condition: service_healthy
+      init:
+        condition: service_completed_successfully
     environment:
-      DATABASE_URL: postgresql://xoxo:xoxo_password@postgres:5432/xoxo_meridian?schema=public
-      DIRECT_URL: postgresql://xoxo:xoxo_password@postgres:5432/xoxo_meridian?schema=public
-      LLM_PROVIDER: openai-compatible
-      LLM_API_KEY: ${LLM_API_KEY:-}
-      LLM_BASE_URL: ${LLM_BASE_URL:-https://api.openai.com/v1}
-      LLM_MODEL: ${LLM_MODEL:-gpt-4.1-mini}
-      WEATHER_PROVIDER: mock
-      AGENT_WORKER_POLL_MS: 3000
-    command: npm run agent:worker
+      <<: *app-env
+    logging: *default-logging
+    <<: *hardening
 
 volumes:
   postgres-data:

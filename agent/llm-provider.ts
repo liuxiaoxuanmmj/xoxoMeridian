@@ -1,4 +1,5 @@
 import type { AgentPlan, LLMPlanRequest, LLMPlanResult, LLMProvider } from "@/agent/types";
+import { env } from "@/lib/env";
 
 type OpenAICompatibleResponse = {
   choices?: Array<{
@@ -14,18 +15,15 @@ type OpenAICompatibleResponse = {
 };
 
 export function createLLMProvider(): LLMProvider {
-  const provider = process.env.LLM_PROVIDER ?? "openai-compatible";
-  const apiKey = process.env.LLM_API_KEY;
-
-  if (provider === "mock" || !apiKey) {
+  if (env.LLM_PROVIDER === "mock" || !env.LLM_API_KEY) {
     return createMockLLMProvider();
   }
 
   return createOpenAICompatibleProvider({
-    apiKey,
-    baseURL: process.env.LLM_BASE_URL ?? "https://api.openai.com/v1",
-    model: process.env.LLM_MODEL ?? "gpt-4.1-mini",
-    timeoutMs: Number(process.env.LLM_TIMEOUT_MS ?? 20000)
+    apiKey: env.LLM_API_KEY,
+    baseURL: env.LLM_BASE_URL,
+    model: env.LLM_MODEL,
+    timeoutMs: env.LLM_TIMEOUT_MS
   });
 }
 
@@ -49,6 +47,7 @@ export function createMockLLMProvider(): LLMProvider {
           requiredTools: ["weather.get"],
           taskSteps: ["读取对方城市", "查询天气", "回复聊天室"],
           finalResponsePlan: "用简短温暖的方式说明对方城市天气。",
+          finalResponseText: "我已经查到天气了，会在房间里温柔地告诉你具体情况。",
           toolInputs: {
             "weather.get": {
               city: "London"
@@ -64,6 +63,7 @@ export function createMockLLMProvider(): LLMProvider {
           requiredTools: ["timezone.compare"],
           taskSteps: ["读取双方时区", "计算当前时间", "说明适合联系窗口"],
           finalResponsePlan: "告诉用户两地当前时间和联系建议。",
+          finalResponseText: "我已经把双方所在时区的当前时间整理好了。",
           toolInputs: {
             "timezone.compare": {
               fromLabel: "我",
@@ -82,6 +82,7 @@ export function createMockLLMProvider(): LLMProvider {
           requiredTools: ["memo.create"],
           taskSteps: ["整理备忘录标题", "写入备忘录", "回复聊天室"],
           finalResponsePlan: "告诉用户备忘录已经保存。",
+          finalResponseText: "备忘录已经记下了。",
           toolInputs: {
             "memo.create": {
               title: "新的备忘录",
@@ -98,6 +99,7 @@ export function createMockLLMProvider(): LLMProvider {
           requiredTools: ["note.create"],
           taskSteps: ["整理便签内容", "写入便签", "回复聊天室"],
           finalResponsePlan: "告诉用户便签已经贴到右侧面板。",
+          finalResponseText: "便签已经贴到右侧面板了。",
           toolInputs: {
             "note.create": {
               content: prompt.replace(/^(帮我)?(创建|新增)?(便签|小纸条)[:：\s]*/u, "") || prompt,
@@ -114,6 +116,7 @@ export function createMockLLMProvider(): LLMProvider {
           requiredTools: ["reminder.create"],
           taskSteps: ["解析提醒内容", "解析提醒时间", "创建提醒事项", "回复聊天室"],
           finalResponsePlan: "告诉用户提醒事项已经创建，并说明目前 MVP 会先展示在提醒列表。",
+          finalResponseText: "提醒已经帮你设好，先放在右侧提醒列表里。",
           toolInputs: {
             "reminder.create": {
               title: extractReminderTitle(prompt),
@@ -128,15 +131,11 @@ export function createMockLLMProvider(): LLMProvider {
       return withRaw({
         intent: "chat_assist",
         confidence: 0.5,
-        requiredTools: ["note.create"],
-        taskSteps: ["把用户请求记录成便签", "回复聊天室"],
-        finalResponsePlan: "说明已经记录下来，后续可以补充更明确的任务。",
-        toolInputs: {
-          "note.create": {
-            content: prompt,
-            color: "warm"
-          }
-        }
+        requiredTools: [],
+        taskSteps: ["直接回复用户"],
+        finalResponsePlan: "直接回答用户的问题。",
+        finalResponseText: "我是这个房间的小助手，可以帮你查天气、对时区、记便签、写备忘和设提醒。",
+        toolInputs: {}
       });
     }
   };
@@ -151,6 +150,7 @@ function withRaw(plan: AgentPlan): LLMPlanResult {
       required_tools: plan.requiredTools,
       task_steps: plan.taskSteps,
       final_response_plan: plan.finalResponsePlan,
+      final_response_text: plan.finalResponseText,
       tool_inputs: plan.toolInputs
     }
   };
@@ -197,7 +197,21 @@ function createOpenAICompatibleProvider(config: {
               {
                 role: "system",
                 content:
-                  "你是本地生活助手 Agent 的任务规划器。只返回 JSON，不要 Markdown。必须从 available_tools 中选择工具，不能发明工具。"
+                  "你是本地生活助手 Agent 的任务规划器。只返回 JSON，不要 Markdown，不要代码块包裹。" +
+                  "必须从 available_tools 中选择工具，不能发明工具；如果用户的请求不需要任何工具（例如自我介绍、闲聊、能力问答），required_tools 留空数组。" +
+                  "**tool_inputs 中每个工具的参数字段必须严格按照 available_tools[i].schema 里列出的字段名命名**，不要自行发明字段名（例如 schema 写 title 就不能写 message）。" +
+                  "schema 里 required 列出的字段必须提供。" +
+                  "如果**同一个工具需要被调用多次**（例如要写多条记忆），把 tool_inputs[tool] 写成对象数组，每个元素是一次调用的参数，例如 tool_inputs['memory.set'] = [{key,value},{key,value}]；只调用一次时直接给单个对象即可。" +
+                  "final_response_text 是**实际发给用户的中文回复正文**，要直接、温暖、口语化，可以引用 room_context 里的事实。" +
+                  "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的小助手，可以帮你查天气、记便签、设提醒'）。" +
+                  "final_response_plan 是给开发者看的内部规划摘要，与 final_response_text 不同。" +
+                  // memory guidance
+                  "【关于记忆】room_context.semantic_memory 是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
+                  "当你**新观察到**这类持久事实时，主动调用 memory.set 把它写入；只记**下周仍然重要**的事情（过敏、长期偏好、纪念日、地址、时区、长期目标），" +
+                  "**不要**记一次性心情、临时想法、刚发生的对话内容（已经在 recent_messages 里）、或不确定的事情。" +
+                  "memory.set 的 key 必须是点分小写并以 'shared.'（房间共享）/'me.'（请求者）/'her.'（对方）开头，例如 'her.allergy.peanut'、'shared.anniversary'、'me.timezone'。" +
+                  "同一 key 会覆盖旧值，所以用稳定命名而不是带时间戳。" +
+                  "如果不确定某个事实是否已经记过，可以先用 memory.recall 查一下再决定要不要 memory.set。"
               },
               {
                 role: "user",
@@ -208,10 +222,11 @@ function createOpenAICompatibleProvider(config: {
                   required_shape: {
                     intent: "string",
                     confidence: "number between 0 and 1",
-                    required_tools: "string[]",
-                    task_steps: "string[]",
-                    final_response_plan: "string",
-                    tool_inputs: "object keyed by tool name"
+                    required_tools: "string[] (must be subset of available_tools[].name, empty if user just chats)",
+                    task_steps: "string[] (internal plan, dev-facing)",
+                    final_response_plan: "string (internal plan summary, dev-facing)",
+                    final_response_text: "string (the actual reply shown to the user, in Chinese, written in first person as the assistant)",
+                    tool_inputs: "object keyed by tool name; each value's fields MUST match that tool's schema.properties exactly"
                   }
                 })
               }
@@ -231,7 +246,7 @@ function createOpenAICompatibleProvider(config: {
 
         const parsed = JSON.parse(content);
         return {
-          ...coercePlan(parsed, request.availableTools),
+          ...coercePlan(parsed, request.availableTools.map((t) => t.name)),
           rawResponse: payload,
           usage: {
             promptTokens: payload.usage?.prompt_tokens,
@@ -259,6 +274,7 @@ function coercePlan(raw: Record<string, unknown>, availableTools: string[]): Age
     requiredTools,
     taskSteps: Array.isArray(raw.task_steps) ? raw.task_steps.map(String) : [],
     finalResponsePlan: typeof raw.final_response_plan === "string" ? raw.final_response_plan : "回复用户任务已处理。",
+    finalResponseText: typeof raw.final_response_text === "string" ? raw.final_response_text.trim() : "",
     toolInputs: toolInputs as Record<string, unknown>
   };
 }

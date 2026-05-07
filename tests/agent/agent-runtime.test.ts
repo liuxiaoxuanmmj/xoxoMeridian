@@ -25,8 +25,13 @@ describe("agent dispatch primitives", () => {
     const registry = createToolRegistry();
     expect(registry.list().map((tool) => tool.name).sort()).toEqual([
       "memo.create",
+      "memory.recall",
+      "memory.set",
       "note.create",
       "reminder.create",
+      "schedule.cancel",
+      "schedule.create",
+      "schedule.list",
       "timezone.compare",
       "weather.get"
     ]);
@@ -36,8 +41,18 @@ describe("agent dispatch primitives", () => {
     const provider = createMockLLMProvider();
     const result = await provider.plan({
       prompt: "@小助手 明天提醒我给她发早安",
-      roomContext: "Two-person long-distance room",
-      availableTools: ["reminder.create"]
+      roomContext: {
+        room: { name: "Test", slug: "test" },
+        participants: [],
+        recentMessages: [],
+        pinnedMemos: [],
+        notes: [],
+        activeReminders: [],
+        activeSchedules: [],
+        semanticMemory: [],
+        summaries: []
+      },
+      availableTools: [{ name: "reminder.create", description: "", schema: {} }]
     });
 
     expect(result.intent).toBe("create_reminder");

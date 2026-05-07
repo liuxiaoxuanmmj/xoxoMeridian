@@ -1,25 +1,31 @@
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { env } from "@/lib/env";
 import { createHumanMessage } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { agentDispatchSchema, readJsonBody } from "@/lib/validation";
 
 export async function POST(request: Request) {
   try {
     const user = await requireCurrentUser();
-    const body = await request.json();
-    const roomId = String(body.roomId ?? "");
+
+    const limited = enforceRateLimit(request, `agent-dispatch:${user.id}`, 10, 60_000);
+    if (limited) return limited;
+
+    const { roomId, content, sourceMessageId } = await readJsonBody(request, agentDispatchSchema);
     await assertRoomAccess(roomId, user.id);
 
-    if (body.content) {
+    if (content) {
       const result = await createHumanMessage({
         roomId,
         userId: user.id,
-        content: String(body.content),
+        content,
         forceAgent: true
       });
 
-      if (result.task && process.env.AGENT_TASK_INLINE_RUN !== "false") {
+      if (result.task && env.AGENT_TASK_INLINE_RUN) {
         const { runAgentTask } = await import("@/agent/agent-runtime");
         await runAgentTask(result.task.id);
       }
@@ -27,7 +33,10 @@ export async function POST(request: Request) {
       return jsonOk(result, { status: 201 });
     }
 
-    const sourceMessageId = String(body.sourceMessageId ?? "");
+    if (!sourceMessageId) {
+      return jsonError("Source message id is required.", 400);
+    }
+
     const sourceMessage = await prisma.message.findUnique({ where: { id: sourceMessageId } });
     if (!sourceMessage || sourceMessage.roomId !== roomId) {
       return jsonError("Source message not found in this room.", 404);
@@ -63,7 +72,7 @@ export async function POST(request: Request) {
       }
     });
 
-    if (process.env.AGENT_TASK_INLINE_RUN !== "false") {
+    if (env.AGENT_TASK_INLINE_RUN) {
       const { runAgentTask } = await import("@/agent/agent-runtime");
       await runAgentTask(task.id);
     }

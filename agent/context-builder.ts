@@ -1,7 +1,8 @@
+import type { StructuredRoomContext } from "@/agent/types";
 import { prisma } from "@/lib/prisma";
 
 export async function buildAgentContext(roomId: string) {
-  const [room, recentMessages, notes, memos, reminders, memories, summaries] = await Promise.all([
+  const [room, recentMessages, notes, memos, reminders, memories, summaries, scheduledJobs] = await Promise.all([
     prisma.room.findUniqueOrThrow({
       where: { id: roomId },
       include: {
@@ -27,28 +28,48 @@ export async function buildAgentContext(roomId: string) {
     prisma.note.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.memo.findMany({ where: { roomId }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 10 }),
     prisma.reminder.findMany({ where: { roomId, status: "pending" }, orderBy: { createdAt: "desc" }, take: 10 }),
-    prisma.memory.findMany({ where: { roomId }, orderBy: { updatedAt: "desc" }, take: 10 }),
-    prisma.messageSummary.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 3 })
+    prisma.memory.findMany({ where: { roomId }, orderBy: { updatedAt: "desc" }, take: 30 }),
+    prisma.messageSummary.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 3 }),
+    prisma.scheduledJob.findMany({
+      where: { roomId, enabled: true },
+      orderBy: { nextRunAt: "asc" },
+      take: 20
+    })
   ]);
 
   const messages = recentMessages.reverse();
-  const roomContext = [
-    `Room: ${room.name}`,
-    `Participants: ${room.participants
-      .map((participant) => {
-        const profile = participant.user.profile;
-        return `${participant.user.displayName} (${profile?.city ?? "unknown city"}, ${
-          profile?.timezone ?? "unknown timezone"
-        })`;
-      })
-      .join("; ")}`,
-    `Recent messages: ${messages
-      .map((message) => `${message.sender?.displayName ?? message.senderAgent?.displayName ?? message.senderType}: ${message.content}`)
-      .join(" | ")}`,
-    `Active reminders: ${reminders.map((reminder) => reminder.title).join("; ") || "none"}`,
-    `Pinned memos: ${memos.map((memo) => `${memo.title}: ${memo.content}`).join("; ") || "none"}`,
-    `Notes: ${notes.map((note) => note.content).join("; ") || "none"}`
-  ].join("\n");
+
+  const roomContext: StructuredRoomContext = {
+    room: { name: room.name, slug: room.slug },
+    participants: room.participants.map((participant) => ({
+      displayName: participant.user.displayName,
+      role: participant.user.demoRole,
+      city: participant.user.profile?.city ?? null,
+      timezone: participant.user.profile?.timezone ?? null
+    })),
+    recentMessages: messages.map((message) => ({
+      from: message.sender?.displayName ?? message.senderAgent?.displayName ?? message.senderType,
+      content: message.content,
+      at: message.createdAt.toISOString()
+    })),
+    pinnedMemos: memos.filter((m) => m.pinned).map((m) => ({ title: m.title, content: m.content })),
+    notes: notes.map((n) => ({ content: n.content, color: n.color })),
+    activeReminders: reminders.map((r) => ({
+      title: r.title,
+      dueAt: r.dueAt?.toISOString() ?? null,
+      timezone: r.timezone
+    })),
+    activeSchedules: scheduledJobs.map((j) => ({
+      jobId: j.id,
+      cron: j.cron,
+      timezone: j.timezone,
+      nextRunAt: j.nextRunAt.toISOString(),
+      description:
+        (j.payload as { description?: string | null } | null)?.description ?? null
+    })),
+    semanticMemory: memories.map((m) => ({ key: m.key, value: m.value })),
+    summaries: summaries.map((s) => ({ summary: s.summary, createdAt: s.createdAt.toISOString() }))
+  };
 
   return {
     room,
@@ -59,6 +80,7 @@ export async function buildAgentContext(roomId: string) {
     reminders,
     memories,
     summaries,
+    scheduledJobs,
     roomContext
   };
 }

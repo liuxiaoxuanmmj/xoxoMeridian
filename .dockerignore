@@ -1,7 +1,17 @@
 node_modules
 .next
 .env
+.env.*
+!.env.example
 .env.local
 coverage
 .git
+.gitignore
 README.md
+docs
+tests
+*.tmp
+*.log
+.DS_Store
+.eslintrc.json
+vitest.config.ts

@@ -2,18 +2,20 @@
 
 import { useEffect, useState } from "react";
 
-import type { ChatUser, LifeMemo, LifeNote, LifeReminder } from "@/components/chat/types";
+import type { ChatUser, LifeMemo, LifeNote, LifeReminder, LifeScheduledJob } from "@/components/chat/types";
 
 export function LifePanel({
   participants,
   notes,
   memos,
-  reminders
+  reminders,
+  scheduledJobs
 }: {
   participants: ChatUser[];
   notes: LifeNote[];
   memos: LifeMemo[];
   reminders: LifeReminder[];
+  scheduledJobs: LifeScheduledJob[];
 }) {
   const [now, setNow] = useState(() => new Date());
 
@@ -57,6 +59,21 @@ export function LifePanel({
               {reminder.dueAt ? <p className="mt-1 text-xs text-ink/55">{formatDateTime(reminder.dueAt, reminder.timezone)}</p> : null}
             </div>
           ))}
+        </PanelSection>
+
+        <PanelSection title="周期任务" empty="还没有周期任务">
+          {scheduledJobs.map((job) => {
+            const description = typeof job.payload?.description === "string" ? job.payload.description : null;
+            const prompt = typeof job.payload?.prompt === "string" ? job.payload.prompt : null;
+            return (
+              <div key={job.id} className="rounded-lg border border-sage-100 bg-white p-3 text-sm">
+                <p className="font-medium text-ink">{description ?? prompt ?? job.cron}</p>
+                <p className="mt-1 text-xs text-ink/55">
+                  下次：{formatDateTime(job.nextRunAt, job.timezone)} · {job.cron}
+                </p>
+              </div>
+            );
+          })}
         </PanelSection>
 
         <PanelSection title="备忘录" empty="还没有备忘录">

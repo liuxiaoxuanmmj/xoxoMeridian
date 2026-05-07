@@ -8,13 +8,43 @@ export type AgentPlan = {
   requiredTools: string[];
   taskSteps: string[];
   finalResponsePlan: string;
+  finalResponseText: string;
   toolInputs: Record<string, unknown>;
+};
+
+export type LLMToolDescriptor = {
+  name: string;
+  description: string;
+  schema: unknown;
+};
+
+export type StructuredRoomContext = {
+  room: { name: string; slug: string };
+  participants: Array<{
+    displayName: string;
+    role: string | null;
+    city: string | null;
+    timezone: string | null;
+  }>;
+  recentMessages: Array<{ from: string; content: string; at: string }>;
+  pinnedMemos: Array<{ title: string; content: string }>;
+  notes: Array<{ content: string; color: string }>;
+  activeReminders: Array<{ title: string; dueAt: string | null; timezone: string | null }>;
+  activeSchedules: Array<{
+    jobId: string;
+    cron: string;
+    timezone: string;
+    nextRunAt: string;
+    description: string | null;
+  }>;
+  semanticMemory: Array<{ key: string; value: string }>;
+  summaries: Array<{ summary: string; createdAt: string }>;
 };
 
 export type LLMPlanRequest = {
   prompt: string;
-  roomContext: string;
-  availableTools: string[];
+  roomContext: StructuredRoomContext;
+  availableTools: LLMToolDescriptor[];
 };
 
 export type LLMPlanResult = AgentPlan & {

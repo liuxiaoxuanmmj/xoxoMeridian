@@ -40,13 +40,18 @@ export async function runAgentTask(taskId: string) {
     const registry = createToolRegistry();
     const provider = createLLMProvider();
     const prompt = getTaskPrompt(task.input);
-    const availableTools = registry.list().map((tool) => tool.name);
+    const availableTools = registry.list().map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      schema: tool.schema
+    }));
+    const availableToolNames = availableTools.map((t) => t.name);
 
     const llmStartedAt = Date.now();
     await tracer.event("agent.llm.started", {
       provider: provider.name,
       model: provider.model,
-      availableTools
+      availableTools: availableToolNames
     });
 
     let plan: AgentPlan;
@@ -67,8 +72,8 @@ export async function runAgentTask(taskId: string) {
           requestPayload: {
             prompt,
             roomContext: runtimeContext.roomContext,
-            availableTools
-          },
+            availableTools: availableToolNames
+          } as unknown as Prisma.InputJsonObject,
           responsePayload: planResult.rawResponse ?? planResult,
           promptTokens: planResult.usage?.promptTokens,
           completionTokens: planResult.usage?.completionTokens,
@@ -86,7 +91,7 @@ export async function runAgentTask(taskId: string) {
           provider: provider.name,
           model: provider.model,
           inputSummary: prompt.slice(0, 240),
-          requestPayload: { prompt, availableTools },
+          requestPayload: { prompt, availableTools: availableToolNames } as unknown as Prisma.InputJsonObject,
           status: "failed",
           error: message,
           durationMs: Date.now() - llmStartedAt
@@ -102,16 +107,20 @@ export async function runAgentTask(taskId: string) {
 
     const toolResults: ToolResult[] = [];
     for (const toolName of plan.requiredTools) {
-      const output = await registry.execute(toolName, plan.toolInputs[toolName] ?? {}, {
-        prisma,
-        taskId: task.id,
-        roomId: task.roomId,
-        agentId: task.agentId,
-        requestedById: task.requestedById,
-        runtimeContext,
-        tracer
-      });
-      toolResults.push(output);
+      const args = plan.toolInputs[toolName];
+      const argList = Array.isArray(args) ? args : [args ?? {}];
+      for (const arg of argList) {
+        const output = await registry.execute(toolName, arg, {
+          prisma,
+          taskId: task.id,
+          roomId: task.roomId,
+          agentId: task.agentId,
+          requestedById: task.requestedById,
+          runtimeContext,
+          tracer
+        });
+        toolResults.push(output);
+      }
     }
 
     const content = renderAgentReply(plan, toolResults);
@@ -176,39 +185,96 @@ function getTaskPrompt(input: unknown) {
 }
 
 function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
-  const first = toolResults[0];
+  const byTool = new Map(toolResults.map((r) => [r.toolName, r]));
 
-  if (plan.intent === "create_reminder") {
-    const output = first?.output as { title?: string; dueAt?: string | Date | null; timezone?: string } | undefined;
+  if (byTool.has("reminder.create")) {
+    const output = byTool.get("reminder.create")?.output as
+      | { title?: string; dueAt?: string | Date | null; timezone?: string }
+      | undefined;
     return `已经帮你创建提醒：${output?.title ?? "新的提醒"}。MVP 阶段我会先把它放到右侧提醒列表里，之后可以接通知推送。`;
   }
 
-  if (plan.intent === "get_weather") {
-    const output = first?.output as { city?: string; condition?: string; temperatureC?: number; advice?: string } | undefined;
+  if (byTool.has("weather.get")) {
+    const output = byTool.get("weather.get")?.output as
+      | {
+          provider?: string;
+          city?: string;
+          condition?: string;
+          temperatureC?: number;
+          feelsLikeC?: number;
+          humidityPercent?: number;
+          wind?: { direction?: string; scale?: string };
+          forecast?: Array<{
+            date: string;
+            tempMinC?: number;
+            tempMaxC?: number;
+            textDay?: string;
+          }>;
+          advice?: string;
+        }
+      | undefined;
+
+    if (output?.provider === "qweather") {
+      const city = output.city ?? "她那边";
+      const cond = output.condition ?? "未知";
+      const temp = output.temperatureC;
+      const feels = output.feelsLikeC;
+      const wind = output.wind?.direction && output.wind?.scale
+        ? `${output.wind.direction} ${output.wind.scale} 级`
+        : null;
+      const humidity = output.humidityPercent !== undefined ? `湿度 ${output.humidityPercent}%` : null;
+      const parts = [
+        `${city}现在${cond}，${temp !== undefined ? `${temp}°C` : "温度未知"}`,
+        feels !== undefined ? `体感 ${feels}°C` : null,
+        humidity,
+        wind
+      ].filter(Boolean);
+
+      let body = parts.join("，") + "。";
+      if (output.forecast && output.forecast.length > 0) {
+        const preview = output.forecast
+          .slice(0, 3)
+          .map(
+            (d) =>
+              `${d.date.slice(5)} ${d.textDay ?? ""} ${d.tempMinC ?? "--"}~${d.tempMaxC ?? "--"}°C`
+          )
+          .join("；");
+        body += `\n未来几天：${preview}。`;
+      }
+      if (output.advice) body += `\n${output.advice}`;
+      return body;
+    }
+
     return `${output?.city ?? "她那边"}现在天气：${output?.condition ?? "已查询"}，约 ${output?.temperatureC ?? "--"}°C。${
       output?.advice ?? "出门前再看一眼实时天气会更稳。"
     }`;
   }
 
-  if (plan.intent === "compare_timezone") {
-    const output = first?.output as {
-      from?: { label?: string; time?: string };
-      to?: { label?: string; time?: string };
-      suggestion?: string;
-    } | undefined;
+  if (byTool.has("timezone.compare")) {
+    const output = byTool.get("timezone.compare")?.output as
+      | {
+          from?: { label?: string; time?: string };
+          to?: { label?: string; time?: string };
+          suggestion?: string;
+        }
+      | undefined;
     return `${output?.from?.label ?? "你"}这边是 ${output?.from?.time ?? "当前时间未知"}；${
       output?.to?.label ?? "她"
     }那边是 ${output?.to?.time ?? "当前时间未知"}。${output?.suggestion ?? ""}`;
   }
 
-  if (plan.intent === "create_memo") {
-    const output = first?.output as { title?: string } | undefined;
+  if (byTool.has("memo.create")) {
+    const output = byTool.get("memo.create")?.output as { title?: string } | undefined;
     return `备忘录已保存：${output?.title ?? "新的备忘录"}。`;
   }
 
-  if (plan.intent === "create_note") {
+  if (byTool.has("note.create")) {
     return "便签已经贴到右侧面板了。";
   }
 
-  return `我已经处理了这个任务：${plan.finalResponsePlan}`;
+  if (plan.finalResponseText) {
+    return plan.finalResponseText;
+  }
+
+  return "我已经把你的请求记下了，可以再补充一些细节让我更准确地帮到你。";
 }

@@ -2,6 +2,8 @@ import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { notePostSchema, readJsonBody } from "@/lib/validation";
 
 export async function GET(_request: Request, { params }: { params: { roomId: string } }) {
   try {
@@ -23,19 +25,19 @@ export async function POST(request: Request, { params }: { params: { roomId: str
   try {
     const user = await requireCurrentUser();
     await assertRoomAccess(params.roomId, user.id);
-    const body = await request.json();
-    const content = String(body.content ?? "").trim();
 
-    if (!content) {
-      return Response.json({ error: "Note content is required." }, { status: 400 });
-    }
+    const limited = enforceRateLimit(request, `notes:${user.id}`, 20, 60_000);
+    if (limited) return limited;
+
+    const { content, color, metadata } = await readJsonBody(request, notePostSchema);
 
     const note = await prisma.note.create({
       data: {
         roomId: params.roomId,
         createdById: user.id,
         content,
-        color: String(body.color ?? "warm")
+        color,
+        metadata: metadata as never
       }
     });
 

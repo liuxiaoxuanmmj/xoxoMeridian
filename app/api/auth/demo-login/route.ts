@@ -1,34 +1,33 @@
-import { cookies } from "next/headers";
-
 import { assertRoomCapacity, getDefaultRoomForUser } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
-import { getDemoUserByRole, normalizeDemoRole, USER_COOKIE } from "@/lib/auth";
+import { getDemoUserByRole, setSessionCookie, verifyDemoPassword } from "@/lib/auth";
+import { enforceRateLimit } from "@/lib/rate-limit";
+import { demoLoginSchema, readJsonBody } from "@/lib/validation";
+
+const FIFTEEN_MIN_MS = 15 * 60 * 1000;
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json().catch(() => ({}));
-    const role = normalizeDemoRole(body.role);
-    const user = await getDemoUserByRole(role);
+    const limited = enforceRateLimit(request, "demo-login", 5, FIFTEEN_MIN_MS);
+    if (limited) return limited;
 
+    const { role, password } = await readJsonBody(request, demoLoginSchema);
+
+    if (!verifyDemoPassword(password)) {
+      return jsonError("Invalid credentials", 401);
+    }
+
+    const user = await getDemoUserByRole(role);
     if (!user) {
-      return jsonError("Demo user not found. Run the seed script first.", 404);
+      return jsonError("Invalid credentials", 401);
     }
 
     const room = await getDefaultRoomForUser(user);
     await assertRoomCapacity(room.id);
 
-    cookies().set(USER_COOKIE, user.id, {
-      httpOnly: true,
-      sameSite: "lax",
-      secure: process.env.NODE_ENV === "production",
-      path: "/",
-      maxAge: 60 * 60 * 24 * 30
-    });
+    setSessionCookie(user.id);
 
-    return jsonOk({
-      user,
-      room
-    });
+    return jsonOk({ user, room });
   } catch (error) {
     return errorToResponse(error);
   }
