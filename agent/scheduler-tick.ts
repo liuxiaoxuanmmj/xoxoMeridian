@@ -28,11 +28,34 @@ export function clearAllTimers() {
 }
 
 export async function schedulerTick(now = new Date()): Promise<SchedulerTickResult> {
-  const [reminders, jobs] = await Promise.all([
-    fireDueReminders(now),
-    fireDueScheduledJobs(now),
+  const empty = { fired: 0, skipped: 0, failed: 0 };
+
+  const [hasReminder, hasJob] = await Promise.all([
+    prisma.reminder.findFirst({ where: { status: "pending" }, select: { id: true } }),
+    prisma.scheduledJob.findFirst({ where: { enabled: true }, select: { id: true } }),
   ]);
-  await Promise.all([scheduleNearTermReminders(now), scheduleNearTermJobs(now)]);
+
+  if (!hasReminder && !hasJob) {
+    return { reminders: { ...empty }, jobs: { ...empty } };
+  }
+
+  const reminderWork = hasReminder
+    ? (async () => {
+        const fired = await fireDueReminders(now);
+        await scheduleNearTermReminders(now);
+        return fired;
+      })()
+    : Promise.resolve({ ...empty });
+
+  const jobWork = hasJob
+    ? (async () => {
+        const fired = await fireDueScheduledJobs(now);
+        await scheduleNearTermJobs(now);
+        return fired;
+      })()
+    : Promise.resolve({ ...empty });
+
+  const [reminders, jobs] = await Promise.all([reminderWork, jobWork]);
   return { reminders, jobs };
 }
 
