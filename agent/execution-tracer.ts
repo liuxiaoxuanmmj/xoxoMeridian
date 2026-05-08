@@ -1,5 +1,7 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { appendChatLog } from "@/lib/chat-log-file";
+
 export class ExecutionTracer {
   constructor(
     private readonly prisma: PrismaClient,
@@ -68,34 +70,64 @@ export class ExecutionTracer {
       }
     });
     await this.event("agent.tool.started", { toolName, toolCallId: call.id });
+    await appendChatLog(this.roomId, {
+      kind: "tool.call",
+      taskId: this.taskId,
+      toolCallId: call.id,
+      toolName,
+      status: "running",
+      input
+    });
     return { id: call.id, startedAt };
   }
 
   async completeToolCall(toolCallId: string, startedAt: Date, output: unknown) {
     const endedAt = new Date();
+    const durationMs = endedAt.getTime() - startedAt.getTime();
     await this.prisma.toolCall.update({
       where: { id: toolCallId },
       data: {
         status: "completed",
         output: output as object,
         endedAt,
-        durationMs: endedAt.getTime() - startedAt.getTime()
+        durationMs
       }
     });
     await this.event("agent.tool.completed", { toolCallId });
+    const tc = await this.prisma.toolCall.findUnique({ where: { id: toolCallId }, select: { toolName: true } });
+    await appendChatLog(this.roomId, {
+      kind: "tool.call",
+      taskId: this.taskId,
+      toolCallId,
+      toolName: tc?.toolName ?? "",
+      status: "completed",
+      output,
+      durationMs
+    });
   }
 
   async failToolCall(toolCallId: string, startedAt: Date, error: string) {
     const endedAt = new Date();
+    const durationMs = endedAt.getTime() - startedAt.getTime();
     await this.prisma.toolCall.update({
       where: { id: toolCallId },
       data: {
         status: "failed",
         error,
         endedAt,
-        durationMs: endedAt.getTime() - startedAt.getTime()
+        durationMs
       }
     });
     await this.event("agent.tool.failed", { toolCallId, error });
+    const tc = await this.prisma.toolCall.findUnique({ where: { id: toolCallId }, select: { toolName: true } });
+    await appendChatLog(this.roomId, {
+      kind: "tool.call",
+      taskId: this.taskId,
+      toolCallId,
+      toolName: tc?.toolName ?? "",
+      status: "failed",
+      error,
+      durationMs
+    });
   }
 }

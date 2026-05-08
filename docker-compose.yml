@@ -22,6 +22,7 @@ x-app-env: &app-env
   QWEATHER_GEOAPI_HOST: ${QWEATHER_GEOAPI_HOST:-geoapi.qweather.com}
   AGENT_TASK_INLINE_RUN: "false"
   AGENT_WORKER_POLL_MS: ${AGENT_WORKER_POLL_MS:-3000}
+  AGENT_DEBUG_ENABLED: ${AGENT_DEBUG_ENABLED:-false}
   NODE_ENV: production
 
 x-logging: &default-logging
@@ -92,6 +93,8 @@ services:
       <<: *app-env
     ports:
       - "127.0.0.1:3000:3000"
+    volumes:
+      - ./data/chat-logs:/app/data/chat-logs
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:3000/api/health >/dev/null 2>&1"]
       interval: 10s
@@ -114,6 +117,8 @@ services:
         condition: service_completed_successfully
     environment:
       <<: *app-env
+    volumes:
+      - ./data/chat-logs:/app/data/chat-logs
     logging: *default-logging
     <<: *hardening
 

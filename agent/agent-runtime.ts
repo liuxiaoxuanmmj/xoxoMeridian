@@ -5,6 +5,7 @@ import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
 import { createToolRegistry } from "@/agent/tool-registry";
 import type { AgentPlan, ToolResult } from "@/agent/types";
+import { appendChatLog } from "@/lib/chat-log-file";
 import { prisma } from "@/lib/prisma";
 
 export async function runAgentTask(taskId: string) {
@@ -82,6 +83,25 @@ export async function runAgentTask(taskId: string) {
           durationMs: Date.now() - llmStartedAt
         }
       });
+      await appendChatLog(task.roomId, {
+        kind: "llm.call",
+        taskId: task.id,
+        provider: provider.name,
+        model: provider.model,
+        status: "completed",
+        durationMs: Date.now() - llmStartedAt,
+        requestPayload: {
+          prompt,
+          roomContext: runtimeContext.roomContext,
+          availableTools: availableToolNames
+        },
+        responsePayload: planResult.rawResponse ?? planResult,
+        tokens: {
+          prompt: planResult.usage?.promptTokens,
+          completion: planResult.usage?.completionTokens,
+          total: planResult.usage?.totalTokens
+        }
+      });
       await tracer.event("agent.llm.completed", { intent: plan.intent, requiredTools: plan.requiredTools });
     } catch (error) {
       const message = error instanceof Error ? error.message : "LLM planning failed";
@@ -96,6 +116,16 @@ export async function runAgentTask(taskId: string) {
           error: message,
           durationMs: Date.now() - llmStartedAt
         }
+      });
+      await appendChatLog(task.roomId, {
+        kind: "llm.call",
+        taskId: task.id,
+        provider: provider.name,
+        model: provider.model,
+        status: "failed",
+        durationMs: Date.now() - llmStartedAt,
+        requestPayload: { prompt, availableTools: availableToolNames },
+        error: message
       });
       throw error;
     }
@@ -145,6 +175,16 @@ export async function runAgentTask(taskId: string) {
       toolResults
     });
 
+    await appendChatLog(task.roomId, {
+      kind: "message.agent",
+      messageId: finalMessage.id,
+      senderAgentId: task.agentId,
+      taskId: task.id,
+      status: "completed",
+      content,
+      createdAt: finalMessage.createdAt
+    });
+
     return prisma.agentTask.findUniqueOrThrow({
       where: { id: task.id },
       include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
@@ -166,6 +206,15 @@ export async function runAgentTask(taskId: string) {
       }
     });
     await tracer.markFailed(message, finalMessage.id);
+    await appendChatLog(task.roomId, {
+      kind: "message.agent",
+      messageId: finalMessage.id,
+      senderAgentId: task.agentId,
+      taskId: task.id,
+      status: "failed",
+      content: finalMessage.content,
+      createdAt: finalMessage.createdAt
+    });
     return prisma.agentTask.findUniqueOrThrow({
       where: { id: task.id },
       include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }

@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { detectAgentTarget } from "@/lib/agent-detection";
+import { appendChatLog } from "@/lib/chat-log-file";
 
 export async function createHumanMessage(input: {
   roomId: string;
@@ -61,6 +62,14 @@ export async function createHumanMessage(input: {
     }
 
     return { message, task };
+  });
+
+  await appendChatLog(input.roomId, {
+    kind: "message.human",
+    messageId: result.message.id,
+    senderUserId: input.userId,
+    content: result.message.content,
+    createdAt: result.message.createdAt
   });
 
   return result;
