@@ -14,22 +14,23 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
     const user = await requireCurrentUser();
     await assertRoomAccess(params.roomId, user.id);
 
-    const messages = await prisma.message.findMany({
+    const recent = await prisma.message.findMany({
       where: { roomId: params.roomId },
-      orderBy: { createdAt: "asc" },
+      orderBy: { createdAt: "desc" },
+      take: 80,
       include: {
         sender: { select: { id: true, displayName: true, avatarLabel: true } },
         senderAgent: { select: { id: true, displayName: true, slug: true } },
         finalTask: {
           include: {
             toolCalls: true,
-            llmCalls: true,
-            eventLogs: { orderBy: { createdAt: "asc" } }
+            llmCalls: true
           }
         },
         sourceTask: { select: { id: true, status: true } }
       }
     });
+    const messages = recent.reverse();
 
     return jsonOk(
       { messages },

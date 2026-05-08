@@ -5,7 +5,13 @@ import { useEffect, useRef } from "react";
 import type { ChatMessage, ChatUser } from "@/components/chat/types";
 import { cn } from "@/lib/utils";
 
-export function MessageList({ messages, currentUser }: { messages: ChatMessage[]; currentUser: ChatUser }) {
+export function MessageList({
+  messages,
+  currentUser
+}: {
+  messages: ChatMessage[];
+  currentUser: ChatUser;
+}) {
   const endRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -16,7 +22,11 @@ export function MessageList({ messages, currentUser }: { messages: ChatMessage[]
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         {messages.map((message) => (
-          <MessageBubble key={message.id} currentUser={currentUser} message={message} />
+          <MessageBubble
+            key={message.id}
+            currentUser={currentUser}
+            message={message}
+          />
         ))}
         <div ref={endRef} />
       </div>
@@ -24,7 +34,13 @@ export function MessageList({ messages, currentUser }: { messages: ChatMessage[]
   );
 }
 
-function MessageBubble({ message, currentUser }: { message: ChatMessage; currentUser: ChatUser }) {
+function MessageBubble({
+  message,
+  currentUser
+}: {
+  message: ChatMessage;
+  currentUser: ChatUser;
+}) {
   const isMine = message.senderType === "human" && message.senderId === currentUser.id;
   const isAgent = message.senderType === "agent";
   const isSystem = message.senderType === "system";

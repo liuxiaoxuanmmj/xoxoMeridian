@@ -7,7 +7,7 @@ import { LeftRail } from "@/components/chat/LeftRail";
 import { LifePanel } from "@/components/chat/LifePanel";
 import { MessageComposer } from "@/components/chat/MessageComposer";
 import { MessageList } from "@/components/chat/MessageList";
-import type { ChatUser, RoomSnapshot } from "@/components/chat/types";
+import type { ChatMessage, ChatUser, RoomSnapshot } from "@/components/chat/types";
 
 type ConnState = "connecting" | "open" | "reconnecting";
 
@@ -35,6 +35,30 @@ export function ChatApp({
       }));
     }
   }, [roomId]);
+
+  const appendMessage = useCallback(
+    (message: ChatMessage) => {
+      // Attach the current user's display info so the optimistic bubble doesn't
+      // render as "未知"; the real row from SSE/refresh will overwrite by id.
+      const enriched: ChatMessage =
+        message.senderType === "human" && message.senderId === currentUser.id && !message.sender
+          ? {
+              ...message,
+              sender: {
+                id: currentUser.id,
+                displayName: currentUser.displayName,
+                avatarLabel: currentUser.avatarLabel
+              }
+            }
+          : message;
+
+      setSnapshot((current) => {
+        if (current.messages.some((m) => m.id === enriched.id)) return current;
+        return { ...current, messages: [...current.messages, enriched] };
+      });
+    },
+    [currentUser]
+  );
 
   // Custom reconnect loop. EventSource reconnects by itself, but silently — we
   // want a visible "reconnecting" state and a GET /messages sync after recovery
@@ -124,7 +148,7 @@ export function ChatApp({
 
         <section className="flex min-w-0 flex-1 flex-col">
           <MessageList currentUser={currentUser} messages={snapshot.messages} />
-          <MessageComposer externalDraft={draftPrompt} roomId={roomId} onSent={refresh} />
+          <MessageComposer externalDraft={draftPrompt} roomId={roomId} onSent={appendMessage} />
         </section>
 
         <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} scheduledJobs={snapshot.scheduledJobs ?? []} />

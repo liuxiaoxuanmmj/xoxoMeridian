@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import type { ChatMessage } from "@/components/chat/types";
+
 export function MessageComposer({
   roomId,
   onSent,
   externalDraft
 }: {
   roomId: string;
-  onSent: () => Promise<void> | void;
+  onSent: (message: ChatMessage) => void;
   externalDraft?: string;
 }) {
   const [content, setContent] = useState("");
@@ -44,9 +46,10 @@ export function MessageComposer({
       return;
     }
 
+    const payload = (await response.json().catch(() => null)) as { message?: ChatMessage } | null;
     setContent("");
     setSending(false);
-    await onSent();
+    if (payload?.message) onSent(payload.message);
     textareaRef.current?.focus();
   }
 
