@@ -331,3 +331,39 @@ describe("schedulerTick - near-term timer arming", () => {
     expect(agentTasks).toHaveLength(0);
   });
 });
+
+describe("schedulerTick - empty-skip", () => {
+  it("does not call findMany on either resource when both tables are empty", async () => {
+    mockPrisma.reminder.findMany.mockClear();
+    mockPrisma.scheduledJob.findMany.mockClear();
+    mockPrisma.reminder.findFirst.mockClear();
+    mockPrisma.scheduledJob.findFirst.mockClear();
+
+    const result = await schedulerTick(new Date());
+
+    expect(mockPrisma.reminder.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.scheduledJob.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.reminder.findMany).not.toHaveBeenCalled();
+    expect(mockPrisma.scheduledJob.findMany).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      reminders: { fired: 0, skipped: 0, failed: 0 },
+      jobs: { fired: 0, skipped: 0, failed: 0 },
+    });
+  });
+
+  it("skips scheduledJob queries when only reminders exist", async () => {
+    reminders.push(makeReminder({ dueAt: new Date(Date.now() + 60 * 60 * 1000) }));
+
+    mockPrisma.reminder.findMany.mockClear();
+    mockPrisma.scheduledJob.findMany.mockClear();
+    mockPrisma.reminder.findFirst.mockClear();
+    mockPrisma.scheduledJob.findFirst.mockClear();
+
+    await schedulerTick(new Date());
+
+    expect(mockPrisma.reminder.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.scheduledJob.findFirst).toHaveBeenCalledTimes(1);
+    expect(mockPrisma.reminder.findMany).toHaveBeenCalled();
+    expect(mockPrisma.scheduledJob.findMany).not.toHaveBeenCalled();
+  });
+});
