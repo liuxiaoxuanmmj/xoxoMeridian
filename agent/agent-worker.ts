@@ -2,8 +2,8 @@ import { dispatchPendingAgentTasks } from "@/agent/task-dispatcher";
 import { schedulerTick, clearAllTimers } from "@/agent/scheduler-tick";
 import { env } from "@/lib/env";
 
-const SCHEDULER_TICK_MS = 10_000;
-const SCHEDULER_JITTER_MS = 2_000;
+const SCHEDULER_TICK_MS = 3_000;
+const SCHEDULER_JITTER_MS = 500;
 const DISPATCH_MAX_BACKOFF_MS = 60_000;
 
 let stopped = false;

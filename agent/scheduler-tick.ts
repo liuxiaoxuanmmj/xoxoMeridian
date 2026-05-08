@@ -9,11 +9,11 @@ const REMINDER_BATCH = 50;
 const JOB_BATCH = 20;
 const DEFAULT_AGENT_SLUG = "life-assistant";
 
-// Hybrid strategy: reminders within 5min get a precise setTimeout; others poll.
-const PRECISE_THRESHOLD_MS = 5 * 60 * 1000;
+const REMINDER_PRECISE_THRESHOLD_MS = 5 * 60 * 1000;
+const JOB_PRECISE_THRESHOLD_MS = 2 * 60 * 1000;
 
-// In-memory timers for near-term reminders. Key = reminder.id, value = NodeJS.Timeout.
 const activeTimers = new Map<string, NodeJS.Timeout>();
+const activeJobTimers = new Map<string, NodeJS.Timeout>();
 
 export type SchedulerTickResult = {
   reminders: { fired: number; skipped: number; failed: number };
@@ -23,6 +23,8 @@ export type SchedulerTickResult = {
 export function clearAllTimers() {
   for (const timer of activeTimers.values()) clearTimeout(timer);
   activeTimers.clear();
+  for (const timer of activeJobTimers.values()) clearTimeout(timer);
+  activeJobTimers.clear();
 }
 
 export async function schedulerTick(now = new Date()): Promise<SchedulerTickResult> {
@@ -30,7 +32,7 @@ export async function schedulerTick(now = new Date()): Promise<SchedulerTickResu
     fireDueReminders(now),
     fireDueScheduledJobs(now),
   ]);
-  await scheduleNearTermReminders(now);
+  await Promise.all([scheduleNearTermReminders(now), scheduleNearTermJobs(now)]);
   return { reminders, jobs };
 }
 
@@ -45,27 +47,28 @@ async function fireDueReminders(now: Date) {
 
   for (const reminder of due) {
     if (!reminder.dueAt) continue;
-    if (activeTimers.has(reminder.id)) continue; // skip if timer owns it
+    if (activeTimers.has(reminder.id)) continue;
 
-    if (now.getTime() - reminder.dueAt.getTime() > MISSED_WINDOW_MS) {
-      await prisma.reminder.update({
-        where: { id: reminder.id },
-        data: { status: "skipped" },
-      });
+    const missed = now.getTime() - reminder.dueAt.getTime() > MISSED_WINDOW_MS;
+    const targetStatus: Prisma.ReminderUpdateInput["status"] = missed ? "skipped" : "fired";
+
+    const claim = await prisma.reminder.updateMany({
+      where: { id: reminder.id, status: "pending" },
+      data: { status: targetStatus },
+    });
+    if (claim.count === 0) continue;
+
+    if (missed) {
       skipped += 1;
       continue;
     }
 
     try {
       await dispatchReminderTask(reminder);
-      await prisma.reminder.update({
-        where: { id: reminder.id },
-        data: { status: "fired" },
-      });
       fired += 1;
     } catch (error) {
+      await releaseReminderClaim(reminder, error);
       failed += 1;
-      await markReminderFailure(reminder, error);
     }
   }
 
@@ -82,27 +85,32 @@ async function fireDueScheduledJobs(now: Date) {
   let fired = 0, skipped = 0, failed = 0;
 
   for (const job of due) {
+    if (activeJobTimers.has(job.id)) continue;
+
     const inWindow = now.getTime() - job.nextRunAt.getTime() <= MISSED_WINDOW_MS;
+    const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
+
+    const claim = await prisma.scheduledJob.updateMany({
+      where: { id: job.id, enabled: true, nextRunAt: job.nextRunAt },
+      data: {
+        lastRunAt: inWindow ? now : job.lastRunAt,
+        nextRunAt: newNextRunAt,
+        failCount: 0,
+      },
+    });
+    if (claim.count === 0) continue;
+
+    if (!inWindow) {
+      skipped += 1;
+      continue;
+    }
 
     try {
-      if (inWindow) {
-        await dispatchScheduledJobTask(job);
-        fired += 1;
-      } else {
-        skipped += 1;
-      }
-
-      await prisma.scheduledJob.update({
-        where: { id: job.id },
-        data: {
-          lastRunAt: inWindow ? now : job.lastRunAt,
-          nextRunAt: computeNextRun(job.cron, job.timezone, now),
-          failCount: 0,
-        },
-      });
+      await dispatchScheduledJobTask(job);
+      fired += 1;
     } catch (error) {
+      await rollbackJobClaim(job, error);
       failed += 1;
-      await markJobFailure(job, error);
     }
   }
 
@@ -177,32 +185,41 @@ function computeNextRun(cron: string, timezone: string, after: Date): Date {
   return CronExpressionParser.parse(cron, { tz: timezone, currentDate: after }).next().toDate();
 }
 
-async function markReminderFailure(reminder: Reminder, error: unknown) {
+async function releaseReminderClaim(reminder: Reminder, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const meta = (reminder.metadata ?? {}) as Record<string, unknown>;
   const attempts = ((meta.fireAttempts as number | undefined) ?? 0) + 1;
+  const reachedCap = attempts >= MAX_FAIL_COUNT;
 
-  const data: Prisma.ReminderUpdateInput = {
-    metadata: { ...meta, fireAttempts: attempts, lastError: message } as Prisma.InputJsonValue,
-  };
-  if (attempts >= MAX_FAIL_COUNT) data.status = "cancelled";
-
-  await prisma.reminder.update({ where: { id: reminder.id }, data });
+  await prisma.reminder.update({
+    where: { id: reminder.id },
+    data: {
+      status: reachedCap ? "cancelled" : "pending",
+      metadata: { ...meta, fireAttempts: attempts, lastError: message } as Prisma.InputJsonValue,
+    },
+  });
   console.error(`[scheduler] reminder ${reminder.id} failed (attempt ${attempts}):`, message);
 }
 
-async function markJobFailure(job: ScheduledJob, error: unknown) {
+async function rollbackJobClaim(job: ScheduledJob, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const failCount = job.failCount + 1;
-  const data: Prisma.ScheduledJobUpdateInput = { failCount };
-  if (failCount >= MAX_FAIL_COUNT) data.enabled = false;
+  const reachedCap = failCount >= MAX_FAIL_COUNT;
 
-  await prisma.scheduledJob.update({ where: { id: job.id }, data });
+  await prisma.scheduledJob.update({
+    where: { id: job.id },
+    data: {
+      nextRunAt: job.nextRunAt,
+      lastRunAt: job.lastRunAt,
+      failCount,
+      enabled: reachedCap ? false : job.enabled,
+    },
+  });
   console.error(`[scheduler] job ${job.id} failed (failCount=${failCount}):`, message);
 }
 
 async function scheduleNearTermReminders(now: Date) {
-  const soon = new Date(now.getTime() + PRECISE_THRESHOLD_MS);
+  const soon = new Date(now.getTime() + REMINDER_PRECISE_THRESHOLD_MS);
   const nearTerm = await prisma.reminder.findMany({
     where: {
       status: "pending",
@@ -222,17 +239,65 @@ async function scheduleNearTermReminders(now: Date) {
   }
 }
 
+async function scheduleNearTermJobs(now: Date) {
+  const soon = new Date(now.getTime() + JOB_PRECISE_THRESHOLD_MS);
+  const nearTerm = await prisma.scheduledJob.findMany({
+    where: {
+      enabled: true,
+      nextRunAt: { gt: now, lte: soon },
+    },
+    take: 100,
+  });
+
+  for (const job of nearTerm) {
+    if (activeJobTimers.has(job.id)) continue;
+    const delay = Math.max(0, job.nextRunAt.getTime() - now.getTime());
+    const timer = setTimeout(() => {
+      activeJobTimers.delete(job.id);
+      void fireJobNow(job.id);
+    }, delay);
+    activeJobTimers.set(job.id, timer);
+  }
+}
+
 async function fireReminderNow(reminderId: string) {
   const reminder = await prisma.reminder.findUnique({ where: { id: reminderId } });
   if (!reminder || reminder.status !== "pending") return;
+  if (!reminder.dueAt) return;
+
+  const claim = await prisma.reminder.updateMany({
+    where: { id: reminderId, status: "pending" },
+    data: { status: "fired" },
+  });
+  if (claim.count === 0) return;
 
   try {
     await dispatchReminderTask(reminder);
-    await prisma.reminder.update({
-      where: { id: reminderId },
-      data: { status: "fired" },
-    });
   } catch (error) {
-    await markReminderFailure(reminder, error);
+    await releaseReminderClaim(reminder, error);
+  }
+}
+
+async function fireJobNow(jobId: string) {
+  const job = await prisma.scheduledJob.findUnique({ where: { id: jobId } });
+  if (!job || !job.enabled) return;
+
+  const now = new Date();
+  const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
+
+  const claim = await prisma.scheduledJob.updateMany({
+    where: { id: jobId, enabled: true, nextRunAt: job.nextRunAt },
+    data: {
+      lastRunAt: now,
+      nextRunAt: newNextRunAt,
+      failCount: 0,
+    },
+  });
+  if (claim.count === 0) return;
+
+  try {
+    await dispatchScheduledJobTask(job);
+  } catch (error) {
+    await rollbackJobClaim(job, error);
   }
 }
