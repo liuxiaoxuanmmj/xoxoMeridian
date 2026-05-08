@@ -70,6 +70,13 @@ const mockPrisma = {
       }
       return rows.map((r) => ({ ...r }));
     }),
+    findFirst: vi.fn(async ({ where }: { where: any }) => {
+      const row = reminders.find((r) => {
+        if (where.status && r.status !== where.status) return false;
+        return true;
+      });
+      return row ? { id: row.id } : null;
+    }),
     findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
       const row = reminders.find((r) => r.id === where.id);
       return row ? { ...row } : null;
@@ -104,6 +111,13 @@ const mockPrisma = {
         rows = rows.slice().sort((a, b) => a.nextRunAt.getTime() - b.nextRunAt.getTime());
       }
       return rows.map((r) => ({ ...r }));
+    }),
+    findFirst: vi.fn(async ({ where }: { where: any }) => {
+      const row = jobs.find((j) => {
+        if (where.enabled !== undefined && j.enabled !== where.enabled) return false;
+        return true;
+      });
+      return row ? { id: row.id } : null;
     }),
     findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
       const row = jobs.find((j) => j.id === where.id);
