@@ -6,7 +6,8 @@ import { createReminderTool } from "@/agent/tools/reminder-tool";
 import {
   createScheduleCancelTool,
   createScheduleCreateTool,
-  createScheduleListTool
+  createScheduleListTool,
+  createScheduleUpdateTool
 } from "@/agent/tools/schedule-tool";
 import { createTimezoneTool } from "@/agent/tools/timezone-tool";
 import { createWeatherTool } from "@/agent/tools/weather-tool";
@@ -64,6 +65,7 @@ export function createToolRegistry() {
   registry.register(createScheduleCreateTool());
   registry.register(createScheduleListTool());
   registry.register(createScheduleCancelTool());
+  registry.register(createScheduleUpdateTool());
   registry.register(createMemorySetTool());
   registry.register(createMemoryRecallTool());
   return registry;

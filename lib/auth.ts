@@ -9,6 +9,12 @@ export const USER_COOKIE = "xoxo_session";
 
 export type DemoRole = "me" | "her";
 
+export type SessionPayload = {
+  userId: string;
+  version: number;
+  expiresAt: number;
+};
+
 export async function getDemoUserByRole(role: DemoRole) {
   return prisma.user.findUnique({
     where: { demoRole: role },
@@ -28,14 +34,14 @@ function tryDecode(input: string): Buffer | null {
   }
 }
 
-export function signSession(userId: string, now = Date.now()): string {
+export function signSession(userId: string, version: number, now = Date.now()): string {
   const expiresAt = Math.floor(now / 1000) + env.SESSION_MAX_AGE_SECONDS;
-  const payload = `${userId}.${expiresAt}`;
+  const payload = `${userId}.${version}.${expiresAt}`;
   const sig = hmac(payload).toString("base64url");
   return `${Buffer.from(payload).toString("base64url")}.${sig}`;
 }
 
-export function verifySession(token: string | undefined, now = Date.now()): string | null {
+export function verifySession(token: string | undefined, now = Date.now()): SessionPayload | null {
   if (!token) return null;
   const parts = token.split(".");
   if (parts.length !== 2) return null;
@@ -44,11 +50,15 @@ export function verifySession(token: string | undefined, now = Date.now()): stri
   if (!payloadBuf) return null;
   const payload = payloadBuf.toString("utf8");
 
-  const sep = payload.lastIndexOf(".");
-  if (sep < 0) return null;
-  const userId = payload.slice(0, sep);
+  // payload format: `${userId}.${version}.${expiresAt}`
+  // userId (cuid) contains no dots, so splitting by "." yields exactly three pieces.
+  const pieces = payload.split(".");
+  if (pieces.length !== 3) return null;
+  const [userId, versionStr, expiresStr] = pieces;
   if (!userId) return null;
-  const expiresAt = Number.parseInt(payload.slice(sep + 1), 10);
+  const version = Number.parseInt(versionStr, 10);
+  if (!Number.isFinite(version) || version < 0) return null;
+  const expiresAt = Number.parseInt(expiresStr, 10);
   if (!Number.isFinite(expiresAt)) return null;
   if (Math.floor(now / 1000) >= expiresAt) return null;
 
@@ -58,7 +68,7 @@ export function verifySession(token: string | undefined, now = Date.now()): stri
   if (provided.length !== expected.length) return null;
   if (!timingSafeEqual(provided, expected)) return null;
 
-  return userId;
+  return { userId, version, expiresAt };
 }
 
 export function verifyDemoPassword(provided: string): boolean {
@@ -68,25 +78,39 @@ export function verifyDemoPassword(provided: string): boolean {
   return timingSafeEqual(expected, got);
 }
 
-export function setSessionCookie(userId: string) {
+export async function setSessionCookie(userId: string): Promise<number> {
+  // Bump the version first so any previously issued cookie (embedding the
+  // prior version) fails verification immediately — this is what enforces
+  // single-active-session across browsers.
+  const updated = await prisma.user.update({
+    where: { id: userId },
+    data: { sessionVersion: { increment: 1 } },
+    select: { sessionVersion: true },
+  });
+
   cookies().set({
     name: USER_COOKIE,
-    value: signSession(userId),
+    value: signSession(userId, updated.sessionVersion),
     httpOnly: true,
     sameSite: "lax",
     secure: env.APP_BASE_URL.startsWith("https://"),
     path: "/",
     maxAge: env.SESSION_MAX_AGE_SECONDS,
   });
+
+  return updated.sessionVersion;
 }
 
 export async function getCurrentUser() {
   const token = cookies().get(USER_COOKIE)?.value;
-  const userId = verifySession(token);
-  if (!userId) return null;
+  const session = verifySession(token);
+  if (!session) return null;
 
-  return prisma.user.findUnique({
-    where: { id: userId },
+  // Require the cookie's version to still match the user's current version;
+  // a newer login elsewhere will have incremented the DB value, invalidating
+  // this cookie.
+  return prisma.user.findFirst({
+    where: { id: session.userId, sessionVersion: session.version },
     include: { profile: true },
   });
 }

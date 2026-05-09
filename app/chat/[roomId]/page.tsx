@@ -1,4 +1,4 @@
-import { notFound } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { ChatApp } from "@/components/chat/ChatApp";
 import { requirePageUser } from "@/lib/auth";
@@ -11,7 +11,9 @@ export default async function ChatRoomPage({ params }: { params: { roomId: strin
   const participant = await prisma.roomParticipant.findUnique({
     where: { roomId_userId: { roomId: params.roomId, userId: user.id } },
   });
-  if (!participant) notFound();
+  // Room was deleted (cascade dropped the participant row) or the user was
+  // ejected. Bounce to /chat, which redirects to the user's default room.
+  if (!participant) redirect("/chat");
 
   const snapshot = await getRoomSnapshot(params.roomId);
 

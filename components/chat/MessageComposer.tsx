@@ -21,11 +21,17 @@ export function MessageComposer({
   useEffect(() => {
     if (externalDraft) {
       setContent(externalDraft);
-      requestAnimationFrame(() => textareaRef.current?.focus());
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (!ta) return;
+        ta.focus();
+        const end = ta.value.length;
+        ta.setSelectionRange(end, end);
+      });
     }
   }, [externalDraft]);
 
-  async function send(forceAgent = false) {
+  async function send() {
     const text = content.trim();
     if (!text || sending) {
       return;
@@ -36,7 +42,7 @@ export function MessageComposer({
     const response = await fetch(`/api/rooms/${roomId}/messages`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: text, forceAgent })
+      body: JSON.stringify({ content: text })
     });
 
     if (!response.ok) {
@@ -58,7 +64,13 @@ export function MessageComposer({
       const prefix = value.trim().length > 0 ? `${value} @小助手 ` : "@小助手 ";
       return prefix;
     });
-    requestAnimationFrame(() => textareaRef.current?.focus());
+    requestAnimationFrame(() => {
+      const ta = textareaRef.current;
+      if (!ta) return;
+      ta.focus();
+      const end = ta.value.length;
+      ta.setSelectionRange(end, end);
+    });
   }
 
   return (
@@ -74,7 +86,7 @@ export function MessageComposer({
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
                 event.preventDefault();
-                void send(false);
+                void send();
               }
             }}
           />
@@ -89,7 +101,7 @@ export function MessageComposer({
             <button
               className="rounded-lg bg-ink px-3 py-2 text-sm font-medium text-white transition hover:bg-ink/90 disabled:opacity-60"
               disabled={sending}
-              onClick={() => send(false)}
+              onClick={() => send()}
               type="button"
             >
               {sending ? "发送中" : "发送"}
@@ -97,15 +109,7 @@ export function MessageComposer({
           </div>
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-          <button
-            className="rounded-md border border-warm-200 bg-warm-50 px-3 py-1.5 text-xs font-medium text-warm-700 transition hover:bg-warm-100"
-            disabled={sending}
-            onClick={() => send(true)}
-            type="button"
-          >
-            交给小助手处理
-          </button>
+        <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
           {error ? <p className="text-xs text-red-700">{error}</p> : <p className="text-xs text-ink/45">Enter 发送，Shift + Enter 换行</p>}
         </div>
       </div>

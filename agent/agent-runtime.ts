@@ -3,6 +3,12 @@ import type { Prisma } from "@prisma/client";
 import { buildAgentContext } from "@/agent/context-builder";
 import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
+import { formatIssuesForLLM, validatePlan } from "@/agent/plan-validator";
+import {
+  SCHEDULER_BLOCKED_TOOLS,
+  TRIGGER_REMINDER_FIRED,
+  TRIGGER_SCHEDULED_JOB,
+} from "@/agent/scheduler-tick";
 import { createToolRegistry } from "@/agent/tool-registry";
 import type { AgentPlan, ToolResult } from "@/agent/types";
 import { appendChatLog } from "@/lib/chat-log-file";
@@ -41,11 +47,16 @@ export async function runAgentTask(taskId: string) {
     const registry = createToolRegistry();
     const provider = createLLMProvider();
     const prompt = getTaskPrompt(task.input);
-    const availableTools = registry.list().map((tool) => ({
+    const trigger = getTaskTrigger(task.input);
+    const allTools = registry.list().map((tool) => ({
       name: tool.name,
       description: tool.description,
       schema: tool.schema
     }));
+    // When a task is invoked by the scheduler (a fired schedule or reminder),
+    // the agent must EXECUTE the action, not re-schedule it. Strip the writeable
+    // scheduling tools from what the LLM sees so it physically cannot recurse.
+    const availableTools = filterToolsForTrigger(allTools, trigger);
     const availableToolNames = availableTools.map((t) => t.name);
 
     const llmStartedAt = Date.now();
@@ -129,6 +140,109 @@ export async function runAgentTask(taskId: string) {
       });
       throw error;
     }
+
+    // --- Plan consistency check ---------------------------------------------
+    // The LLM sometimes produces a final_response_text that does not match its
+    // tool_inputs (e.g. promising "今晚只发一次" while only calling schedule.cancel).
+    // We validate the plan; on issues we retry once with structured feedback,
+    // and if the retry still fails we fall back to a safe "ask user to confirm"
+    // reply rather than executing a mismatched plan.
+    let planIssues = validatePlan(plan, prompt);
+    if (planIssues.length > 0) {
+      await tracer.event("agent.plan.validation.failed", {
+        attempt: 1,
+        issueCodes: planIssues.map((i) => i.code),
+        issues: planIssues
+      });
+
+      const retryStartedAt = Date.now();
+      try {
+        const retryResult = await provider.plan({
+          prompt,
+          roomContext: runtimeContext.roomContext,
+          availableTools,
+          validationFeedback: {
+            previousPlan: plan,
+            issues: formatIssuesForLLM(planIssues)
+          }
+        });
+        await prisma.lLMCall.create({
+          data: {
+            taskId: task.id,
+            provider: provider.name,
+            model: provider.model,
+            inputSummary: `[retry] ${prompt.slice(0, 230)}`,
+            requestPayload: {
+              prompt,
+              roomContext: runtimeContext.roomContext,
+              availableTools: availableToolNames,
+              validationFeedback: {
+                previousPlan: plan,
+                issues: planIssues
+              }
+            } as unknown as Prisma.InputJsonObject,
+            responsePayload: retryResult.rawResponse ?? retryResult,
+            promptTokens: retryResult.usage?.promptTokens,
+            completionTokens: retryResult.usage?.completionTokens,
+            totalTokens: retryResult.usage?.totalTokens,
+            status: "completed",
+            durationMs: Date.now() - retryStartedAt
+          }
+        });
+        await appendChatLog(task.roomId, {
+          kind: "llm.call",
+          taskId: task.id,
+          provider: provider.name,
+          model: provider.model,
+          status: "completed",
+          durationMs: Date.now() - retryStartedAt,
+          requestPayload: {
+            prompt,
+            roomContext: runtimeContext.roomContext,
+            availableTools: availableToolNames,
+            validationFeedback: {
+              previousPlan: plan,
+              issues: planIssues
+            }
+          },
+          responsePayload: retryResult.rawResponse ?? retryResult,
+          tokens: {
+            prompt: retryResult.usage?.promptTokens,
+            completion: retryResult.usage?.completionTokens,
+            total: retryResult.usage?.totalTokens
+          }
+        });
+        plan = retryResult;
+        await tracer.event("agent.plan.validation.retry.completed", {
+          intent: plan.intent,
+          requiredTools: plan.requiredTools
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "LLM retry failed";
+        await tracer.event("agent.plan.validation.retry.failed", { error: message });
+      }
+
+      planIssues = validatePlan(plan, prompt);
+      if (planIssues.length > 0) {
+        await tracer.event("agent.plan.validation.fallback", {
+          issueCodes: planIssues.map((i) => i.code),
+          issues: planIssues,
+          discardedPlan: plan
+        });
+        plan = {
+          intent: "clarify_schedule",
+          confidence: 0,
+          requiredTools: [],
+          taskSteps: ["一致性校验未通过，改为请用户澄清"],
+          finalResponsePlan: "由于时间语义不明确，让用户再确认一次。",
+          finalResponseText:
+            "稍等，我刚刚没对齐你的时间要求，能再确认一下吗？例如「今晚 20:00 发一次」或者「以后每晚 20:00 都发」——我按你说的来设。",
+          toolInputs: {}
+        };
+      }
+    }
+    // ------------------------------------------------------------------------
+
 
     await prisma.agentTask.update({
       where: { id: task.id },
@@ -233,6 +347,29 @@ function getTaskPrompt(input: unknown) {
   return JSON.stringify(input);
 }
 
+function getTaskTrigger(input: unknown): string | undefined {
+  if (typeof input === "object" && input !== null && "trigger" in input) {
+    const value = (input as { trigger?: unknown }).trigger;
+    if (typeof value === "string") return value;
+  }
+  return undefined;
+}
+
+const SCHEDULER_TRIGGERS = new Set<string>([TRIGGER_SCHEDULED_JOB, TRIGGER_REMINDER_FIRED]);
+const SCHEDULER_BLOCKED_TOOL_SET = new Set<string>(SCHEDULER_BLOCKED_TOOLS);
+
+function isTriggeredByScheduler(trigger: string | undefined): boolean {
+  return trigger !== undefined && SCHEDULER_TRIGGERS.has(trigger);
+}
+
+export function filterToolsForTrigger<T extends { name: string }>(
+  tools: T[],
+  trigger: string | undefined
+): T[] {
+  if (!isTriggeredByScheduler(trigger)) return tools;
+  return tools.filter((t) => !SCHEDULER_BLOCKED_TOOL_SET.has(t.name));
+}
+
 function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
   const byTool = new Map(toolResults.map((r) => [r.toolName, r]));
 
@@ -240,7 +377,7 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
     const output = byTool.get("reminder.create")?.output as
       | { title?: string; dueAt?: string | Date | null; timezone?: string }
       | undefined;
-    return `已经帮你创建提醒：${output?.title ?? "新的提醒"}。MVP 阶段我会先把它放到右侧提醒列表里，之后可以接通知推送。`;
+    return `已经帮你创建提醒：${output?.title ?? "新的提醒"}，已经放到右侧提醒列表里。`;
   }
 
   if (byTool.has("weather.get")) {

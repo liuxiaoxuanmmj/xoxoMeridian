@@ -3,13 +3,16 @@ import { describe, expect, it } from "vitest";
 import { signSession, verifySession } from "@/lib/auth";
 
 describe("session signing", () => {
-  it("round-trips a userId through sign and verify", () => {
-    const token = signSession("user-123");
-    expect(verifySession(token)).toBe("user-123");
+  it("round-trips userId and version through sign and verify", () => {
+    const token = signSession("user-123", 7);
+    const result = verifySession(token);
+    expect(result).not.toBeNull();
+    expect(result?.userId).toBe("user-123");
+    expect(result?.version).toBe(7);
   });
 
   it("rejects a tampered signature", () => {
-    const token = signSession("user-123");
+    const token = signSession("user-123", 0);
     const [payload] = token.split(".");
     const tampered = `${payload}.AAAA`;
     expect(verifySession(tampered)).toBeNull();
@@ -17,7 +20,7 @@ describe("session signing", () => {
 
   it("rejects an expired token", () => {
     const longAgo = Date.now() - 1000 * 60 * 60 * 24 * 365;
-    const token = signSession("user-123", longAgo);
+    const token = signSession("user-123", 0, longAgo);
     expect(verifySession(token)).toBeNull();
   });
 

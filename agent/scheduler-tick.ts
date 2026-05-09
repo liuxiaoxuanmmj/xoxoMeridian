@@ -12,6 +12,25 @@ const DEFAULT_AGENT_SLUG = "life-assistant";
 const REMINDER_PRECISE_THRESHOLD_MS = 5 * 60 * 1000;
 const JOB_PRECISE_THRESHOLD_MS = 2 * 60 * 1000;
 
+export const TRIGGER_SCHEDULED_JOB = "scheduled.job";
+export const TRIGGER_REMINDER_FIRED = "reminder.fired";
+
+// Tools the agent must NOT call when running on behalf of a fired
+// schedule/reminder — calling any of these would re-create or mutate the
+// very task that just fired, causing self-reschedule loops.
+export const SCHEDULER_BLOCKED_TOOLS: readonly string[] = [
+  "schedule.create",
+  "schedule.update",
+  "schedule.cancel",
+  "reminder.create",
+  "reminder.update",
+];
+
+export const TRIGGER_MARKER = "[这是已触发的定时任务正在执行]";
+
+const BLOCKED_TOOL_DIRECTIVE =
+  `不要再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。`;
+
 const activeTimers = new Map<string, NodeJS.Timeout>();
 const activeJobTimers = new Map<string, NodeJS.Timeout>();
 
@@ -112,6 +131,7 @@ async function fireDueScheduledJobs(now: Date) {
 
     const inWindow = now.getTime() - job.nextRunAt.getTime() <= MISSED_WINDOW_MS;
     const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
+    const runOnce = isRunOnce(job);
 
     const claim = await prisma.scheduledJob.updateMany({
       where: { id: job.id, enabled: true, nextRunAt: job.nextRunAt },
@@ -119,6 +139,7 @@ async function fireDueScheduledJobs(now: Date) {
         lastRunAt: inWindow ? now : job.lastRunAt,
         nextRunAt: newNextRunAt,
         failCount: 0,
+        enabled: runOnce && inWindow ? false : true,
       },
     });
     if (claim.count === 0) continue;
@@ -153,7 +174,7 @@ async function dispatchReminderTask(reminder: Reminder) {
       input: {
         rawContent: reminder.title,
         normalizedContent: prompt,
-        trigger: "reminder.fired",
+        trigger: TRIGGER_REMINDER_FIRED,
         reminderId: reminder.id,
       } satisfies Prisma.InputJsonObject,
     },
@@ -172,16 +193,17 @@ async function dispatchReminderTask(reminder: Reminder) {
 async function dispatchScheduledJobTask(job: ScheduledJob) {
   const payload = (job.payload ?? {}) as Record<string, unknown>;
   const promptFromPayload = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
-  const prompt = promptFromPayload || "执行预设的定时任务，并向房间发一条简短的播报。";
+  const action = promptFromPayload || "执行预设的定时任务，并向房间发一条简短的播报。";
+  const prompt = wrapTriggerPrompt(action);
 
   const task = await prisma.agentTask.create({
     data: {
       roomId: job.roomId,
       agentId: job.agentId,
       input: {
-        rawContent: prompt,
+        rawContent: action,
         normalizedContent: prompt,
-        trigger: "scheduled.job",
+        trigger: TRIGGER_SCHEDULED_JOB,
         jobId: job.id,
       } satisfies Prisma.InputJsonObject,
     },
@@ -201,11 +223,29 @@ function buildReminderPrompt(reminder: Reminder) {
   const parts = [`提醒到点了：${reminder.title}。`];
   if (reminder.body) parts.push(`附加说明：${reminder.body}。`);
   parts.push("请用一句温暖的话向房间发出这个提醒，不需要重复时间，也不要长篇大论。");
+  parts.push(BLOCKED_TOOL_DIRECTIVE);
   return parts.join("");
+}
+
+// Wraps a fire-time action prompt with a marker so the LLM treats it as "execute
+// now" instead of mistaking it for a fresh user request to schedule something.
+// Idempotent: if the marker is already present, returns the input unchanged.
+function wrapTriggerPrompt(action: string): string {
+  if (action.startsWith(TRIGGER_MARKER)) return action;
+  return (
+    `${TRIGGER_MARKER} 请立即执行下面的动作并把结果发到房间。\n` +
+    `${BLOCKED_TOOL_DIRECTIVE}\n\n` +
+    `动作：${action}`
+  );
 }
 
 function computeNextRun(cron: string, timezone: string, after: Date): Date {
   return CronExpressionParser.parse(cron, { tz: timezone, currentDate: after }).next().toDate();
+}
+
+function isRunOnce(job: ScheduledJob): boolean {
+  const payload = (job.payload ?? {}) as Record<string, unknown>;
+  return payload.runOnce === true;
 }
 
 async function releaseReminderClaim(reminder: Reminder, error: unknown) {
@@ -307,6 +347,7 @@ async function fireJobNow(jobId: string) {
 
   const now = new Date();
   const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
+  const runOnce = isRunOnce(job);
 
   const claim = await prisma.scheduledJob.updateMany({
     where: { id: jobId, enabled: true, nextRunAt: job.nextRunAt },
@@ -314,6 +355,7 @@ async function fireJobNow(jobId: string) {
       lastRunAt: now,
       nextRunAt: newNextRunAt,
       failCount: 0,
+      enabled: runOnce ? false : true,
     },
   });
   if (claim.count === 0) return;

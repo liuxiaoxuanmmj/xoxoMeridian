@@ -1,3 +1,4 @@
+import { SCHEDULER_BLOCKED_TOOLS, TRIGGER_MARKER } from "@/agent/scheduler-tick";
 import type { AgentPlan, LLMPlanRequest, LLMPlanResult, LLMProvider } from "@/agent/types";
 import { env } from "@/lib/env";
 
@@ -115,8 +116,8 @@ export function createMockLLMProvider(): LLMProvider {
           confidence: 0.88,
           requiredTools: ["reminder.create"],
           taskSteps: ["解析提醒内容", "解析提醒时间", "创建提醒事项", "回复聊天室"],
-          finalResponsePlan: "告诉用户提醒事项已经创建，并说明目前 MVP 会先展示在提醒列表。",
-          finalResponseText: "提醒已经帮你设好，先放在右侧提醒列表里。",
+          finalResponsePlan: "告诉用户提醒事项已经创建，并说明已经展示在右侧提醒列表。",
+          finalResponseText: "提醒已经帮你设好，放在右侧提醒列表里了。",
           toolInputs: {
             "reminder.create": {
               title: extractReminderTitle(prompt),
@@ -211,7 +212,23 @@ function createOpenAICompatibleProvider(config: {
                   "**不要**记一次性心情、临时想法、刚发生的对话内容（已经在 recent_messages 里）、或不确定的事情。" +
                   "memory.set 的 key 必须是点分小写并以 'shared.'（房间共享）/'me.'（请求者）/'her.'（对方）开头，例如 'her.allergy.peanut'、'shared.anniversary'、'me.timezone'。" +
                   "同一 key 会覆盖旧值，所以用稳定命名而不是带时间戳。" +
-                  "如果不确定某个事实是否已经记过，可以先用 memory.recall 查一下再决定要不要 memory.set。"
+                  "如果不确定某个事实是否已经记过，可以先用 memory.recall 查一下再决定要不要 memory.set。" +
+                  // scheduling guidance
+                  "【关于定时任务】当用户说的是**一次性时间点**（如'今晚八点/明天早上/后天/下周三/4月5日'等，且未出现'每/以后每/每天/每周'），" +
+                  "必须走一次性路径：优先用 reminder.create 并给出 dueAt；若必须由 agent 执行某个 prompt（例如'今晚八点给我发一首诗'），" +
+                  "用 **schedule.create 的 fireAt 字段**（ISO-8601 带时区偏移，例如 '2026-05-09T20:40:00+08:00'），它会自动以 runOnce 单次触发。" +
+                  "不要再用 cron+runOnce 表达'今天某点某分'这种**绝对时间点**：planning 延迟几秒就可能把当前时间推过目标分钟，cron 的 next() 会直接跳到第二天。" +
+                  "只有当用户是**真正的重复周期**（每周六、每天早上、工作日晚上）时才用 cron。" +
+                  "当用户想**修改**已有定时任务（例如'改成每晚'/'其实我只要今晚一次'），优先用 schedule.update，而不是 cancel+create。" +
+                  "final_response_text 中的承诺必须与 tool_inputs 的动作一一对应：" +
+                  "说'每天/每晚'就必须有不带 runOnce 的 schedule.create(cron=...) 或 runOnce=false 的 schedule.update；" +
+                  "说'只今晚一次/只一次/某个具体时间'就必须有 reminder.create、schedule.create(fireAt=...) 或 schedule.update(runOnce=true)。" +
+                  "若用户消息里同时出现了旧任务要取消 + 新任务要安排，请在同一轮里同时输出取消和创建/更新两类工具调用。" +
+                  // triggered-fire awareness
+                  `【关于已触发的任务】如果 user_prompt 以'${TRIGGER_MARKER}'开头，意味着系统**已经触发**了你之前安排好的任务——直接执行其中描述的动作并写到 final_response_text，**不要**再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。这一轮的 user_prompt 不是用户的请求，而是触发回调。` +
+                  // validation retry handling
+                  "如果本轮 user 消息的 JSON 里出现了 validation_feedback 字段，说明上一轮的 plan 被一致性校验拦下了。" +
+                  "请认真阅读 validation_feedback.issues 逐条修正，重新生成完整的 plan（不是在上一轮上打补丁），输出仍然只能是 JSON。"
               },
               {
                 role: "user",
@@ -219,6 +236,13 @@ function createOpenAICompatibleProvider(config: {
                   user_prompt: request.prompt,
                   room_context: request.roomContext,
                   available_tools: request.availableTools,
+                  validation_feedback: request.validationFeedback
+                    ? {
+                        note: "上一轮的 plan 存在以下不一致，请根据反馈重新生成 plan，注意修正 tool_inputs 与 final_response_text 的一致性：",
+                        previous_plan: request.validationFeedback.previousPlan,
+                        issues: request.validationFeedback.issues
+                      }
+                    : undefined,
                   required_shape: {
                     intent: "string",
                     confidence: "number between 0 and 1",

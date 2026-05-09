@@ -61,6 +61,38 @@ type QWeatherSnapshot = {
   daily?: QWeatherDaily[];
 };
 
+type WeatherSnapshotResult = ReturnType<typeof formatSnapshot> | ReturnType<typeof mockWeather>;
+
+export async function fetchWeatherSnapshot(
+  cityInput: string,
+  includeForecast = false
+): Promise<WeatherSnapshotResult> {
+  const city = cityInput.trim();
+  if (!city) throw new Error("city is required.");
+
+  const provider = process.env.WEATHER_PROVIDER ?? "mock";
+  const apiKey = process.env.WEATHER_API_KEY ?? "";
+
+  if (provider !== "qweather") {
+    console.warn(
+      `[weather.get] using mock — WEATHER_PROVIDER="${provider}" (need "qweather")`
+    );
+    return mockWeather(city, `WEATHER_PROVIDER=${provider}`);
+  }
+  if (!apiKey) {
+    console.warn("[weather.get] using mock — WEATHER_API_KEY is empty");
+    return mockWeather(city, "WEATHER_API_KEY missing");
+  }
+
+  try {
+    return await getQWeather(city, includeForecast, apiKey);
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[weather.get] qweather call failed, falling back to mock: ${reason}`);
+    return mockWeather(city, reason);
+  }
+}
+
 export function createWeatherTool(): AgentTool<WeatherInput> {
   return {
     name: "weather.get",
@@ -81,27 +113,7 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
     },
     async execute(input: WeatherInput, context: ToolExecutionContext) {
       const city = input.city?.trim() || inferPartnerCity(context) || "Beijing";
-      const provider = process.env.WEATHER_PROVIDER ?? "mock";
-      const apiKey = process.env.WEATHER_API_KEY ?? "";
-
-      if (provider !== "qweather") {
-        console.warn(
-          `[weather.get] using mock — WEATHER_PROVIDER="${provider}" (need "qweather")`
-        );
-        return mockWeather(city, `WEATHER_PROVIDER=${provider}`);
-      }
-      if (!apiKey) {
-        console.warn("[weather.get] using mock — WEATHER_API_KEY is empty");
-        return mockWeather(city, "WEATHER_API_KEY missing");
-      }
-
-      try {
-        return await getQWeather(city, Boolean(input.includeForecast), apiKey);
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        console.warn(`[weather.get] qweather call failed, falling back to mock: ${reason}`);
-        return mockWeather(city, reason);
-      }
+      return fetchWeatherSnapshot(city, Boolean(input.includeForecast));
     }
   };
 }

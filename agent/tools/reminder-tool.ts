@@ -14,7 +14,7 @@ type ReminderInput = {
 export function createReminderTool(): AgentTool<ReminderInput> {
   return {
     name: "reminder.create",
-    description: "Create a persistent reminder. MVP stores it for display; future notification workers can deliver it.",
+    description: "Create a persistent reminder. Stored in the reminder list; notification delivery can be added via a notification worker.",
     schema: {
       type: "object",
       required: ["title"],

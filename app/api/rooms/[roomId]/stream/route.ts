@@ -1,5 +1,6 @@
 import { assertRoomAccess } from "@/lib/access";
 import { requireCurrentUser } from "@/lib/auth";
+import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,11 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
   const user = await requireCurrentUser();
   await assertRoomAccess(params.roomId, user.id);
 
+  // Capture the session version that the current cookie was signed with;
+  // every tick compares against the DB so a newer login elsewhere kicks
+  // this stream within ~2 seconds.
+  const initialSessionVersion = user.sessionVersion;
+
   const encoder = new TextEncoder();
   let closed = false;
 
@@ -22,8 +28,49 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
 
   const stream = new ReadableStream({
     async start(controller) {
+      let interval: ReturnType<typeof setInterval> | null = null;
+
+      const stop = () => {
+        if (closed) return;
+        closed = true;
+        if (interval) {
+          clearInterval(interval);
+          interval = null;
+        }
+        try {
+          controller.close();
+        } catch {
+          // controller already closed — fine
+        }
+      };
+
       const sendSnapshot = async () => {
-        if (closed) {
+        if (closed) return;
+
+        // 1. Session still the latest? If not, the cookie on this browser has
+        //    been superseded by a newer login — push a kick and bail.
+        const current = await prisma.user.findUnique({
+          where: { id: user.id },
+          select: { sessionVersion: true },
+        });
+        if (!current || current.sessionVersion !== initialSessionVersion) {
+          controller.enqueue(
+            encoder.encode(sse({ reason: "session_superseded" }, "kicked"))
+          );
+          stop();
+          return;
+        }
+
+        // 2. Room still exists and user is still a participant? A delete from
+        //    another client cascades the participant row, so this single
+        //    lookup covers both "room deleted" and "user ejected".
+        const participant = await prisma.roomParticipant.findUnique({
+          where: { roomId_userId: { roomId: params.roomId, userId: user.id } },
+          select: { id: true },
+        });
+        if (!participant) {
+          controller.enqueue(encoder.encode(sse({}, "roomDeleted")));
+          stop();
           return;
         }
 
@@ -45,11 +92,11 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
       };
 
       await sendSnapshot();
-      const interval = setInterval(sendSnapshot, 2000);
+      if (closed) return;
+      interval = setInterval(sendSnapshot, 2000);
 
       request.signal.addEventListener("abort", () => {
-        clearInterval(interval);
-        controller.close();
+        stop();
       });
     }
   });

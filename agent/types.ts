@@ -45,6 +45,10 @@ export type LLMPlanRequest = {
   prompt: string;
   roomContext: StructuredRoomContext;
   availableTools: LLMToolDescriptor[];
+  validationFeedback?: {
+    previousPlan: AgentPlan;
+    issues: string;
+  };
 };
 
 export type LLMPlanResult = AgentPlan & {

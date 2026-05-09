@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { detectAgentTarget } from "@/lib/agent-detection";
+import { filterToolsForTrigger } from "@/agent/agent-runtime";
 import { createMockLLMProvider } from "@/agent/llm-provider";
 import { createToolRegistry } from "@/agent/tool-registry";
 
@@ -32,6 +33,7 @@ describe("agent dispatch primitives", () => {
       "schedule.cancel",
       "schedule.create",
       "schedule.list",
+      "schedule.update",
       "timezone.compare",
       "weather.get"
     ]);
@@ -60,5 +62,44 @@ describe("agent dispatch primitives", () => {
     expect(result.toolInputs["reminder.create"]).toMatchObject({
       title: "给她发早安"
     });
+  });
+});
+
+describe("filterToolsForTrigger", () => {
+  const allTools = [
+    { name: "memory.recall" },
+    { name: "memory.set" },
+    { name: "reminder.create" },
+    { name: "schedule.create" },
+    { name: "schedule.update" },
+    { name: "schedule.cancel" },
+    { name: "schedule.list" },
+    { name: "weather.get" }
+  ];
+
+  it("passes through unchanged for user-typed prompts (no trigger)", () => {
+    expect(filterToolsForTrigger(allTools, undefined)).toEqual(allTools);
+  });
+
+  it("passes through unchanged for mention/slash-command triggers", () => {
+    expect(filterToolsForTrigger(allTools, "mention")).toEqual(allTools);
+    expect(filterToolsForTrigger(allTools, "slash-command")).toEqual(allTools);
+  });
+
+  it("strips writeable scheduling tools when trigger is scheduled.job", () => {
+    const filtered = filterToolsForTrigger(allTools, "scheduled.job").map((t) => t.name);
+    // Read-only schedule.list stays so the agent can still introspect.
+    expect(filtered).toContain("schedule.list");
+    expect(filtered).not.toContain("schedule.create");
+    expect(filtered).not.toContain("schedule.update");
+    expect(filtered).not.toContain("schedule.cancel");
+    expect(filtered).not.toContain("reminder.create");
+  });
+
+  it("strips writeable scheduling tools when trigger is reminder.fired", () => {
+    const filtered = filterToolsForTrigger(allTools, "reminder.fired").map((t) => t.name);
+    expect(filtered).not.toContain("schedule.create");
+    expect(filtered).not.toContain("reminder.create");
+    expect(filtered).toContain("memory.recall");
   });
 });

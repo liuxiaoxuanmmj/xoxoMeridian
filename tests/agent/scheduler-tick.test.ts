@@ -163,7 +163,7 @@ const mockPrisma = {
 
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 
-const { schedulerTick, clearAllTimers } = await import("@/agent/scheduler-tick");
+const { schedulerTick, clearAllTimers, TRIGGER_MARKER } = await import("@/agent/scheduler-tick");
 
 function makeReminder(overrides: Partial<ReminderRow> = {}): ReminderRow {
   return {
@@ -272,6 +272,54 @@ describe("schedulerTick - scheduled job CAS", () => {
 
     expect(agentTasks).toHaveLength(1);
     expect(jobs[0].nextRunAt.getTime()).toBeGreaterThan(now.getTime());
+  });
+
+  it("disables a runOnce job after a successful fire (polling path)", async () => {
+    jobs.push(makeJob({ payload: { prompt: "发诗", runOnce: true } }));
+
+    await schedulerTick(new Date());
+
+    expect(agentTasks).toHaveLength(1);
+    expect(jobs[0].enabled).toBe(false);
+  });
+
+  it("keeps a non-runOnce job enabled after firing", async () => {
+    jobs.push(makeJob({ payload: { prompt: "发诗" } }));
+
+    await schedulerTick(new Date());
+
+    expect(agentTasks).toHaveLength(1);
+    expect(jobs[0].enabled).toBe(true);
+  });
+
+  it("wraps the fired prompt with a trigger marker so the agent does not re-schedule", async () => {
+    jobs.push(makeJob({ payload: { prompt: "向房间发一首苏轼的诗词", runOnce: true } }));
+
+    await schedulerTick(new Date());
+
+    expect(agentTasks).toHaveLength(1);
+    const input = agentTasks[0].input as { trigger: string; normalizedContent: string; rawContent: string };
+    expect(input.trigger).toBe("scheduled.job");
+    expect(input.normalizedContent).toContain(TRIGGER_MARKER);
+    expect(input.normalizedContent).toContain("不要再调用 schedule.create");
+    expect(input.normalizedContent).toContain("向房间发一首苏轼的诗词");
+    // rawContent stays as the bare action so it round-trips into logs cleanly.
+    expect(input.rawContent).toBe("向房间发一首苏轼的诗词");
+  });
+
+  it("re-enables a runOnce job on dispatch failure so it can retry", async () => {
+    const oldNext = new Date(Date.now() - 1000);
+    jobs.push(makeJob({ nextRunAt: oldNext, payload: { prompt: "发诗", runOnce: true } }));
+
+    dispatchHook = async () => {
+      throw new Error("boom");
+    };
+
+    await schedulerTick(new Date());
+
+    expect(jobs[0].failCount).toBe(1);
+    expect(jobs[0].enabled).toBe(true);
+    expect(jobs[0].nextRunAt.getTime()).toBe(oldNext.getTime());
   });
 
   it("rolls back nextRunAt and increments failCount on dispatch failure", async () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AgentStatusBadge } from "@/components/chat/AgentStatusBadge";
@@ -22,6 +23,7 @@ export function ChatApp({
   const [draftPrompt, setDraftPrompt] = useState("");
   const [connState, setConnState] = useState<ConnState>("connecting");
   const roomId = snapshot.room.id;
+  const router = useRouter();
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomId}/messages`, {
@@ -70,10 +72,11 @@ export function ChatApp({
 
   useEffect(() => {
     let cancelled = false;
+    let terminated = false;
     let source: EventSource | null = null;
 
     const connect = () => {
-      if (cancelled) return;
+      if (cancelled || terminated) return;
       setConnState(reconnectRef.current.attempt === 0 ? "connecting" : "reconnecting");
       source = new EventSource(`/api/rooms/${roomId}/stream`);
 
@@ -90,8 +93,29 @@ export function ChatApp({
         setSnapshot(JSON.parse((event as MessageEvent).data));
       });
 
+      // Server tells us this cookie has been superseded by a newer login on
+      // another browser. Close the stream permanently (skip reconnect), drop
+      // the cookie, bounce to the login page.
+      source.addEventListener("kicked", () => {
+        terminated = true;
+        source?.close();
+        source = null;
+        void fetch("/api/auth/logout", { method: "POST" }).finally(() => {
+          router.replace("/");
+        });
+      });
+
+      // Server tells us the room we're viewing was deleted (or we were
+      // removed from it). Fall back to the default room via /chat.
+      source.addEventListener("roomDeleted", () => {
+        terminated = true;
+        source?.close();
+        source = null;
+        router.replace("/chat");
+      });
+
       source.addEventListener("error", () => {
-        if (cancelled) return;
+        if (cancelled || terminated) return;
         source?.close();
         source = null;
         setConnState("reconnecting");
@@ -113,7 +137,7 @@ export function ChatApp({
       reconnectRef.current.attempt = 0;
       source?.close();
     };
-  }, [roomId, refresh]);
+  }, [roomId, refresh, router]);
 
   const participants = useMemo(() => snapshot.room.participants.map((participant) => participant.user), [snapshot.room.participants]);
   const latestStatus = snapshot.agentStatus.recentTasks[0]?.status;
@@ -151,7 +175,7 @@ export function ChatApp({
           <MessageComposer externalDraft={draftPrompt} roomId={roomId} onSent={appendMessage} />
         </section>
 
-        <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} scheduledJobs={snapshot.scheduledJobs ?? []} />
+        <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} roomId={roomId} scheduledJobs={snapshot.scheduledJobs ?? []} />
       </div>
     </main>
   );

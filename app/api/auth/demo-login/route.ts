@@ -25,7 +25,7 @@ export async function POST(request: Request) {
     const room = await getDefaultRoomForUser(user);
     await assertRoomCapacity(room.id);
 
-    setSessionCookie(user.id);
+    await setSessionCookie(user.id);
 
     return jsonOk({ user, room });
   } catch (error) {
