@@ -1,7 +1,18 @@
 import { prisma } from "@/lib/prisma";
+import { listRoomsForUser } from "@/lib/room-list";
 
-export async function getRoomSnapshot(roomId: string) {
-  const [messages, notes, memos, reminders, scheduledJobs, runningTasks, recentTasks, room] = await Promise.all([
+export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string) {
+  const [
+    messages,
+    notes,
+    memos,
+    reminders,
+    scheduledJobs,
+    runningTasks,
+    recentTasks,
+    room,
+    rooms
+  ] = await Promise.all([
     prisma.message.findMany({
       where: { roomId },
       orderBy: { createdAt: "asc" },
@@ -59,7 +70,10 @@ export async function getRoomSnapshot(roomId: string) {
           orderBy: { joinedAt: "asc" }
         }
       }
-    })
+    }),
+    // Sidebar room list piggy-backed onto the snapshot so LeftRail updates in
+    // lockstep with the active room (~2s tick). Skipped when no userId.
+    userIdForRoomList ? listRoomsForUser(userIdForRoomList) : Promise.resolve(undefined)
   ]);
 
   return {
@@ -73,6 +87,7 @@ export async function getRoomSnapshot(roomId: string) {
       isWorking: runningTasks > 0,
       runningTasks,
       recentTasks
-    }
+    },
+    rooms
   };
 }

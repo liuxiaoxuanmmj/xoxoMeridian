@@ -117,4 +117,5 @@ export type RoomSnapshot = {
       error?: string | null;
     }>;
   };
+  rooms?: RoomSummary[];
 };

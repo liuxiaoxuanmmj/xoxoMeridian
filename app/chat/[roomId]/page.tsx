@@ -15,7 +15,7 @@ export default async function ChatRoomPage({ params }: { params: { roomId: strin
   // ejected. Bounce to /chat, which redirects to the user's default room.
   if (!participant) redirect("/chat");
 
-  const snapshot = await getRoomSnapshot(params.roomId);
+  const snapshot = await getRoomSnapshot(params.roomId, user.id);
 
   return (
     <ChatApp

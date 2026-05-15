@@ -54,7 +54,7 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
       if (!entry || !city) {
         results.push({
           subject,
-          displayName: entry?.user.displayName ?? (subject === "self" ? "我" : "她"),
+          displayName: entry?.user.displayName ?? (subject === "self" ? "本人" : "对方"),
           city,
           snapshot: null,
           error: city ? null : "city not set on profile"

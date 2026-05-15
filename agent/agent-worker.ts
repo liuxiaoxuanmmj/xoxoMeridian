@@ -1,10 +1,13 @@
 import { dispatchPendingAgentTasks } from "@/agent/task-dispatcher";
 import { schedulerTick, clearAllTimers } from "@/agent/scheduler-tick";
+import { cleanupExpiredSessions } from "@/lib/auth";
+import { cleanupExpiredResetTokens } from "@/lib/password-reset";
 import { env } from "@/lib/env";
 
 const SCHEDULER_TICK_MS = 5_000;
 const SCHEDULER_JITTER_MS = 1_000;
 const DISPATCH_MAX_BACKOFF_MS = 60_000;
+const SESSION_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 let stopped = false;
 
@@ -35,6 +38,7 @@ async function dispatchLoop() {
 
 async function schedulerLoop() {
   console.log(`[worker] scheduler loop started, tick ~${SCHEDULER_TICK_MS}ms`);
+  let lastCleanup = Date.now();
 
   while (!stopped) {
     try {
@@ -43,6 +47,19 @@ async function schedulerLoop() {
         result.reminders.fired + result.reminders.skipped + result.reminders.failed +
         result.jobs.fired + result.jobs.skipped + result.jobs.failed;
       if (moved > 0) console.log("[worker] scheduler tick:", result);
+
+      // Periodic session cleanup
+      const now = Date.now();
+      if (now - lastCleanup >= SESSION_CLEANUP_INTERVAL_MS) {
+        try {
+          await cleanupExpiredSessions();
+          await cleanupExpiredResetTokens();
+          console.log("[worker] expired sessions and reset tokens cleaned");
+          lastCleanup = now;
+        } catch (error) {
+          console.error("[worker] cleanup failed:", error);
+        }
+      }
     } catch (error) {
       console.error("[worker] scheduler tick failed:", error);
     }

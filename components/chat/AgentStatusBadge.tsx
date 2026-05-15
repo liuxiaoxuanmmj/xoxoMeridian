@@ -1,13 +1,14 @@
+import { AGENT_DISPLAY_NAME } from "@/lib/identity";
 import { cn } from "@/lib/utils";
 
 export function AgentStatusBadge({ isWorking, latestStatus }: { isWorking: boolean; latestStatus?: string }) {
   const label = isWorking
     ? latestStatus === "pending"
-      ? "小助手正在理解任务"
-      : "小助手正在调用工具"
+      ? `${AGENT_DISPLAY_NAME}正在理解任务`
+      : `${AGENT_DISPLAY_NAME}正在调用工具`
     : latestStatus === "failed"
-      ? "小助手执行失败"
-      : "小助手已就绪";
+      ? `${AGENT_DISPLAY_NAME}执行失败`
+      : `${AGENT_DISPLAY_NAME}已就绪`;
 
   return (
     <div

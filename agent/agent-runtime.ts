@@ -3,6 +3,7 @@ import type { Prisma } from "@prisma/client";
 import { buildAgentContext } from "@/agent/context-builder";
 import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
+import { buildClarifyPlan, repairPlan } from "@/agent/plan-repair";
 import { formatIssuesForLLM, validatePlan } from "@/agent/plan-validator";
 import {
   SCHEDULER_BLOCKED_TOOLS,
@@ -71,7 +72,8 @@ export async function runAgentTask(taskId: string) {
       const planResult = await provider.plan({
         prompt,
         roomContext: runtimeContext.roomContext,
-        availableTools
+        availableTools,
+        agentSystemPrompt: task.agent.systemPrompt
       });
 
       plan = planResult;
@@ -161,6 +163,7 @@ export async function runAgentTask(taskId: string) {
           prompt,
           roomContext: runtimeContext.roomContext,
           availableTools,
+          agentSystemPrompt: task.agent.systemPrompt,
           validationFeedback: {
             previousPlan: plan,
             issues: formatIssuesForLLM(planIssues)
@@ -224,21 +227,23 @@ export async function runAgentTask(taskId: string) {
 
       planIssues = validatePlan(plan, prompt);
       if (planIssues.length > 0) {
-        await tracer.event("agent.plan.validation.fallback", {
-          issueCodes: planIssues.map((i) => i.code),
-          issues: planIssues,
-          discardedPlan: plan
+        const repairedFromCodes = planIssues.map((i) => i.code);
+        const { repaired, remainingIssues } = repairPlan(plan, prompt, planIssues);
+        plan = repaired;
+        await tracer.event("agent.plan.validation.repaired", {
+          repairedFromCodes,
+          remainingCodes: remainingIssues.map((i) => i.code),
+          remainingIssues
         });
-        plan = {
-          intent: "clarify_schedule",
-          confidence: 0,
-          requiredTools: [],
-          taskSteps: ["一致性校验未通过，改为请用户澄清"],
-          finalResponsePlan: "由于时间语义不明确，让用户再确认一次。",
-          finalResponseText:
-            "稍等，我刚刚没对齐你的时间要求，能再确认一下吗？例如「今晚 20:00 发一次」或者「以后每晚 20:00 都发」——我按你说的来设。",
-          toolInputs: {}
-        };
+
+        if (remainingIssues.length > 0) {
+          await tracer.event("agent.plan.validation.fallback", {
+            issueCodes: remainingIssues.map((i) => i.code),
+            issues: remainingIssues,
+            discardedPlan: plan
+          });
+          plan = buildClarifyPlan(remainingIssues, prompt);
+        }
       }
     }
     // ------------------------------------------------------------------------
@@ -401,7 +406,7 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
       | undefined;
 
     if (output?.provider === "qweather") {
-      const city = output.city ?? "她那边";
+      const city = output.city ?? "对方那边";
       const cond = output.condition ?? "未知";
       const temp = output.temperatureC;
       const feels = output.feelsLikeC;
@@ -431,7 +436,7 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
       return body;
     }
 
-    return `${output?.city ?? "她那边"}现在天气：${output?.condition ?? "已查询"}，约 ${output?.temperatureC ?? "--"}°C。${
+    return `${output?.city ?? "对方那边"}现在天气：${output?.condition ?? "已查询"}，约 ${output?.temperatureC ?? "--"}°C。${
       output?.advice ?? "出门前再看一眼实时天气会更稳。"
     }`;
   }
@@ -445,7 +450,7 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
         }
       | undefined;
     return `${output?.from?.label ?? "你"}这边是 ${output?.from?.time ?? "当前时间未知"}；${
-      output?.to?.label ?? "她"
+      output?.to?.label ?? "对方"
     }那边是 ${output?.to?.time ?? "当前时间未知"}。${output?.suggestion ?? ""}`;
   }
 

@@ -43,9 +43,9 @@ export async function buildAgentContext(roomId: string) {
     room: { name: room.name, slug: room.slug },
     participants: room.participants.map((participant) => ({
       displayName: participant.user.displayName,
-      role: participant.user.demoRole,
       city: participant.user.profile?.city ?? null,
-      timezone: participant.user.profile?.timezone ?? null
+      timezone: participant.user.profile?.timezone ?? null,
+      profileNote: participant.user.profile?.profileNote ?? null
     })),
     recentMessages: messages.map((message) => ({
       from: message.sender?.displayName ?? message.senderAgent?.displayName ?? message.senderType,

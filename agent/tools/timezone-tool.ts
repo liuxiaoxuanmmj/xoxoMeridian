@@ -26,12 +26,12 @@ export function createTimezoneTool(): AgentTool<TimezoneInput> {
 
       return {
         from: {
-          label: input.fromLabel ?? first?.displayName ?? "我",
+          label: input.fromLabel ?? first?.displayName ?? "本人",
           timezone: fromTimezone,
           time: formatTime(fromTimezone)
         },
         to: {
-          label: input.toLabel ?? second?.displayName ?? "她",
+          label: input.toLabel ?? second?.displayName ?? "对方",
           timezone: toTimezone,
           time: formatTime(toTimezone)
         },

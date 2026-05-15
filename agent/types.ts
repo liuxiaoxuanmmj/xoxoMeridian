@@ -22,9 +22,9 @@ export type StructuredRoomContext = {
   room: { name: string; slug: string };
   participants: Array<{
     displayName: string;
-    role: string | null;
     city: string | null;
     timezone: string | null;
+    profileNote: string | null;
   }>;
   recentMessages: Array<{ from: string; content: string; at: string }>;
   pinnedMemos: Array<{ title: string; content: string }>;
@@ -45,6 +45,7 @@ export type LLMPlanRequest = {
   prompt: string;
   roomContext: StructuredRoomContext;
   availableTools: LLMToolDescriptor[];
+  agentSystemPrompt?: string | null;
   validationFeedback?: {
     previousPlan: AgentPlan;
     issues: string;

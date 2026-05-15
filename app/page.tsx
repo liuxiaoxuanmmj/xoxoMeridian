@@ -1,6 +1,6 @@
 import { redirect } from "next/navigation";
 
-import { LoginForm } from "@/components/LoginForm";
+import { AuthPanel } from "@/components/auth/AuthPanel";
 import { getCurrentUser } from "@/lib/auth";
 
 export default async function HomePage() {
@@ -9,5 +9,5 @@ export default async function HomePage() {
     redirect("/chat");
   }
 
-  return <LoginForm />;
+  return <AuthPanel />;
 }

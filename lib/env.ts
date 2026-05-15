@@ -15,11 +15,10 @@ const baseSchema = z.object({
 
   SESSION_SECRET: z.string().min(32, "SESSION_SECRET must be at least 32 chars"),
   SESSION_MAX_AGE_SECONDS: z.coerce.number().int().positive().default(60 * 60 * 24 * 7),
-  DEMO_LOGIN_PASSWORD: z.string().min(8, "DEMO_LOGIN_PASSWORD must be at least 8 chars"),
+  INVITE_CODE: z.string().min(8, "INVITE_CODE must be at least 8 chars"),
+  PASSWORD_MIN_LENGTH: z.coerce.number().int().min(6).default(8),
 
   DEMO_ROOM_SLUG: z.string().default("our-room"),
-  DEMO_MY_EMAIL: z.string().email().default("me@example.com"),
-  DEMO_HER_EMAIL: z.string().email().default("her@example.com"),
 
   LLM_PROVIDER: z.string().default("openai-compatible"),
   LLM_API_KEY: z.string().optional().default(""),
@@ -42,13 +41,14 @@ const baseSchema = z.object({
     .enum(["true", "false"])
     .default("false")
     .transform((v) => v === "true"),
+  CHAT_LOG_DIR: z.string().optional(),
 });
 
 const lenientPlaceholders = {
   DATABASE_URL: "postgresql://placeholder@localhost:5432/placeholder",
   APP_BASE_URL: "http://localhost:3000",
   SESSION_SECRET: "build-time-placeholder-build-time-placeholder",
-  DEMO_LOGIN_PASSWORD: "build-time-placeholder",
+  INVITE_CODE: "build-time-placeholder",
 } as const;
 
 function parseEnv() {

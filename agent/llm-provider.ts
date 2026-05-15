@@ -1,6 +1,7 @@
 import { SCHEDULER_BLOCKED_TOOLS, TRIGGER_MARKER } from "@/agent/scheduler-tick";
 import type { AgentPlan, LLMPlanRequest, LLMPlanResult, LLMProvider } from "@/agent/types";
 import { env } from "@/lib/env";
+import { AGENT_DISPLAY_NAME, MENTION_AGENT } from "@/lib/identity";
 
 type OpenAICompatibleResponse = {
   choices?: Array<{
@@ -58,6 +59,7 @@ export function createMockLLMProvider(): LLMProvider {
       }
 
       if (hasTimezone) {
+        const [self, partner] = request.roomContext.participants;
         return withRaw({
           intent: "compare_timezone",
           confidence: 0.84,
@@ -67,10 +69,10 @@ export function createMockLLMProvider(): LLMProvider {
           finalResponseText: "我已经把双方所在时区的当前时间整理好了。",
           toolInputs: {
             "timezone.compare": {
-              fromLabel: "我",
-              fromTimezone: "Asia/Shanghai",
-              toLabel: "她",
-              toTimezone: "Europe/London"
+              fromLabel: self?.displayName ?? "本人",
+              fromTimezone: self?.timezone ?? "Asia/Shanghai",
+              toLabel: partner?.displayName ?? "对方",
+              toTimezone: partner?.timezone ?? "Europe/London"
             }
           }
         });
@@ -135,7 +137,7 @@ export function createMockLLMProvider(): LLMProvider {
         requiredTools: [],
         taskSteps: ["直接回复用户"],
         finalResponsePlan: "直接回答用户的问题。",
-        finalResponseText: "我是这个房间的小助手，可以帮你查天气、对时区、记便签、写备忘和设提醒。",
+        finalResponseText: `我是这个房间的${AGENT_DISPLAY_NAME}，可以帮你查天气、对时区、记便签、写备忘和设提醒。`,
         toolInputs: {}
       });
     }
@@ -159,7 +161,7 @@ function withRaw(plan: AgentPlan): LLMPlanResult {
 
 function extractReminderTitle(prompt: string) {
   const cleaned = prompt
-    .replace(/^@小助手/u, "")
+    .replace(new RegExp(`^${MENTION_AGENT}`, "u"), "")
     .replace(/^\/agent/u, "")
     .replace(/明天/u, "")
     .replace(/提醒我/u, "")
@@ -182,6 +184,18 @@ function createOpenAICompatibleProvider(config: {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
 
+      const personaSegment = request.agentSystemPrompt?.trim()
+        ? request.agentSystemPrompt.trim()
+        : `你是房间内的${AGENT_DISPLAY_NAME}：本地生活助手 Agent 的任务规划器。`;
+
+      const profileLines = request.roomContext.participants
+        .filter((p) => p.profileNote && p.profileNote.trim().length > 0)
+        .map((p) => `- ${p.displayName}: ${p.profileNote!.trim()}`)
+        .join("\n");
+      const profileBlock = profileLines
+        ? `\n【参与者档案（用户自己提供，作为额外背景）】\n${profileLines}\n`
+        : "";
+
       try {
         const response = await fetch(`${config.baseURL.replace(/\/$/, "")}/chat/completions`, {
           method: "POST",
@@ -198,13 +212,15 @@ function createOpenAICompatibleProvider(config: {
               {
                 role: "system",
                 content:
-                  "你是本地生活助手 Agent 的任务规划器。只返回 JSON，不要 Markdown，不要代码块包裹。" +
+                  personaSegment +
+                  profileBlock +
+                  "只返回 JSON，不要 Markdown，不要代码块包裹。" +
                   "必须从 available_tools 中选择工具，不能发明工具；如果用户的请求不需要任何工具（例如自我介绍、闲聊、能力问答），required_tools 留空数组。" +
                   "**tool_inputs 中每个工具的参数字段必须严格按照 available_tools[i].schema 里列出的字段名命名**，不要自行发明字段名（例如 schema 写 title 就不能写 message）。" +
                   "schema 里 required 列出的字段必须提供。" +
                   "如果**同一个工具需要被调用多次**（例如要写多条记忆），把 tool_inputs[tool] 写成对象数组，每个元素是一次调用的参数，例如 tool_inputs['memory.set'] = [{key,value},{key,value}]；只调用一次时直接给单个对象即可。" +
                   "final_response_text 是**实际发给用户的中文回复正文**，要直接、温暖、口语化，可以引用 room_context 里的事实。" +
-                  "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的小助手，可以帮你查天气、记便签、设提醒'）。" +
+                  "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的助手，可以帮你查天气、记便签、设提醒'）。" +
                   "final_response_plan 是给开发者看的内部规划摘要，与 final_response_text 不同。" +
                   // memory guidance
                   "【关于记忆】room_context.semantic_memory 是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
@@ -218,6 +234,7 @@ function createOpenAICompatibleProvider(config: {
                   "必须走一次性路径：优先用 reminder.create 并给出 dueAt；若必须由 agent 执行某个 prompt（例如'今晚八点给我发一首诗'），" +
                   "用 **schedule.create 的 fireAt 字段**（ISO-8601 带时区偏移，例如 '2026-05-09T20:40:00+08:00'），它会自动以 runOnce 单次触发。" +
                   "不要再用 cron+runOnce 表达'今天某点某分'这种**绝对时间点**：planning 延迟几秒就可能把当前时间推过目标分钟，cron 的 next() 会直接跳到第二天。" +
+                  "如果实在用 cron 表达一次性意图（**不推荐**），那么 `runOnce: true` **必须**和 cron 一起出现在 schedule.create 入参里，缺一不可。" +
                   "只有当用户是**真正的重复周期**（每周六、每天早上、工作日晚上）时才用 cron。" +
                   "当用户想**修改**已有定时任务（例如'改成每晚'/'其实我只要今晚一次'），优先用 schedule.update，而不是 cancel+create。" +
                   "final_response_text 中的承诺必须与 tool_inputs 的动作一一对应：" +

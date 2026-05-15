@@ -1,26 +1,18 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
+import { generateSecureToken } from "@/lib/crypto-utils";
 
 export const USER_COOKIE = "xoxo_session";
 
-export type DemoRole = "me" | "her";
-
 export type SessionPayload = {
+  sessionId: string;
   userId: string;
-  version: number;
   expiresAt: number;
 };
-
-export async function getDemoUserByRole(role: DemoRole) {
-  return prisma.user.findUnique({
-    where: { demoRole: role },
-    include: { profile: true },
-  });
-}
 
 function hmac(payload: string): Buffer {
   return createHmac("sha256", env.SESSION_SECRET).update(payload).digest();
@@ -34,9 +26,49 @@ function tryDecode(input: string): Buffer | null {
   }
 }
 
-export function signSession(userId: string, version: number, now = Date.now()): string {
-  const expiresAt = Math.floor(now / 1000) + env.SESSION_MAX_AGE_SECONDS;
-  const payload = `${userId}.${version}.${expiresAt}`;
+// Generate a cryptographically secure random session token
+function generateSessionToken(): string {
+  return generateSecureToken();
+}
+
+// Get client IP address from request headers
+function getClientIp(): string | null {
+  const headersList = headers();
+  // Check common proxy headers
+  const forwarded = headersList.get("x-forwarded-for");
+  if (forwarded) {
+    return forwarded.split(",")[0].trim();
+  }
+  const realIp = headersList.get("x-real-ip");
+  if (realIp) {
+    return realIp;
+  }
+  return null;
+}
+
+// Check if request came through HTTPS (considering proxy headers)
+export function isSecureRequest(): boolean {
+  // Always check APP_BASE_URL first - this is the source of truth
+  if (env.APP_BASE_URL.startsWith("https://")) {
+    return true;
+  }
+  // If APP_BASE_URL is http, respect x-forwarded-proto header in case of proxy
+  const headersList = headers();
+  const proto = headersList.get("x-forwarded-proto");
+  if (proto) {
+    return proto === "https";
+  }
+  return false;
+}
+
+// Get user agent from request headers
+function getUserAgent(): string | null {
+  const headersList = headers();
+  return headersList.get("user-agent");
+}
+
+export function signSession(sessionId: string, userId: string, expiresAt: number): string {
+  const payload = `${sessionId}.${userId}.${expiresAt}`;
   const sig = hmac(payload).toString("base64url");
   return `${Buffer.from(payload).toString("base64url")}.${sig}`;
 }
@@ -50,14 +82,11 @@ export function verifySession(token: string | undefined, now = Date.now()): Sess
   if (!payloadBuf) return null;
   const payload = payloadBuf.toString("utf8");
 
-  // payload format: `${userId}.${version}.${expiresAt}`
-  // userId (cuid) contains no dots, so splitting by "." yields exactly three pieces.
+  // payload format: `${sessionId}.${userId}.${expiresAt}`
   const pieces = payload.split(".");
   if (pieces.length !== 3) return null;
-  const [userId, versionStr, expiresStr] = pieces;
-  if (!userId) return null;
-  const version = Number.parseInt(versionStr, 10);
-  if (!Number.isFinite(version) || version < 0) return null;
+  const [sessionId, userId, expiresStr] = pieces;
+  if (!sessionId || !userId) return null;
   const expiresAt = Number.parseInt(expiresStr, 10);
   if (!Number.isFinite(expiresAt)) return null;
   if (Math.floor(now / 1000) >= expiresAt) return null;
@@ -68,37 +97,48 @@ export function verifySession(token: string | undefined, now = Date.now()): Sess
   if (provided.length !== expected.length) return null;
   if (!timingSafeEqual(provided, expected)) return null;
 
-  return { userId, version, expiresAt };
+  return { sessionId, userId, expiresAt };
 }
 
-export function verifyDemoPassword(provided: string): boolean {
-  const expected = Buffer.from(env.DEMO_LOGIN_PASSWORD);
-  const got = Buffer.from(provided);
-  if (expected.length !== got.length) return false;
-  return timingSafeEqual(expected, got);
-}
+export async function setSessionCookie(userId: string): Promise<string> {
+  const clientIp = getClientIp();
+  const userAgent = getUserAgent();
+  const now = Date.now();
+  const expiresAt = new Date(now + env.SESSION_MAX_AGE_SECONDS * 1000);
 
-export async function setSessionCookie(userId: string): Promise<number> {
-  // Bump the version first so any previously issued cookie (embedding the
-  // prior version) fails verification immediately — this is what enforces
-  // single-active-session across browsers.
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data: { sessionVersion: { increment: 1 } },
-    select: { sessionVersion: true },
+  // Invalidate all existing sessions for this user to ensure only one active session
+  // This prevents old tabs from interfering with newly logged-in sessions
+  await prisma.session.deleteMany({
+    where: { userId },
   });
+
+  // Create new session in database
+  const sessionToken = generateSessionToken();
+  const session = await prisma.session.create({
+    data: {
+      id: sessionToken,
+      userId,
+      token: sessionToken,
+      ipAddress: clientIp,
+      userAgent,
+      expiresAt,
+    },
+  });
+
+  // Set cookie with signed session token
+  const cookieValue = signSession(session.id, userId, Math.floor(expiresAt.getTime() / 1000));
 
   cookies().set({
     name: USER_COOKIE,
-    value: signSession(userId, updated.sessionVersion),
+    value: cookieValue,
     httpOnly: true,
     sameSite: "lax",
-    secure: env.APP_BASE_URL.startsWith("https://"),
+    secure: isSecureRequest(),
     path: "/",
     maxAge: env.SESSION_MAX_AGE_SECONDS,
   });
 
-  return updated.sessionVersion;
+  return session.id;
 }
 
 export async function getCurrentUser() {
@@ -106,13 +146,17 @@ export async function getCurrentUser() {
   const session = verifySession(token);
   if (!session) return null;
 
-  // Require the cookie's version to still match the user's current version;
-  // a newer login elsewhere will have incremented the DB value, invalidating
-  // this cookie.
-  return prisma.user.findFirst({
-    where: { id: session.userId, sessionVersion: session.version },
-    include: { profile: true },
+  // Verify session exists in database and hasn't expired
+  const dbSession = await prisma.session.findUnique({
+    where: { id: session.sessionId },
+    include: { user: { include: { profile: true } } },
   });
+
+  if (!dbSession || dbSession.expiresAt < new Date()) {
+    return null;
+  }
+
+  return dbSession.user;
 }
 
 export async function requireCurrentUser() {
@@ -129,4 +173,13 @@ export async function requirePageUser() {
     redirect("/");
   }
   return user;
+}
+
+// Clean up expired sessions (should be called periodically)
+export async function cleanupExpiredSessions() {
+  await prisma.session.deleteMany({
+    where: {
+      expiresAt: { lt: new Date() },
+    },
+  });
 }

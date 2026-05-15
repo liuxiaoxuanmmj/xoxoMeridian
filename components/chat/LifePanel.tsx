@@ -76,8 +76,8 @@ export function LifePanel({
     };
   }, [roomId]);
 
-  const me = participants[0];
-  const her = participants[1];
+  const selfUser = participants[0];
+  const partnerUser = participants[1];
 
   return (
     <aside className="hidden min-h-0 w-80 shrink-0 overflow-y-auto border-l border-warm-200 bg-white/72 p-4 xl:block">
@@ -85,7 +85,7 @@ export function LifePanel({
         <section className="rounded-lg border border-skysoft-100 bg-skysoft-50 p-4">
           <h2 className="text-sm font-semibold text-ink">两地时间</h2>
           <div className="mt-3 space-y-3 text-sm">
-            {[me, her].filter(Boolean).map((user) => (
+            {[selfUser, partnerUser].filter(Boolean).map((user) => (
               <div key={user.id} className="flex items-center justify-between gap-3">
                 <div>
                   <p className="font-medium text-ink">{user.displayName}</p>
@@ -106,7 +106,7 @@ export function LifePanel({
           ) : (
             <p className="mt-2 text-sm leading-6 text-ink/55">
               {weather?.error === "city not set on profile"
-                ? `${weather.displayName ?? "她那边"}还没有设置城市`
+                ? `${weather.displayName ?? "对方"}还没有设置城市`
                 : "暂时拿不到天气，稍后会自动重试。"}
             </p>
           )}

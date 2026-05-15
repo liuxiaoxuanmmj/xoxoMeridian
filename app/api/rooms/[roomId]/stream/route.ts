@@ -2,29 +2,24 @@ import { assertRoomAccess } from "@/lib/access";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
+import { sse } from "@/lib/sse";
+import { cookies } from "next/headers";
+import { USER_COOKIE, verifySession } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-function sse(data: unknown, event = "snapshot") {
-  return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
-}
 
 export async function GET(request: Request, { params }: { params: { roomId: string } }) {
   const user = await requireCurrentUser();
   await assertRoomAccess(params.roomId, user.id);
 
-  // Capture the session version that the current cookie was signed with;
-  // every tick compares against the DB so a newer login elsewhere kicks
-  // this stream within ~2 seconds.
-  const initialSessionVersion = user.sessionVersion;
+  // Get the session ID from the cookie to track this specific session
+  const token = cookies().get(USER_COOKIE)?.value;
+  const session = verifySession(token);
+  const sessionId = session?.sessionId;
 
   const encoder = new TextEncoder();
   let closed = false;
-
-  request.signal.addEventListener("abort", () => {
-    closed = true;
-  });
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -47,18 +42,19 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
       const sendSnapshot = async () => {
         if (closed) return;
 
-        // 1. Session still the latest? If not, the cookie on this browser has
-        //    been superseded by a newer login — push a kick and bail.
-        const current = await prisma.user.findUnique({
-          where: { id: user.id },
-          select: { sessionVersion: true },
-        });
-        if (!current || current.sessionVersion !== initialSessionVersion) {
-          controller.enqueue(
-            encoder.encode(sse({ reason: "session_superseded" }, "kicked"))
-          );
-          stop();
-          return;
+        // 1. Session still valid? Check if it exists in the database
+        if (sessionId) {
+          const dbSession = await prisma.session.findUnique({
+            where: { id: sessionId },
+            select: { id: true, expiresAt: true },
+          });
+          if (!dbSession || dbSession.expiresAt < new Date()) {
+            controller.enqueue(
+              encoder.encode(sse({ reason: "session_deleted" }, "kicked"))
+            );
+            stop();
+            return;
+          }
         }
 
         // 2. Room still exists and user is still a participant? A delete from
@@ -75,7 +71,7 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
         }
 
         try {
-          const snapshot = await getRoomSnapshot(params.roomId);
+          const snapshot = await getRoomSnapshot(params.roomId, user.id);
           controller.enqueue(encoder.encode(sse(snapshot)));
         } catch (error) {
           controller.enqueue(

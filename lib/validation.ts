@@ -2,10 +2,32 @@ import { z } from "zod";
 
 const trim = (s: unknown) => (typeof s === "string" ? s.trim() : s);
 
-export const demoLoginSchema = z.object({
-  role: z.enum(["me", "her"]),
+export const registerSchema = z.object({
+  email: z.preprocess(trim, z.string().email().max(254).transform((s) => s.toLowerCase())),
+  password: z.string().min(6).max(256),
+  displayName: z.preprocess(trim, z.string().min(1).max(40)),
+  inviteCode: z.string().min(1).max(128),
+  city: z.preprocess(trim, z.string().min(1).max(80)).optional(),
+  country: z.preprocess(trim, z.string().min(1).max(80)).optional(),
+  timezone: z.preprocess(trim, z.string().min(1).max(64)).optional(),
+});
+
+export const loginSchema = z.object({
+  email: z.preprocess(trim, z.string().email().max(254).transform((s) => s.toLowerCase())),
   password: z.string().min(1).max(256),
 });
+
+export const profileUpdateSchema = z
+  .object({
+    displayName: z.preprocess(trim, z.string().min(1).max(40)).optional(),
+    profileNote: z.preprocess(trim, z.string().max(2000)).optional(),
+    city: z.preprocess(trim, z.string().min(1).max(80)).optional(),
+    country: z.preprocess(trim, z.string().min(1).max(80)).optional(),
+    timezone: z.preprocess(trim, z.string().min(1).max(64)).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
 
 export const messagePostSchema = z.object({
   content: z.preprocess(trim, z.string().min(1).max(4000)),

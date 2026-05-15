@@ -3,9 +3,8 @@ generator client {
 }
 
 datasource db {
-  provider  = "postgresql"
-  url       = env("DATABASE_URL")
-  directUrl = env("DIRECT_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 enum SenderType {
@@ -53,25 +52,53 @@ enum ReminderStatus {
 }
 
 model User {
-  id             String            @id @default(cuid())
-  email          String            @unique
-  displayName    String
-  avatarLabel    String
-  demoRole       String?           @unique
-  passwordHash   String?
-  sessionVersion Int               @default(0)
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  profile        UserProfile?
-  participants   RoomParticipant[]
-  messages       Message[]
-  requestedTasks AgentTask[]       @relation("RequestedTasks")
-  memos          Memo[]
-  notes          Note[]
-  reminders      Reminder[]
-  eventLogs      EventLog[]
-  memories       Memory[]
-  scheduledJobs  ScheduledJob[]
+  id                   String                @id @default(cuid())
+  email                String                @unique
+  displayName          String
+  avatarLabel          String
+  passwordHash         String
+  sessionVersion       Int                   @default(0)
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  profile              UserProfile?
+  participants         RoomParticipant[]
+  messages             Message[]
+  requestedTasks       AgentTask[]           @relation("RequestedTasks")
+  memos                Memo[]
+  notes                Note[]
+  reminders            Reminder[]
+  eventLogs            EventLog[]
+  memories             Memory[]
+  scheduledJobs        ScheduledJob[]
+  sessions             Session[]
+  passwordResetTokens  PasswordResetToken[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  ipAddress String?
+  userAgent String?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  userId    String
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model UserProfile {
@@ -81,6 +108,7 @@ model UserProfile {
   country     String
   timezone    String
   preferences Json?
+  profileNote String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -150,6 +178,7 @@ model Agent {
   description   String
   enabled       Boolean        @default(true)
   config        Json?
+  systemPrompt  String?
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   tasks         AgentTask[]

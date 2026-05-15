@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 
 import type { ChatMessage, ChatUser } from "@/components/chat/types";
+import { MENTION_AGENT } from "@/lib/identity";
 import { cn } from "@/lib/utils";
 
 export function MessageList({
@@ -22,7 +23,7 @@ export function MessageList({
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto px-4 py-5">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-4">
         {messages.map((message) => (
-          <MessageBubble
+          <MemoMessageBubble
             key={message.id}
             currentUser={currentUser}
             message={message}
@@ -60,7 +61,7 @@ function MessageBubble({
         <header className={cn("mb-1 flex flex-wrap items-center gap-2 text-xs", isMine ? "text-white/70" : "text-ink/55")}>
           <span className="font-semibold">{senderName}</span>
           <span>{formatTime(message.createdAt)}</span>
-          {isAgent ? <span className="rounded-full bg-white/70 px-2 py-0.5 text-sage-700">由 @小助手 处理</span> : null}
+          {isAgent ? <span className="rounded-full bg-white/70 px-2 py-0.5 text-sage-700">由 {MENTION_AGENT} 处理</span> : null}
           {message.sourceTask ? <span className="rounded-full bg-warm-100 px-2 py-0.5 text-warm-700">已派发</span> : null}
         </header>
 
@@ -98,6 +99,8 @@ function MessageBubble({
     </div>
   );
 }
+
+const MemoMessageBubble = memo(MessageBubble);
 
 function formatTime(value: string) {
   return new Intl.DateTimeFormat("zh-CN", {

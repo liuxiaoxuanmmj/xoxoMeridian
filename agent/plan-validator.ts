@@ -56,7 +56,7 @@ function anyMatch(text: string, patterns: RegExp[]): boolean {
   return patterns.some((p) => p.test(text));
 }
 
-function toArray(value: unknown): Record<string, unknown>[] {
+export function toArray(value: unknown): Record<string, unknown>[] {
   if (Array.isArray(value)) {
     return value.filter((x): x is Record<string, unknown> => typeof x === "object" && x !== null);
   }

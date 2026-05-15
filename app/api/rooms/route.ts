@@ -4,6 +4,7 @@ import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { listRoomsForUser } from "@/lib/room-list";
 import { readJsonBody, roomCreateSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -11,28 +12,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     const user = await requireCurrentUser();
-
-    const participants = await prisma.roomParticipant.findMany({
-      where: { userId: user.id },
-      include: {
-        room: {
-          include: {
-            _count: { select: { messages: true } },
-          },
-        },
-      },
-      orderBy: { joinedAt: "asc" },
-    });
-
-    const rooms = participants.map((p) => ({
-      id: p.room.id,
-      slug: p.room.slug,
-      name: p.room.name,
-      createdAt: p.room.createdAt,
-      updatedAt: p.room.updatedAt,
-      messageCount: p.room._count.messages,
-    }));
-
+    const rooms = await listRoomsForUser(user.id);
     return jsonOk({ rooms }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return errorToResponse(error);
@@ -51,8 +31,7 @@ export async function POST(request: Request) {
     // Collect every user who has ever shared a room with the caller — that's
     // the "partner" set for this private-chat app. The new room becomes
     // visible to all of them automatically, so there's no separate invite /
-    // join step. This matches the existing demo model (me + her share every
-    // room) without hard-coding demoRole. Capped to maxHumanUsers.
+    // join step. Capped to maxHumanUsers.
     const sharedUserIds = await findSharedUserIds(user.id);
 
     const slug = `room-${randomBytes(6).toString("hex")}`;

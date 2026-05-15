@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { env } from "@/lib/env";
 
-const LOG_DIR = path.resolve(process.cwd(), "data", "chat-logs");
+const LOG_DIR = path.resolve(env.CHAT_LOG_DIR ?? path.join(process.cwd(), "data", "chat-logs"));
 const ensuredDirs = new Set<string>();
 
 export type ChatLogEvent =
@@ -38,16 +38,26 @@ export async function appendChatLog(roomId: string, event: ChatLogEvent): Promis
   if (!env.AGENT_DEBUG_ENABLED) return;
   if (!roomId) return;
 
+  let filePath: string | undefined;
   try {
     if (!ensuredDirs.has(LOG_DIR)) {
       await fs.mkdir(LOG_DIR, { recursive: true });
       ensuredDirs.add(LOG_DIR);
     }
-    const filePath = path.join(LOG_DIR, `${sanitize(roomId)}.jsonl`);
+    filePath = path.join(LOG_DIR, `${sanitize(roomId)}.jsonl`);
     const line = JSON.stringify({ ts: new Date().toISOString(), roomId, ...event }) + "\n";
     await fs.appendFile(filePath, line, "utf8");
   } catch (err) {
-    console.warn("[chat-log-file] append failed:", err instanceof Error ? err.message : err);
+    const errno = (err as NodeJS.ErrnoException)?.code;
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[chat-log-file] append failed", {
+      roomId,
+      filePath,
+      logDir: LOG_DIR,
+      errno,
+      uid: typeof process.getuid === "function" ? process.getuid() : undefined,
+      message
+    });
   }
 }
 

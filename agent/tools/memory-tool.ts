@@ -96,13 +96,28 @@ export function createMemoryRecallTool(): AgentTool<MemoryRecallInput> {
   };
 }
 
-function resolveUserId(key: string, context: { runtimeContext: { participants: Array<{ user: { id: string; demoRole: string | null } }> } }): string | null {
+function resolveUserId(
+  key: string,
+  context: {
+    requestedById: string | null;
+    runtimeContext: { participants: Array<{ user: { id: string } }> };
+  }
+): string | null {
   const scope = key.split(".")[0];
   if (scope === "shared") return null;
 
-  const role = scope === "me" ? "me" : scope === "her" ? "her" : null;
-  if (!role) return null;
+  if (scope === "me") return context.requestedById ?? null;
 
-  const participant = context.runtimeContext.participants.find((p) => p.user.demoRole === role);
-  return participant?.user.id ?? null;
+  if (scope === "her") {
+    // "her" = the other human participant in the 2-person room (not the
+    // requester). We can't rely on demoRole anymore — auth is plain
+    // email/password and either user could be the requester.
+    if (!context.requestedById) return null;
+    const other = context.runtimeContext.participants.find(
+      (p) => p.user.id !== context.requestedById
+    );
+    return other?.user.id ?? null;
+  }
+
+  return null;
 }

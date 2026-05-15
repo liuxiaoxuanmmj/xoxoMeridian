@@ -9,8 +9,85 @@ import { LifePanel } from "@/components/chat/LifePanel";
 import { MessageComposer } from "@/components/chat/MessageComposer";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUser, RoomSnapshot } from "@/components/chat/types";
+import { dedupedReplace } from "@/lib/router-dedup";
 
 type ConnState = "connecting" | "open" | "reconnecting";
+
+// Reuses prev-tick references for items that are deeply unchanged so React.memo
+// downstream can skip re-rendering them.
+function stableMergeBy<T>(prev: T[], next: T[], getKey: (item: T) => string): T[] {
+  if (prev === next) return prev;
+  if (prev.length === 0 && next.length === 0) return prev;
+  const prevByKey = new Map(prev.map((item) => [getKey(item), item]));
+  let identical = prev.length === next.length;
+  const merged: T[] = new Array(next.length);
+  for (let i = 0; i < next.length; i++) {
+    const item = next[i];
+    const old = prevByKey.get(getKey(item));
+    if (old && JSON.stringify(old) === JSON.stringify(item)) {
+      merged[i] = old;
+      if (prev[i] !== old) identical = false;
+    } else {
+      merged[i] = item;
+      identical = false;
+    }
+  }
+  return identical ? prev : merged;
+}
+
+function mergeSnapshot(prev: RoomSnapshot, next: RoomSnapshot): RoomSnapshot {
+  const messages = stableMergeBy(prev.messages, next.messages, (m) => m.id);
+  const memos = stableMergeBy(prev.memos, next.memos, (m) => m.id);
+  const notes = stableMergeBy(prev.notes, next.notes, (n) => n.id);
+  const reminders = stableMergeBy(prev.reminders, next.reminders, (r) => r.id);
+  const scheduledJobs = stableMergeBy(
+    prev.scheduledJobs,
+    next.scheduledJobs,
+    (j) => j.id
+  );
+
+  const participants = stableMergeBy(
+    prev.room.participants,
+    next.room.participants,
+    (p) => p.user.id
+  );
+  const room =
+    participants === prev.room.participants &&
+    prev.room.id === next.room.id &&
+    prev.room.name === next.room.name
+      ? prev.room
+      : { ...next.room, participants };
+
+  const agentStatus =
+    JSON.stringify(prev.agentStatus) === JSON.stringify(next.agentStatus)
+      ? prev.agentStatus
+      : next.agentStatus;
+
+  // rooms is undefined when the snapshot was built without a userId (e.g. legacy
+  // callers); treat that as "keep prev" so a transient un-scoped tick can't
+  // flicker the sidebar to empty.
+  const rooms = next.rooms
+    ? stableMergeBy(prev.rooms ?? [], next.rooms, (r) => r.id)
+    : prev.rooms;
+
+  // No-op tick: every field is reference-equal to prev, so return prev itself
+  // instead of a fresh object — otherwise React.memo on consumers (MessageList,
+  // LifePanel, LeftRail) is defeated by a new top-level identity every ~2s.
+  if (
+    room === prev.room &&
+    messages === prev.messages &&
+    memos === prev.memos &&
+    notes === prev.notes &&
+    reminders === prev.reminders &&
+    scheduledJobs === prev.scheduledJobs &&
+    agentStatus === prev.agentStatus &&
+    rooms === prev.rooms
+  ) {
+    return prev;
+  }
+
+  return { room, messages, memos, notes, reminders, scheduledJobs, agentStatus, rooms };
+}
 
 export function ChatApp({
   currentUser,
@@ -33,7 +110,7 @@ export function ChatApp({
       const payload = await response.json();
       setSnapshot((current) => ({
         ...current,
-        messages: payload.messages
+        messages: stableMergeBy(current.messages, payload.messages, (m) => m.id)
       }));
     }
   }, [roomId]);
@@ -61,6 +138,30 @@ export function ChatApp({
     },
     [currentUser]
   );
+
+  const replaceMessage = useCallback((tempId: string, real: ChatMessage) => {
+    setSnapshot((current) => {
+      const idx = current.messages.findIndex((m) => m.id === tempId);
+      if (idx < 0) {
+        if (current.messages.some((m) => m.id === real.id)) return current;
+        return { ...current, messages: [...current.messages, real] };
+      }
+      // SSE may have already pushed the real id in another slot; drop the temp.
+      if (current.messages.some((m, i) => i !== idx && m.id === real.id)) {
+        return { ...current, messages: current.messages.filter((_, i) => i !== idx) };
+      }
+      const next = current.messages.slice();
+      next[idx] = real;
+      return { ...current, messages: next };
+    });
+  }, []);
+
+  const removeMessage = useCallback((messageId: string) => {
+    setSnapshot((current) => {
+      if (!current.messages.some((m) => m.id === messageId)) return current;
+      return { ...current, messages: current.messages.filter((m) => m.id !== messageId) };
+    });
+  }, []);
 
   // Custom reconnect loop. EventSource reconnects by itself, but silently — we
   // want a visible "reconnecting" state and a GET /messages sync after recovery
@@ -90,19 +191,23 @@ export function ChatApp({
       });
 
       source.addEventListener("snapshot", (event) => {
-        setSnapshot(JSON.parse((event as MessageEvent).data));
+        const next = JSON.parse((event as MessageEvent).data) as RoomSnapshot;
+        setSnapshot((prev) => mergeSnapshot(prev, next));
       });
 
       // Server tells us this cookie has been superseded by a newer login on
       // another browser. Close the stream permanently (skip reconnect), drop
       // the cookie, bounce to the login page.
       source.addEventListener("kicked", () => {
+        if (terminated || cancelled) return;
         terminated = true;
         source?.close();
         source = null;
-        void fetch("/api/auth/logout", { method: "POST" }).finally(() => {
-          router.replace("/");
-        });
+        // The "kicked" event means the session is already invalid on the server
+        // (sessionVersion mismatch). Calling /api/auth/logout here is redundant
+        // and can cause a race condition where a newly logged-in session gets
+        // invalidated by a stale tab's logout call.
+        dedupedReplace(router, "/");
       });
 
       // Server tells us the room we're viewing was deleted (or we were
@@ -111,7 +216,7 @@ export function ChatApp({
         terminated = true;
         source?.close();
         source = null;
-        router.replace("/chat");
+        dedupedReplace(router, "/chat");
       });
 
       source.addEventListener("error", () => {
@@ -165,6 +270,7 @@ export function ChatApp({
           currentUser={currentUser}
           currentRoomId={roomId}
           participants={participants}
+          rooms={snapshot.rooms ?? []}
           onQuickPrompt={(prompt) => {
             setDraftPrompt(prompt);
           }}
@@ -172,7 +278,14 @@ export function ChatApp({
 
         <section className="flex min-w-0 flex-1 flex-col">
           <MessageList currentUser={currentUser} messages={snapshot.messages} />
-          <MessageComposer externalDraft={draftPrompt} roomId={roomId} onSent={appendMessage} />
+          <MessageComposer
+            currentUser={currentUser}
+            externalDraft={draftPrompt}
+            onSendComplete={replaceMessage}
+            onSendFailed={removeMessage}
+            onSent={appendMessage}
+            roomId={roomId}
+          />
         </section>
 
         <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} roomId={roomId} scheduledJobs={snapshot.scheduledJobs ?? []} />

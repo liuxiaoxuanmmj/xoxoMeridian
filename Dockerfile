@@ -20,7 +20,7 @@ ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholde
     APP_BASE_URL="http://localhost:3000" \
     NEXT_PUBLIC_APP_URL="http://localhost:3000" \
     SESSION_SECRET="build-time-placeholder-build-time-placeholder" \
-    DEMO_LOGIN_PASSWORD="build-time-placeholder"
+    INVITE_CODE="build-time-placeholder"
 RUN npx prisma generate && npm run build
 
 # ---- web runner (standalone, non-root) ----
@@ -28,7 +28,7 @@ FROM node:22-alpine AS web-runner
 RUN apk add --no-cache openssl tini wget
 WORKDIR /app
 ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S -g 1001 app && adduser -S -u 1001 -G app app
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/.next/static ./.next/static
 COPY --from=builder --chown=app:app /app/prisma ./prisma
@@ -45,7 +45,7 @@ FROM node:22-alpine AS worker-runner
 RUN apk add --no-cache openssl tini
 WORKDIR /app
 ENV NODE_ENV=production
-RUN addgroup -S app && adduser -S app -G app
+RUN addgroup -S -g 1001 app && adduser -S -u 1001 -G app app
 COPY --from=deps --chown=app:app /app/node_modules ./node_modules
 COPY --from=builder --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
 COPY --chown=app:app package.json package-lock.json tsconfig.json ./

@@ -1,35 +1,27 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { ChatUser, RoomSummary } from "@/components/chat/types";
+import { MENTION_AGENT } from "@/lib/identity";
 
 export function LeftRail({
   currentUser,
   participants,
   currentRoomId,
+  rooms,
   onQuickPrompt
 }: {
   currentUser: ChatUser;
   participants: ChatUser[];
   currentRoomId: string;
+  rooms: RoomSummary[];
   onQuickPrompt: (prompt: string) => void;
 }) {
   const router = useRouter();
-  const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [busy, setBusy] = useState<null | "create" | "wipe" | "delete">(null);
-
-  const loadRooms = useCallback(async () => {
-    const resp = await fetch("/api/rooms", { cache: "no-store" });
-    if (!resp.ok) return;
-    const data = await resp.json();
-    setRooms(data.rooms ?? []);
-  }, []);
-
-  useEffect(() => {
-    void loadRooms();
-  }, [loadRooms]);
 
   const onCreate = async () => {
     if (busy) return;
@@ -155,6 +147,11 @@ export function LeftRail({
                     {user.id === currentUser.id ? " · 当前" : ""}
                   </p>
                   <p className="truncate text-xs text-ink/50">{user.profile?.city ?? "未设置城市"}</p>
+                  {user.id === currentUser.id ? (
+                    <Link className="text-[11px] text-sage-700 hover:underline" href="/me">
+                      个人设置
+                    </Link>
+                  ) : null}
                 </div>
               </div>
             ))}
@@ -164,9 +161,9 @@ export function LeftRail({
         <section>
           <h2 className="text-sm font-semibold text-ink">快捷工具</h2>
           <div className="mt-3 space-y-2">
-            <QuickButton label="查她那边天气" onClick={() => onQuickPrompt("@小助手 查一下她那边今天的天气")} />
-            <QuickButton label="看看两地时间" onClick={() => onQuickPrompt("@小助手 比较一下我们现在的时差和适合联系时间")} />
-            <QuickButton label="创建早安提醒" onClick={() => onQuickPrompt("@小助手 明天提醒我给她发早安")} />
+            <QuickButton label="查对方天气" onClick={() => onQuickPrompt(`${MENTION_AGENT} 查一下对方今天的天气`)} />
+            <QuickButton label="看看两地时间" onClick={() => onQuickPrompt(`${MENTION_AGENT} 比较一下我们现在的时差和适合联系时间`)} />
+            <QuickButton label="创建早安提醒" onClick={() => onQuickPrompt(`${MENTION_AGENT} 明天提醒我给对方发早安`)} />
           </div>
         </section>
       </div>
