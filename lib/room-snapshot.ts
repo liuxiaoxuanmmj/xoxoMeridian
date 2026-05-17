@@ -4,9 +4,7 @@ import { listRoomsForUser } from "@/lib/room-list";
 export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string) {
   const [
     messages,
-    notes,
     memos,
-    reminders,
     scheduledJobs,
     runningTasks,
     recentTasks,
@@ -31,19 +29,9 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
         sourceTask: { select: { id: true, status: true } }
       }
     }),
-    prisma.note.findMany({
-      where: { roomId },
-      orderBy: { createdAt: "desc" },
-      take: 12
-    }),
     prisma.memo.findMany({
       where: { roomId },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],
-      take: 12
-    }),
-    prisma.reminder.findMany({
-      where: { roomId, status: "pending" },
-      orderBy: [{ dueAt: "asc" }, { createdAt: "desc" }],
       take: 12
     }),
     prisma.scheduledJob.findMany({
@@ -79,9 +67,7 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
   return {
     room,
     messages,
-    notes,
     memos,
-    reminders,
     scheduledJobs,
     agentStatus: {
       isWorking: runningTasks > 0,

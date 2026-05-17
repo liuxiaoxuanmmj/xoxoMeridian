@@ -34,7 +34,7 @@ export const messagePostSchema = z.object({
   forceAgent: z.boolean().optional().default(false),
 });
 
-const noteColorSchema = z.enum(["warm", "sage", "skysoft", "rose", "cream"]).default("warm");
+
 const safeMetadataSchema = z
   .record(z.string(), z.unknown())
   .optional()
@@ -50,12 +50,6 @@ const safeMetadataSchema = z
     { message: "metadata too large or unserializable" }
   );
 
-export const notePostSchema = z.object({
-  content: z.preprocess(trim, z.string().min(1).max(2000)),
-  color: noteColorSchema,
-  metadata: safeMetadataSchema,
-});
-
 export const memoPostSchema = z.object({
   title: z.preprocess(trim, z.string().min(1).max(200)),
   content: z.preprocess(trim, z.string().min(1).max(8000)),
@@ -63,16 +57,42 @@ export const memoPostSchema = z.object({
   metadata: safeMetadataSchema,
 });
 
-export const reminderPostSchema = z.object({
-  title: z.preprocess(trim, z.string().min(1).max(200)),
-  body: z.preprocess(trim, z.string().max(4000)).optional(),
-  dueAt: z.string().datetime({ offset: true }).optional(),
-  timezone: z.string().max(64).optional(),
-  contactWindowStart: z.string().max(32).optional(),
-  contactWindowEnd: z.string().max(32).optional(),
-  notifyChannel: z.string().max(32).optional(),
-  metadata: safeMetadataSchema,
-});
+export const memoPatchSchema = z
+  .object({
+    title: z.preprocess(trim, z.string().min(1).max(200)).optional(),
+    content: z.preprocess(trim, z.string().min(1).max(8000)).optional(),
+    pinned: z.boolean().optional(),
+    metadata: safeMetadataSchema,
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
+
+export const scheduledJobPostSchema = z
+  .object({
+    fireAt: z.string().datetime({ offset: true }).optional(),
+    cron: z.string().min(9).max(128).optional(),
+    timezone: z.string().min(1).max(64),
+    prompt: z.preprocess(trim, z.string().min(1).max(500)),
+    description: z.preprocess(trim, z.string().max(200)).optional(),
+    runOnce: z.boolean().optional(),
+  })
+  .refine((v) => (v.fireAt && !v.cron) || (!v.fireAt && v.cron), {
+    message: "Exactly one of fireAt or cron is required",
+  });
+
+export const scheduledJobPatchSchema = z
+  .object({
+    cron: z.string().min(9).max(128).optional(),
+    timezone: z.string().min(1).max(64).optional(),
+    prompt: z.preprocess(trim, z.string().min(1).max(500)).optional(),
+    description: z.preprocess(trim, z.string().max(200)).optional().nullable(),
+    runOnce: z.boolean().optional(),
+    enabled: z.boolean().optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
 
 export const roomCreateSchema = z.object({
   name: z.preprocess(trim, z.string().min(1).max(80)).optional(),

@@ -20,7 +20,9 @@ const config: Config = {
         sage: {
           50: "#f3f7f0",
           100: "#dfead8",
+          300: "#a7c49b",
           500: "#668a5b",
+          600: "#527349",
           700: "#3f5d38"
         },
         skysoft: {

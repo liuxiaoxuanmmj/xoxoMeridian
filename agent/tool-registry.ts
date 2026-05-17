@@ -1,8 +1,7 @@
 import type { AgentTool, ToolExecutionContext, ToolResult } from "@/agent/types";
 import { createMemoTool } from "@/agent/tools/memo-tool";
 import { createMemorySetTool, createMemoryRecallTool } from "@/agent/tools/memory-tool";
-import { createNoteTool } from "@/agent/tools/note-tool";
-import { createReminderTool } from "@/agent/tools/reminder-tool";
+
 import {
   createScheduleCancelTool,
   createScheduleCreateTool,
@@ -60,8 +59,7 @@ export function createToolRegistry() {
   registry.register(createWeatherTool());
   registry.register(createTimezoneTool());
   registry.register(createMemoTool());
-  registry.register(createNoteTool());
-  registry.register(createReminderTool());
+
   registry.register(createScheduleCreateTool());
   registry.register(createScheduleListTool());
   registry.register(createScheduleCancelTool());

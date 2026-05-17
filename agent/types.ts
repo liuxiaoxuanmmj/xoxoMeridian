@@ -28,8 +28,6 @@ export type StructuredRoomContext = {
   }>;
   recentMessages: Array<{ from: string; content: string; at: string }>;
   pinnedMemos: Array<{ title: string; content: string }>;
-  notes: Array<{ content: string; color: string }>;
-  activeReminders: Array<{ title: string; dueAt: string | null; timezone: string | null }>;
   activeSchedules: Array<{
     jobId: string;
     cron: string;

@@ -1,23 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
-type ReminderRow = {
-  id: string;
-  roomId: string;
-  title: string;
-  body: string | null;
-  dueAt: Date | null;
-  status: "pending" | "fired" | "done" | "cancelled" | "skipped";
-  metadata: Record<string, unknown> | null;
-  createdById: string | null;
-  agentTaskId: string | null;
-  timezone: string | null;
-  contactWindowStart: string | null;
-  contactWindowEnd: string | null;
-  notifyChannel: string | null;
-  createdAt: Date;
-  updatedAt: Date;
-};
-
 type ScheduledJobRow = {
   id: string;
   roomId: string;
@@ -36,7 +18,6 @@ type ScheduledJobRow = {
 
 type AgentRow = { id: string; slug: string };
 
-const reminders: ReminderRow[] = [];
 const jobs: ScheduledJobRow[] = [];
 const agents: AgentRow[] = [];
 const agentTasks: { id: string; roomId: string; agentId: string; input: unknown }[] = [];
@@ -45,7 +26,6 @@ const eventLogs: { type: string; payload: unknown; agentTaskId: string }[] = [];
 let dispatchHook: (() => Promise<void>) | null = null;
 
 function reset() {
-  reminders.length = 0;
   jobs.length = 0;
   agents.length = 0;
   agentTasks.length = 0;
@@ -54,49 +34,6 @@ function reset() {
 }
 
 const mockPrisma = {
-  reminder: {
-    findMany: vi.fn(async ({ where, orderBy }: { where: any; orderBy?: any }) => {
-      let rows = reminders.filter((r) => {
-        if (where.status && r.status !== where.status) return false;
-        if (where.dueAt) {
-          if (where.dueAt.not !== undefined && r.dueAt === null) return false;
-          if (where.dueAt.lte && (!r.dueAt || r.dueAt > where.dueAt.lte)) return false;
-          if (where.dueAt.gt && (!r.dueAt || r.dueAt <= where.dueAt.gt)) return false;
-        }
-        return true;
-      });
-      if (orderBy?.dueAt === "asc") {
-        rows = rows.slice().sort((a, b) => (a.dueAt!.getTime() - b.dueAt!.getTime()));
-      }
-      return rows.map((r) => ({ ...r }));
-    }),
-    findFirst: vi.fn(async ({ where }: { where: any }) => {
-      const row = reminders.find((r) => {
-        if (where.status && r.status !== where.status) return false;
-        return true;
-      });
-      return row ? { id: row.id } : null;
-    }),
-    findUnique: vi.fn(async ({ where }: { where: { id: string } }) => {
-      const row = reminders.find((r) => r.id === where.id);
-      return row ? { ...row } : null;
-    }),
-    updateMany: vi.fn(async ({ where, data }: { where: any; data: any }) => {
-      const matched = reminders.filter((r) => {
-        if (where.id && r.id !== where.id) return false;
-        if (where.status && r.status !== where.status) return false;
-        return true;
-      });
-      for (const r of matched) Object.assign(r, data);
-      return { count: matched.length };
-    }),
-    update: vi.fn(async ({ where, data }: { where: { id: string }; data: any }) => {
-      const r = reminders.find((row) => row.id === where.id);
-      if (!r) throw new Error("not found");
-      Object.assign(r, data);
-      return { ...r };
-    }),
-  },
   scheduledJob: {
     findMany: vi.fn(async ({ where, orderBy }: { where: any; orderBy?: any }) => {
       let rows = jobs.filter((j) => {
@@ -165,27 +102,6 @@ vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 
 const { schedulerTick, clearAllTimers, TRIGGER_MARKER } = await import("@/agent/scheduler-tick");
 
-function makeReminder(overrides: Partial<ReminderRow> = {}): ReminderRow {
-  return {
-    id: `r-${reminders.length + 1}`,
-    roomId: "room-1",
-    title: "test reminder",
-    body: null,
-    dueAt: new Date(Date.now() - 1000),
-    status: "pending",
-    metadata: null,
-    createdById: null,
-    agentTaskId: null,
-    timezone: "Asia/Shanghai",
-    contactWindowStart: null,
-    contactWindowEnd: null,
-    notifyChannel: null,
-    createdAt: new Date(),
-    updatedAt: new Date(),
-    ...overrides,
-  };
-}
-
 function makeJob(overrides: Partial<ScheduledJobRow> = {}): ScheduledJobRow {
   return {
     id: `j-${jobs.length + 1}`,
@@ -213,54 +129,6 @@ beforeEach(() => {
 afterEach(() => {
   clearAllTimers();
   vi.useRealTimers();
-});
-
-describe("schedulerTick - reminder atomic claim", () => {
-  it("only dispatches a due reminder once when two ticks race", async () => {
-    reminders.push(makeReminder());
-
-    const now = new Date();
-    await Promise.all([schedulerTick(now), schedulerTick(now)]);
-
-    expect(agentTasks).toHaveLength(1);
-    expect(reminders[0].status).toBe("fired");
-  });
-
-  it("rolls back to pending and increments fireAttempts on dispatch failure", async () => {
-    reminders.push(makeReminder());
-
-    dispatchHook = async () => {
-      throw new Error("dispatch boom");
-    };
-
-    await schedulerTick(new Date());
-
-    expect(reminders[0].status).toBe("pending");
-    expect((reminders[0].metadata as any).fireAttempts).toBe(1);
-    expect((reminders[0].metadata as any).lastError).toMatch(/boom/);
-  });
-
-  it("cancels reminder after MAX_FAIL_COUNT consecutive failures", async () => {
-    reminders.push(makeReminder({ metadata: { fireAttempts: 2, lastError: "prev" } }));
-    dispatchHook = async () => {
-      throw new Error("still broken");
-    };
-
-    await schedulerTick(new Date());
-
-    expect(reminders[0].status).toBe("cancelled");
-    expect((reminders[0].metadata as any).fireAttempts).toBe(3);
-  });
-
-  it("marks as skipped when past missed-window", async () => {
-    const farPast = new Date(Date.now() - 2 * 60 * 60 * 1000);
-    reminders.push(makeReminder({ dueAt: farPast }));
-
-    await schedulerTick(new Date());
-
-    expect(reminders[0].status).toBe("skipped");
-    expect(agentTasks).toHaveLength(0);
-  });
 });
 
 describe("schedulerTick - scheduled job CAS", () => {
@@ -381,37 +249,16 @@ describe("schedulerTick - near-term timer arming", () => {
 });
 
 describe("schedulerTick - empty-skip", () => {
-  it("does not call findMany on either resource when both tables are empty", async () => {
-    mockPrisma.reminder.findMany.mockClear();
+  it("does not call findMany when the table is empty", async () => {
     mockPrisma.scheduledJob.findMany.mockClear();
-    mockPrisma.reminder.findFirst.mockClear();
     mockPrisma.scheduledJob.findFirst.mockClear();
 
     const result = await schedulerTick(new Date());
 
-    expect(mockPrisma.reminder.findFirst).toHaveBeenCalledTimes(1);
     expect(mockPrisma.scheduledJob.findFirst).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.reminder.findMany).not.toHaveBeenCalled();
     expect(mockPrisma.scheduledJob.findMany).not.toHaveBeenCalled();
     expect(result).toEqual({
-      reminders: { fired: 0, skipped: 0, failed: 0 },
       jobs: { fired: 0, skipped: 0, failed: 0 },
     });
-  });
-
-  it("skips scheduledJob queries when only reminders exist", async () => {
-    reminders.push(makeReminder({ dueAt: new Date(Date.now() + 60 * 60 * 1000) }));
-
-    mockPrisma.reminder.findMany.mockClear();
-    mockPrisma.scheduledJob.findMany.mockClear();
-    mockPrisma.reminder.findFirst.mockClear();
-    mockPrisma.scheduledJob.findFirst.mockClear();
-
-    await schedulerTick(new Date());
-
-    expect(mockPrisma.reminder.findFirst).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.scheduledJob.findFirst).toHaveBeenCalledTimes(1);
-    expect(mockPrisma.reminder.findMany).toHaveBeenCalled();
-    expect(mockPrisma.scheduledJob.findMany).not.toHaveBeenCalled();
   });
 });

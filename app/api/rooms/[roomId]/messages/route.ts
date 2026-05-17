@@ -70,7 +70,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
 }
 
 // DELETE /api/rooms/[roomId]/messages — wipe conversation state for this room
-// (messages, agent tasks, memos/notes/reminders, scheduled jobs, memories,
+// (messages, agent tasks, memos, scheduled jobs, memories,
 // summaries, event logs) while keeping the Room + its participants intact.
 // Runs inside a single transaction so partial wipes can't leave the room in a
 // half-cleared state.
@@ -88,17 +88,14 @@ export async function DELETE(
     const roomId = params.roomId;
 
     await prisma.$transaction([
-      // Order matters: ScheduledJob has no FK to Message, but some Memo/Note/
-      // Reminder rows do FK into AgentTask. Deleting AgentTask cascades to its
+      // Order matters: ScheduledJob has no FK to Message, but some Memo
+      // rows do FK into AgentTask. Deleting AgentTask cascades to its
       // children (ToolCall, LLMCall, EventLog) and sets FK columns on Message/
-      // Memo/Note/Reminder to null. The room-level deletes below then drop the
-      // rows themselves.
+      // Memo to null. The room-level deletes below then drop the rows themselves.
       prisma.scheduledJob.deleteMany({ where: { roomId } }),
       prisma.agentTask.deleteMany({ where: { roomId } }),
       prisma.message.deleteMany({ where: { roomId } }),
       prisma.memo.deleteMany({ where: { roomId } }),
-      prisma.note.deleteMany({ where: { roomId } }),
-      prisma.reminder.deleteMany({ where: { roomId } }),
       prisma.memory.deleteMany({ where: { roomId } }),
       prisma.messageSummary.deleteMany({ where: { roomId } }),
       prisma.eventLog.deleteMany({ where: { roomId } }),

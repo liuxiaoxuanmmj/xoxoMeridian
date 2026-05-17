@@ -38,8 +38,6 @@ function stableMergeBy<T>(prev: T[], next: T[], getKey: (item: T) => string): T[
 function mergeSnapshot(prev: RoomSnapshot, next: RoomSnapshot): RoomSnapshot {
   const messages = stableMergeBy(prev.messages, next.messages, (m) => m.id);
   const memos = stableMergeBy(prev.memos, next.memos, (m) => m.id);
-  const notes = stableMergeBy(prev.notes, next.notes, (n) => n.id);
-  const reminders = stableMergeBy(prev.reminders, next.reminders, (r) => r.id);
   const scheduledJobs = stableMergeBy(
     prev.scheduledJobs,
     next.scheduledJobs,
@@ -77,8 +75,6 @@ function mergeSnapshot(prev: RoomSnapshot, next: RoomSnapshot): RoomSnapshot {
     room === prev.room &&
     messages === prev.messages &&
     memos === prev.memos &&
-    notes === prev.notes &&
-    reminders === prev.reminders &&
     scheduledJobs === prev.scheduledJobs &&
     agentStatus === prev.agentStatus &&
     rooms === prev.rooms
@@ -86,7 +82,7 @@ function mergeSnapshot(prev: RoomSnapshot, next: RoomSnapshot): RoomSnapshot {
     return prev;
   }
 
-  return { room, messages, memos, notes, reminders, scheduledJobs, agentStatus, rooms };
+  return { room, messages, memos, scheduledJobs, agentStatus, rooms };
 }
 
 export function ChatApp({
@@ -288,7 +284,7 @@ export function ChatApp({
           />
         </section>
 
-        <LifePanel memos={snapshot.memos} notes={snapshot.notes} participants={participants} reminders={snapshot.reminders} roomId={roomId} scheduledJobs={snapshot.scheduledJobs ?? []} />
+        <LifePanel memos={snapshot.memos} participants={participants} roomId={roomId} scheduledJobs={snapshot.scheduledJobs ?? []} />
       </div>
     </main>
   );

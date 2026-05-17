@@ -2,7 +2,7 @@ import type { StructuredRoomContext } from "@/agent/types";
 import { prisma } from "@/lib/prisma";
 
 export async function buildAgentContext(roomId: string) {
-  const [room, recentMessages, notes, memos, reminders, memories, summaries, scheduledJobs] = await Promise.all([
+  const [room, recentMessages, memos, memories, summaries, scheduledJobs] = await Promise.all([
     prisma.room.findUniqueOrThrow({
       where: { id: roomId },
       include: {
@@ -25,9 +25,7 @@ export async function buildAgentContext(roomId: string) {
         senderAgent: { select: { displayName: true } }
       }
     }),
-    prisma.note.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.memo.findMany({ where: { roomId }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 10 }),
-    prisma.reminder.findMany({ where: { roomId, status: "pending" }, orderBy: { createdAt: "desc" }, take: 10 }),
     prisma.memory.findMany({ where: { roomId }, orderBy: { updatedAt: "desc" }, take: 30 }),
     prisma.messageSummary.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 3 }),
     prisma.scheduledJob.findMany({
@@ -53,12 +51,6 @@ export async function buildAgentContext(roomId: string) {
       at: message.createdAt.toISOString()
     })),
     pinnedMemos: memos.filter((m) => m.pinned).map((m) => ({ title: m.title, content: m.content })),
-    notes: notes.map((n) => ({ content: n.content, color: n.color })),
-    activeReminders: reminders.map((r) => ({
-      title: r.title,
-      dueAt: r.dueAt?.toISOString() ?? null,
-      timezone: r.timezone
-    })),
     activeSchedules: scheduledJobs.map((j) => ({
       jobId: j.id,
       cron: j.cron,
@@ -75,9 +67,7 @@ export async function buildAgentContext(roomId: string) {
     room,
     participants: room.participants,
     recentMessages: messages,
-    notes,
     memos,
-    reminders,
     memories,
     summaries,
     scheduledJobs,

@@ -1,29 +1,24 @@
 import { CronExpressionParser } from "cron-parser";
-import type { Prisma, Reminder, ScheduledJob } from "@prisma/client";
+import type { Prisma, ScheduledJob } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 
 const MISSED_WINDOW_MS = 60 * 60 * 1000;
 const MAX_FAIL_COUNT = 3;
-const REMINDER_BATCH = 50;
 const JOB_BATCH = 20;
 const DEFAULT_AGENT_SLUG = "life-assistant";
 
-const REMINDER_PRECISE_THRESHOLD_MS = 5 * 60 * 1000;
 const JOB_PRECISE_THRESHOLD_MS = 2 * 60 * 1000;
 
 export const TRIGGER_SCHEDULED_JOB = "scheduled.job";
-export const TRIGGER_REMINDER_FIRED = "reminder.fired";
 
 // Tools the agent must NOT call when running on behalf of a fired
-// schedule/reminder — calling any of these would re-create or mutate the
+// schedule — calling any of these would re-create or mutate the
 // very task that just fired, causing self-reschedule loops.
 export const SCHEDULER_BLOCKED_TOOLS: readonly string[] = [
   "schedule.create",
   "schedule.update",
   "schedule.cancel",
-  "reminder.create",
-  "reminder.update",
 ];
 
 export const TRIGGER_MARKER = "[这是已触发的定时任务正在执行]";
@@ -31,17 +26,13 @@ export const TRIGGER_MARKER = "[这是已触发的定时任务正在执行]";
 const BLOCKED_TOOL_DIRECTIVE =
   `不要再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。`;
 
-const activeTimers = new Map<string, NodeJS.Timeout>();
 const activeJobTimers = new Map<string, NodeJS.Timeout>();
 
 export type SchedulerTickResult = {
-  reminders: { fired: number; skipped: number; failed: number };
   jobs: { fired: number; skipped: number; failed: number };
 };
 
 export function clearAllTimers() {
-  for (const timer of activeTimers.values()) clearTimeout(timer);
-  activeTimers.clear();
   for (const timer of activeJobTimers.values()) clearTimeout(timer);
   activeJobTimers.clear();
 }
@@ -49,72 +40,19 @@ export function clearAllTimers() {
 export async function schedulerTick(now = new Date()): Promise<SchedulerTickResult> {
   const empty = { fired: 0, skipped: 0, failed: 0 };
 
-  const [hasReminder, hasJob] = await Promise.all([
-    prisma.reminder.findFirst({ where: { status: "pending" }, select: { id: true } }),
-    prisma.scheduledJob.findFirst({ where: { enabled: true }, select: { id: true } }),
-  ]);
+  const hasJob = await prisma.scheduledJob.findFirst({ where: { enabled: true }, select: { id: true } });
 
-  if (!hasReminder && !hasJob) {
-    return { reminders: { ...empty }, jobs: { ...empty } };
+  if (!hasJob) {
+    return { jobs: { ...empty } };
   }
 
-  const reminderWork = hasReminder
-    ? (async () => {
-        const fired = await fireDueReminders(now);
-        await scheduleNearTermReminders(now);
-        return fired;
-      })()
-    : Promise.resolve({ ...empty });
+  const jobs = await (async () => {
+    const fired = await fireDueScheduledJobs(now);
+    await scheduleNearTermJobs(now);
+    return fired;
+  })();
 
-  const jobWork = hasJob
-    ? (async () => {
-        const fired = await fireDueScheduledJobs(now);
-        await scheduleNearTermJobs(now);
-        return fired;
-      })()
-    : Promise.resolve({ ...empty });
-
-  const [reminders, jobs] = await Promise.all([reminderWork, jobWork]);
-  return { reminders, jobs };
-}
-
-async function fireDueReminders(now: Date) {
-  const due = await prisma.reminder.findMany({
-    where: { status: "pending", dueAt: { not: null, lte: now } },
-    take: REMINDER_BATCH,
-    orderBy: { dueAt: "asc" },
-  });
-
-  let fired = 0, skipped = 0, failed = 0;
-
-  for (const reminder of due) {
-    if (!reminder.dueAt) continue;
-    if (activeTimers.has(reminder.id)) continue;
-
-    const missed = now.getTime() - reminder.dueAt.getTime() > MISSED_WINDOW_MS;
-    const targetStatus: Prisma.ReminderUpdateInput["status"] = missed ? "skipped" : "fired";
-
-    const claim = await prisma.reminder.updateMany({
-      where: { id: reminder.id, status: "pending" },
-      data: { status: targetStatus },
-    });
-    if (claim.count === 0) continue;
-
-    if (missed) {
-      skipped += 1;
-      continue;
-    }
-
-    try {
-      await dispatchReminderTask(reminder);
-      fired += 1;
-    } catch (error) {
-      await releaseReminderClaim(reminder, error);
-      failed += 1;
-    }
-  }
-
-  return { fired, skipped, failed };
+  return { jobs };
 }
 
 async function fireDueScheduledJobs(now: Date) {
@@ -161,35 +99,6 @@ async function fireDueScheduledJobs(now: Date) {
   return { fired, skipped, failed };
 }
 
-async function dispatchReminderTask(reminder: Reminder) {
-  const agent = await prisma.agent.findUnique({ where: { slug: DEFAULT_AGENT_SLUG } });
-  if (!agent) throw new Error(`Default agent '${DEFAULT_AGENT_SLUG}' not found`);
-
-  const prompt = buildReminderPrompt(reminder);
-
-  const task = await prisma.agentTask.create({
-    data: {
-      roomId: reminder.roomId,
-      agentId: agent.id,
-      input: {
-        rawContent: reminder.title,
-        normalizedContent: prompt,
-        trigger: TRIGGER_REMINDER_FIRED,
-        reminderId: reminder.id,
-      } satisfies Prisma.InputJsonObject,
-    },
-  });
-
-  await prisma.eventLog.create({
-    data: {
-      roomId: reminder.roomId,
-      agentTaskId: task.id,
-      type: "scheduler.reminder.fired",
-      payload: { reminderId: reminder.id, title: reminder.title } satisfies Prisma.InputJsonObject,
-    },
-  });
-}
-
 async function dispatchScheduledJobTask(job: ScheduledJob) {
   const payload = (job.payload ?? {}) as Record<string, unknown>;
   const promptFromPayload = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
@@ -219,14 +128,6 @@ async function dispatchScheduledJobTask(job: ScheduledJob) {
   });
 }
 
-function buildReminderPrompt(reminder: Reminder) {
-  const parts = [`提醒到点了：${reminder.title}。`];
-  if (reminder.body) parts.push(`附加说明：${reminder.body}。`);
-  parts.push("请用一句温暖的话向房间发出这个提醒，不需要重复时间，也不要长篇大论。");
-  parts.push(BLOCKED_TOOL_DIRECTIVE);
-  return parts.join("");
-}
-
 // Wraps a fire-time action prompt with a marker so the LLM treats it as "execute
 // now" instead of mistaking it for a fresh user request to schedule something.
 // Idempotent: if the marker is already present, returns the input unchanged.
@@ -248,22 +149,6 @@ function isRunOnce(job: ScheduledJob): boolean {
   return payload.runOnce === true;
 }
 
-async function releaseReminderClaim(reminder: Reminder, error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  const meta = (reminder.metadata ?? {}) as Record<string, unknown>;
-  const attempts = ((meta.fireAttempts as number | undefined) ?? 0) + 1;
-  const reachedCap = attempts >= MAX_FAIL_COUNT;
-
-  await prisma.reminder.update({
-    where: { id: reminder.id },
-    data: {
-      status: reachedCap ? "cancelled" : "pending",
-      metadata: { ...meta, fireAttempts: attempts, lastError: message } as Prisma.InputJsonValue,
-    },
-  });
-  console.error(`[scheduler] reminder ${reminder.id} failed (attempt ${attempts}):`, message);
-}
-
 async function rollbackJobClaim(job: ScheduledJob, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const failCount = job.failCount + 1;
@@ -279,27 +164,6 @@ async function rollbackJobClaim(job: ScheduledJob, error: unknown) {
     },
   });
   console.error(`[scheduler] job ${job.id} failed (failCount=${failCount}):`, message);
-}
-
-async function scheduleNearTermReminders(now: Date) {
-  const soon = new Date(now.getTime() + REMINDER_PRECISE_THRESHOLD_MS);
-  const nearTerm = await prisma.reminder.findMany({
-    where: {
-      status: "pending",
-      dueAt: { not: null, gt: now, lte: soon },
-    },
-    take: 100,
-  });
-
-  for (const reminder of nearTerm) {
-    if (!reminder.dueAt || activeTimers.has(reminder.id)) continue;
-    const delay = Math.max(0, reminder.dueAt.getTime() - now.getTime());
-    const timer = setTimeout(() => {
-      activeTimers.delete(reminder.id);
-      void fireReminderNow(reminder.id);
-    }, delay);
-    activeTimers.set(reminder.id, timer);
-  }
 }
 
 async function scheduleNearTermJobs(now: Date) {
@@ -320,24 +184,6 @@ async function scheduleNearTermJobs(now: Date) {
       void fireJobNow(job.id);
     }, delay);
     activeJobTimers.set(job.id, timer);
-  }
-}
-
-async function fireReminderNow(reminderId: string) {
-  const reminder = await prisma.reminder.findUnique({ where: { id: reminderId } });
-  if (!reminder || reminder.status !== "pending") return;
-  if (!reminder.dueAt) return;
-
-  const claim = await prisma.reminder.updateMany({
-    where: { id: reminderId, status: "pending" },
-    data: { status: "fired" },
-  });
-  if (claim.count === 0) return;
-
-  try {
-    await dispatchReminderTask(reminder);
-  } catch (error) {
-    await releaseReminderClaim(reminder, error);
   }
 }
 

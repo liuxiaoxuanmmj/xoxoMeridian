@@ -44,7 +44,6 @@ async function schedulerLoop() {
     try {
       const result = await schedulerTick();
       const moved =
-        result.reminders.fired + result.reminders.skipped + result.reminders.failed +
         result.jobs.fired + result.jobs.skipped + result.jobs.failed;
       if (moved > 0) console.log("[worker] scheduler tick:", result);
 

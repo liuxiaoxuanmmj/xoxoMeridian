@@ -14,7 +14,7 @@ type ScheduleCreateInput = {
 // A one-off scheduled for an absolute datetime may land slightly in the past by
 // the time planning latency finishes — fire it anyway, but refuse anything that
 // is clearly too stale to be what the user meant.
-const FIRE_AT_GRACE_MS = 5 * 60 * 1000;
+export const FIRE_AT_GRACE_MS = 5 * 60 * 1000;
 
 type ScheduleListInput = Record<string, never>;
 
@@ -33,7 +33,7 @@ type ScheduleUpdateInput = {
 
 // Hard cap on jobs per room. Prevents the LLM from going wild and filling the
 // scheduler queue with duplicates.
-const MAX_JOBS_PER_ROOM = 30;
+export const MAX_JOBS_PER_ROOM = 30;
 
 export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
   return {
@@ -330,7 +330,7 @@ function inferRequesterTimezone(context: ToolExecutionContext): string | undefin
   )?.user.profile?.timezone ?? undefined;
 }
 
-function isValidCron(cron: string, timezone: string): boolean {
+export function isValidCron(cron: string, timezone: string): boolean {
   try {
     CronExpressionParser.parse(cron, { tz: timezone });
     return true;
@@ -343,7 +343,7 @@ function isValidCron(cron: string, timezone: string): boolean {
 // always has a parseable value. Uses the wall-clock minute/hour of the fireAt
 // in the given timezone — the value is cosmetic because runOnce=true disables
 // the job after firing, but it still needs to round-trip through cron-parser.
-function synthesizeCronFromDate(fireAt: Date, timezone: string): string {
+export function synthesizeCronFromDate(fireAt: Date, timezone: string): string {
   const parts = new Intl.DateTimeFormat("en-US", {
     timeZone: timezone,
     hour: "2-digit",

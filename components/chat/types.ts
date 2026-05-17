@@ -52,28 +52,12 @@ export type ChatMessage = {
   } | null;
 };
 
-export type LifeNote = {
-  id: string;
-  content: string;
-  color: string;
-  createdAt: string;
-};
 
 export type LifeMemo = {
   id: string;
   title: string;
   content: string;
   pinned: boolean;
-  createdAt: string;
-};
-
-export type LifeReminder = {
-  id: string;
-  title: string;
-  body?: string | null;
-  dueAt?: string | null;
-  timezone?: string | null;
-  status: string;
   createdAt: string;
 };
 
@@ -103,9 +87,7 @@ export type RoomSnapshot = {
     }>;
   };
   messages: ChatMessage[];
-  notes: LifeNote[];
   memos: LifeMemo[];
-  reminders: LifeReminder[];
   scheduledJobs: LifeScheduledJob[];
   agentStatus: {
     isWorking: boolean;

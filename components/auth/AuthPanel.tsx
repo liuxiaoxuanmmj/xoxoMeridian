@@ -20,7 +20,7 @@ export function AuthPanel() {
               一个只属于你们两个人的异地聊天室
             </h1>
             <p className="max-w-xl text-base leading-7 text-ink/70">
-              消息、便签、备忘录、提醒事项和本地 Agent 执行链路都会落库。小助手部署在同一台服务器上，通过白名单工具处理生活任务。
+              消息、备忘录、提醒事项和本地 Agent 执行链路都会落库。小助手部署在同一台服务器上，通过白名单工具处理生活任务。
             </p>
           </div>
           <div className="grid max-w-2xl gap-3 text-sm text-ink/70 sm:grid-cols-3">

@@ -5,6 +5,7 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 import { readJsonBody } from "@/lib/validation";
 import { FIFTEEN_MINUTES_MS, RATE_LIMIT_KEYS, AUTH_MESSAGES } from "@/lib/constants";
 import { env } from "@/lib/env";
+import { sendEmail, createPasswordResetEmail } from "@/lib/email";
 import { z } from "zod";
 
 const forgotPasswordSchema = z.object({
@@ -36,11 +37,20 @@ export async function POST(request: Request) {
     // Create reset token
     const token = await createPasswordResetToken(user.id);
 
-    // TODO: Send email with reset link
-    // For now, log the token (in production, this should send an email)
-    if (env.NODE_ENV === "development") {
-      console.log(`[password-reset] Token for ${email}: ${token}`);
-      console.log(`[password-reset] Reset link: ${env.APP_BASE_URL}/reset-password?token=${token}`);
+    // Send password reset email
+    const resetLink = `${env.APP_BASE_URL}/reset-password?token=${token}`;
+    const emailPayload = createPasswordResetEmail({
+      email: user.email,
+      resetLink,
+      expiryHours: 1,
+    });
+
+    const result = await sendEmail(emailPayload);
+
+    if (!result.success) {
+      console.error(`[password-reset] Failed to send email to ${email}:`, result.error);
+      // Don't expose email sending failure to prevent enumeration
+      // Log for debugging but return success to user
     }
 
     return jsonOk({

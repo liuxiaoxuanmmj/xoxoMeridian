@@ -32,6 +32,10 @@ const baseSchema = z.object({
   QWEATHER_API_HOST: z.string().optional().default("devapi.qweather.com"),
   QWEATHER_GEOAPI_HOST: z.string().optional().default("geoapi.qweather.com"),
 
+  EMAIL_PROVIDER: z.string().default("mock"),
+  EMAIL_API_KEY: z.string().optional().default(""),
+  EMAIL_FROM: z.string().email().default("noreply@example.com"),
+
   AGENT_WORKER_POLL_MS: z.coerce.number().int().positive().default(3000),
   AGENT_TASK_INLINE_RUN: z
     .enum(["true", "false"])

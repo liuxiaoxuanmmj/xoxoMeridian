@@ -7,7 +7,6 @@ import { buildClarifyPlan, repairPlan } from "@/agent/plan-repair";
 import { formatIssuesForLLM, validatePlan } from "@/agent/plan-validator";
 import {
   SCHEDULER_BLOCKED_TOOLS,
-  TRIGGER_REMINDER_FIRED,
   TRIGGER_SCHEDULED_JOB,
 } from "@/agent/scheduler-tick";
 import { createToolRegistry } from "@/agent/tool-registry";
@@ -40,9 +39,7 @@ export async function runAgentTask(taskId: string) {
     const runtimeContext = await buildAgentContext(task.roomId);
     await tracer.event("agent.context.built", {
       recentMessageCount: runtimeContext.recentMessages.length,
-      memoCount: runtimeContext.memos.length,
-      noteCount: runtimeContext.notes.length,
-      reminderCount: runtimeContext.reminders.length
+      memoCount: runtimeContext.memos.length
     });
 
     const registry = createToolRegistry();
@@ -54,7 +51,7 @@ export async function runAgentTask(taskId: string) {
       description: tool.description,
       schema: tool.schema
     }));
-    // When a task is invoked by the scheduler (a fired schedule or reminder),
+    // When a task is invoked by the scheduler (a fired scheduled job),
     // the agent must EXECUTE the action, not re-schedule it. Strip the writeable
     // scheduling tools from what the LLM sees so it physically cannot recurse.
     const availableTools = filterToolsForTrigger(allTools, trigger);
@@ -360,7 +357,7 @@ function getTaskTrigger(input: unknown): string | undefined {
   return undefined;
 }
 
-const SCHEDULER_TRIGGERS = new Set<string>([TRIGGER_SCHEDULED_JOB, TRIGGER_REMINDER_FIRED]);
+const SCHEDULER_TRIGGERS = new Set<string>([TRIGGER_SCHEDULED_JOB]);
 const SCHEDULER_BLOCKED_TOOL_SET = new Set<string>(SCHEDULER_BLOCKED_TOOLS);
 
 function isTriggeredByScheduler(trigger: string | undefined): boolean {
@@ -377,13 +374,6 @@ export function filterToolsForTrigger<T extends { name: string }>(
 
 function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
   const byTool = new Map(toolResults.map((r) => [r.toolName, r]));
-
-  if (byTool.has("reminder.create")) {
-    const output = byTool.get("reminder.create")?.output as
-      | { title?: string; dueAt?: string | Date | null; timezone?: string }
-      | undefined;
-    return `已经帮你创建提醒：${output?.title ?? "新的提醒"}，已经放到右侧提醒列表里。`;
-  }
 
   if (byTool.has("weather.get")) {
     const output = byTool.get("weather.get")?.output as
@@ -459,9 +449,6 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
     return `备忘录已保存：${output?.title ?? "新的备忘录"}。`;
   }
 
-  if (byTool.has("note.create")) {
-    return "便签已经贴到右侧面板了。";
-  }
 
   if (plan.finalResponseText) {
     return plan.finalResponseText;

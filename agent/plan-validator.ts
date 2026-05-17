@@ -79,7 +79,6 @@ export function validatePlan(plan: AgentPlan, userPrompt: string): PlanValidatio
   const hasCreate = tools.has("schedule.create");
   const hasUpdate = tools.has("schedule.update");
   const hasCancel = tools.has("schedule.cancel");
-  const hasReminderCreate = tools.has("reminder.create");
 
   const createInputs = toArray(plan.toolInputs?.["schedule.create"]);
   const updateInputs = toArray(plan.toolInputs?.["schedule.update"]);
@@ -89,15 +88,15 @@ export function validatePlan(plan: AgentPlan, userPrompt: string): PlanValidatio
   const anyUpdateRunOnceFalse = updateInputs.some((i) => i.runOnce === false);
 
   // Issue A: reply promises a one-shot fire but the tool plan only cancels —
-  // no reminder.create / schedule.create / schedule.update that would actually
+  // no schedule.create / schedule.update that would actually
   // schedule the promised fire. This is the exact bug from the logs.
   // Suppress when the reply is a cancel acknowledgement: "已取消今晚发诗的任务"
   // is describing a deletion, not promising a fresh one-shot.
-  if (replyOneShot && !replyCancelAck && hasCancel && !hasCreate && !hasUpdate && !hasReminderCreate) {
+  if (replyOneShot && !replyCancelAck && hasCancel && !hasCreate && !hasUpdate) {
     issues.push({
       code: "one_shot_promise_without_create",
       message:
-        "final_response_text 承诺了一次性的执行（如'今晚八点只发一次'），但 tool_inputs 里只有 schedule.cancel，没有 reminder.create、schedule.update 或 schedule.create(runOnce=true) 来真正安排这次执行。请补上替代任务。"
+        "final_response_text 承诺了一次性的执行（如'今晚八点只发一次'），但 tool_inputs 里只有 schedule.cancel，没有 schedule.update 或 schedule.create(runOnce=true) 来真正安排这次执行。请补上替代任务。"
     });
   }
 
@@ -108,7 +107,7 @@ export function validatePlan(plan: AgentPlan, userPrompt: string): PlanValidatio
     issues.push({
       code: "recurring_schedule_for_one_shot",
       message:
-        "用户表达的是一次性时间点（今晚/明天/具体日期等），但 schedule.create 没有设置 runOnce=true。请对该调用设置 runOnce=true，或改用 reminder.create 配合 dueAt。"
+        "用户表达的是一次性时间点（今晚/明天/具体日期等），但 schedule.create 没有设置 runOnce=true。请对该调用设置 runOnce=true，或改用 schedule.create 配合 fireAt。"
     });
   }
 

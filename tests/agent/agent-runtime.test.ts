@@ -28,8 +28,6 @@ describe("agent dispatch primitives", () => {
       "memo.create",
       "memory.recall",
       "memory.set",
-      "note.create",
-      "reminder.create",
       "schedule.cancel",
       "schedule.create",
       "schedule.list",
@@ -39,28 +37,26 @@ describe("agent dispatch primitives", () => {
     ]);
   });
 
-  it("mock llm returns a structured reminder plan", async () => {
+  it("mock llm returns a structured weather plan", async () => {
     const provider = createMockLLMProvider();
     const result = await provider.plan({
-      prompt: "@小助手 明天提醒我给她发早安",
+      prompt: "@小助手 查一下天气",
       roomContext: {
         room: { name: "Test", slug: "test" },
         participants: [],
         recentMessages: [],
         pinnedMemos: [],
-        notes: [],
-        activeReminders: [],
         activeSchedules: [],
         semanticMemory: [],
         summaries: []
       },
-      availableTools: [{ name: "reminder.create", description: "", schema: {} }]
+      availableTools: [{ name: "weather.get", description: "", schema: {} }]
     });
 
-    expect(result.intent).toBe("create_reminder");
-    expect(result.requiredTools).toEqual(["reminder.create"]);
-    expect(result.toolInputs["reminder.create"]).toMatchObject({
-      title: "给她发早安"
+    expect(result.intent).toBe("get_weather");
+    expect(result.requiredTools).toEqual(["weather.get"]);
+    expect(result.toolInputs["weather.get"]).toMatchObject({
+      city: "London"
     });
   });
 });
@@ -69,7 +65,6 @@ describe("filterToolsForTrigger", () => {
   const allTools = [
     { name: "memory.recall" },
     { name: "memory.set" },
-    { name: "reminder.create" },
     { name: "schedule.create" },
     { name: "schedule.update" },
     { name: "schedule.cancel" },
@@ -93,13 +88,11 @@ describe("filterToolsForTrigger", () => {
     expect(filtered).not.toContain("schedule.create");
     expect(filtered).not.toContain("schedule.update");
     expect(filtered).not.toContain("schedule.cancel");
-    expect(filtered).not.toContain("reminder.create");
   });
 
-  it("strips writeable scheduling tools when trigger is reminder.fired", () => {
-    const filtered = filterToolsForTrigger(allTools, "reminder.fired").map((t) => t.name);
+  it("strips writeable scheduling tools when trigger is scheduled.job (alias)", () => {
+    const filtered = filterToolsForTrigger(allTools, "scheduled.job").map((t) => t.name);
     expect(filtered).not.toContain("schedule.create");
-    expect(filtered).not.toContain("reminder.create");
     expect(filtered).toContain("memory.recall");
   });
 });

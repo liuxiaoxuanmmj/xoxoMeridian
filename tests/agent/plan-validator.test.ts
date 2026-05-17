@@ -108,16 +108,16 @@ describe("validatePlan", () => {
     expect(issues.map((i) => i.code)).toContain("recurring_promise_with_run_once");
   });
 
-  it("accepts cancel + reminder.create replacement for one-shot correction", () => {
+  it("accepts cancel + schedule.create(fireAt) replacement for one-shot correction", () => {
     const plan = makePlan({
-      requiredTools: ["schedule.cancel", "reminder.create"],
+      requiredTools: ["schedule.cancel", "schedule.create"],
       finalResponseText: "明白了，今晚八点只发一次就好。",
       toolInputs: {
         "schedule.cancel": { jobId: "j-1" },
-        "reminder.create": {
-          title: "发苏轼诗词",
-          dueAt: "2026-05-09T12:00:00.000Z",
-          timezone: "Asia/Shanghai"
+        "schedule.create": {
+          fireAt: "2026-05-09T20:00:00+08:00",
+          timezone: "Asia/Shanghai",
+          prompt: "发苏轼诗词"
         }
       }
     });

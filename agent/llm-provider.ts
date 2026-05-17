@@ -39,8 +39,6 @@ export function createMockLLMProvider(): LLMProvider {
       const hasWeather = prompt.includes("天气") || lowerPrompt.includes("weather");
       const hasTimezone = prompt.includes("时差") || prompt.includes("时间") || lowerPrompt.includes("timezone");
       const hasMemo = prompt.includes("备忘") || lowerPrompt.includes("memo");
-      const hasNote = prompt.includes("便签") || prompt.includes("小纸条") || lowerPrompt.includes("note");
-      const hasReminder = prompt.includes("提醒") || lowerPrompt.includes("remind") || prompt.includes("明天");
 
       if (hasWeather) {
         return withRaw({
@@ -95,49 +93,13 @@ export function createMockLLMProvider(): LLMProvider {
         });
       }
 
-      if (hasNote) {
-        return withRaw({
-          intent: "create_note",
-          confidence: 0.78,
-          requiredTools: ["note.create"],
-          taskSteps: ["整理便签内容", "写入便签", "回复聊天室"],
-          finalResponsePlan: "告诉用户便签已经贴到右侧面板。",
-          finalResponseText: "便签已经贴到右侧面板了。",
-          toolInputs: {
-            "note.create": {
-              content: prompt.replace(/^(帮我)?(创建|新增)?(便签|小纸条)[:：\s]*/u, "") || prompt,
-              color: "sage"
-            }
-          }
-        });
-      }
-
-      if (hasReminder) {
-        return withRaw({
-          intent: "create_reminder",
-          confidence: 0.88,
-          requiredTools: ["reminder.create"],
-          taskSteps: ["解析提醒内容", "解析提醒时间", "创建提醒事项", "回复聊天室"],
-          finalResponsePlan: "告诉用户提醒事项已经创建，并说明已经展示在右侧提醒列表。",
-          finalResponseText: "提醒已经帮你设好，放在右侧提醒列表里了。",
-          toolInputs: {
-            "reminder.create": {
-              title: extractReminderTitle(prompt),
-              body: prompt,
-              naturalDue: prompt.includes("明天") ? "tomorrow morning" : "unspecified",
-              timezone: "Asia/Shanghai"
-            }
-          }
-        });
-      }
-
       return withRaw({
         intent: "chat_assist",
         confidence: 0.5,
         requiredTools: [],
         taskSteps: ["直接回复用户"],
         finalResponsePlan: "直接回答用户的问题。",
-        finalResponseText: `我是这个房间的${AGENT_DISPLAY_NAME}，可以帮你查天气、对时区、记便签、写备忘和设提醒。`,
+        finalResponseText: `我是这个房间的${AGENT_DISPLAY_NAME}，可以帮你查天气、对时区、写备忘和设任务。`,
         toolInputs: {}
       });
     }
@@ -157,18 +119,6 @@ function withRaw(plan: AgentPlan): LLMPlanResult {
       tool_inputs: plan.toolInputs
     }
   };
-}
-
-function extractReminderTitle(prompt: string) {
-  const cleaned = prompt
-    .replace(new RegExp(`^${MENTION_AGENT}`, "u"), "")
-    .replace(/^\/agent/u, "")
-    .replace(/明天/u, "")
-    .replace(/提醒我/u, "")
-    .replace(/提醒/u, "")
-    .trim();
-
-  return cleaned || "新的提醒";
 }
 
 function createOpenAICompatibleProvider(config: {
@@ -220,7 +170,7 @@ function createOpenAICompatibleProvider(config: {
                   "schema 里 required 列出的字段必须提供。" +
                   "如果**同一个工具需要被调用多次**（例如要写多条记忆），把 tool_inputs[tool] 写成对象数组，每个元素是一次调用的参数，例如 tool_inputs['memory.set'] = [{key,value},{key,value}]；只调用一次时直接给单个对象即可。" +
                   "final_response_text 是**实际发给用户的中文回复正文**，要直接、温暖、口语化，可以引用 room_context 里的事实。" +
-                  "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的助手，可以帮你查天气、记便签、设提醒'）。" +
+                  "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的助手，可以帮你查天气、设提醒'）。" +
                   "final_response_plan 是给开发者看的内部规划摘要，与 final_response_text 不同。" +
                   // memory guidance
                   "【关于记忆】room_context.semantic_memory 是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
@@ -231,15 +181,14 @@ function createOpenAICompatibleProvider(config: {
                   "如果不确定某个事实是否已经记过，可以先用 memory.recall 查一下再决定要不要 memory.set。" +
                   // scheduling guidance
                   "【关于定时任务】当用户说的是**一次性时间点**（如'今晚八点/明天早上/后天/下周三/4月5日'等，且未出现'每/以后每/每天/每周'），" +
-                  "必须走一次性路径：优先用 reminder.create 并给出 dueAt；若必须由 agent 执行某个 prompt（例如'今晚八点给我发一首诗'），" +
-                  "用 **schedule.create 的 fireAt 字段**（ISO-8601 带时区偏移，例如 '2026-05-09T20:40:00+08:00'），它会自动以 runOnce 单次触发。" +
+                  "必须走一次性路径：用 **schedule.create 的 fireAt 字段**（ISO-8601 带时区偏移，例如 '2026-05-09T20:40:00+08:00'），它会自动以 runOnce 单次触发。" +
                   "不要再用 cron+runOnce 表达'今天某点某分'这种**绝对时间点**：planning 延迟几秒就可能把当前时间推过目标分钟，cron 的 next() 会直接跳到第二天。" +
                   "如果实在用 cron 表达一次性意图（**不推荐**），那么 `runOnce: true` **必须**和 cron 一起出现在 schedule.create 入参里，缺一不可。" +
                   "只有当用户是**真正的重复周期**（每周六、每天早上、工作日晚上）时才用 cron。" +
                   "当用户想**修改**已有定时任务（例如'改成每晚'/'其实我只要今晚一次'），优先用 schedule.update，而不是 cancel+create。" +
                   "final_response_text 中的承诺必须与 tool_inputs 的动作一一对应：" +
                   "说'每天/每晚'就必须有不带 runOnce 的 schedule.create(cron=...) 或 runOnce=false 的 schedule.update；" +
-                  "说'只今晚一次/只一次/某个具体时间'就必须有 reminder.create、schedule.create(fireAt=...) 或 schedule.update(runOnce=true)。" +
+                  "说'只今晚一次/只一次/某个具体时间'就必须有 schedule.create(fireAt=...) 或 schedule.update(runOnce=true)。" +
                   "若用户消息里同时出现了旧任务要取消 + 新任务要安排，请在同一轮里同时输出取消和创建/更新两类工具调用。" +
                   // triggered-fire awareness
                   `【关于已触发的任务】如果 user_prompt 以'${TRIGGER_MARKER}'开头，意味着系统**已经触发**了你之前安排好的任务——直接执行其中描述的动作并写到 final_response_text，**不要**再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。这一轮的 user_prompt 不是用户的请求，而是触发回调。` +

@@ -44,7 +44,7 @@ export function LeftRail({
 
   const onWipe = async () => {
     if (busy) return;
-    if (!confirm("清空当前会话的所有消息 / 备忘 / 便签 / 提醒 / 记忆？房间本身保留。此操作不可撤销。")) return;
+    if (!confirm("清空当前会话的所有消息 / 备忘 / 提醒 / 记忆？房间本身保留。此操作不可撤销。")) return;
     setBusy("wipe");
     try {
       const resp = await fetch(`/api/rooms/${currentRoomId}/messages`, { method: "DELETE" });

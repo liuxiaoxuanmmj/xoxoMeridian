@@ -43,14 +43,6 @@ enum LLMCallStatus {
   failed
 }
 
-enum ReminderStatus {
-  pending
-  fired
-  done
-  cancelled
-  skipped
-}
-
 model User {
   id                   String                @id @default(cuid())
   email                String                @unique
@@ -65,8 +57,7 @@ model User {
   messages             Message[]
   requestedTasks       AgentTask[]           @relation("RequestedTasks")
   memos                Memo[]
-  notes                Note[]
-  reminders            Reminder[]
+
   eventLogs            EventLog[]
   memories             Memory[]
   scheduledJobs        ScheduledJob[]
@@ -126,8 +117,6 @@ model Room {
   messages         Message[]
   agentTasks       AgentTask[]
   memos            Memo[]
-  notes            Note[]
-  reminders        Reminder[]
   messageSummaries MessageSummary[]
   memories         Memory[]
   eventLogs        EventLog[]
@@ -212,8 +201,6 @@ model AgentTask {
   llmCalls        LLMCall[]
   eventLogs       EventLog[]
   memos           Memo[]
-  notes           Note[]
-  reminders       Reminder[]
 
   @@index([status, createdAt])
   @@index([roomId])
@@ -276,46 +263,6 @@ model Memo {
   @@index([roomId, createdAt])
 }
 
-model Note {
-  id          String     @id @default(cuid())
-  roomId      String
-  createdById String?
-  agentTaskId String?
-  content     String
-  color       String     @default("warm")
-  metadata    Json?
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
-  room        Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  createdBy   User?      @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  agentTask   AgentTask? @relation(fields: [agentTaskId], references: [id], onDelete: SetNull)
-
-  @@index([roomId, createdAt])
-}
-
-model Reminder {
-  id                 String         @id @default(cuid())
-  roomId             String
-  createdById        String?
-  agentTaskId        String?
-  title              String
-  body               String?
-  dueAt              DateTime?
-  timezone           String?
-  contactWindowStart String?
-  contactWindowEnd   String?
-  notifyChannel      String?
-  status             ReminderStatus @default(pending)
-  metadata           Json?
-  createdAt          DateTime       @default(now())
-  updatedAt          DateTime       @updatedAt
-  room               Room           @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  createdBy          User?          @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  agentTask          AgentTask?     @relation(fields: [agentTaskId], references: [id], onDelete: SetNull)
-
-  @@index([roomId, status, createdAt])
-  @@index([status, dueAt])
-}
 
 model MessageSummary {
   id            String   @id @default(cuid())

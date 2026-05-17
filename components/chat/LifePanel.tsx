@@ -1,8 +1,12 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import type { ChatUser, LifeMemo, LifeNote, LifeReminder, LifeScheduledJob } from "@/components/chat/types";
+import type { ChatUser, LifeMemo, LifeScheduledJob } from "@/components/chat/types";
+import { MemoModal, ScheduledJobModal } from "@/components/chat/LifePanelModals";
+import { ItemActions } from "@/components/chat/ItemActions";
+import { showError } from "@/lib/ui-utils";
 
 type WeatherSnapshot = {
   provider: "qweather" | "mock";
@@ -29,21 +33,26 @@ const WEATHER_REFRESH_MS = 10 * 60 * 1000;
 export function LifePanel({
   roomId,
   participants,
-  notes,
   memos,
-  reminders,
   scheduledJobs
 }: {
   roomId: string;
   participants: ChatUser[];
-  notes: LifeNote[];
   memos: LifeMemo[];
-  reminders: LifeReminder[];
   scheduledJobs: LifeScheduledJob[];
 }) {
+  const router = useRouter();
   const [now, setNow] = useState(() => new Date());
   const [weather, setWeather] = useState<WeatherResult | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
+  const [deletingItem, setDeletingItem] = useState<string | null>(null);
+
+  type ModalState =
+    | { type: "memo"; item?: LifeMemo }
+    | { type: "job"; item?: LifeScheduledJob }
+    | { type: null };
+
+  const [modal, setModal] = useState<ModalState>({ type: null });
 
   useEffect(() => {
     const timer = setInterval(() => setNow(new Date()), 30000);
@@ -79,6 +88,33 @@ export function LifePanel({
   const selfUser = participants[0];
   const partnerUser = participants[1];
 
+  const handleDelete = async (
+    type: "scheduled-jobs" | "memos",
+    id: string,
+    confirmMsg: string
+  ) => {
+    if (deletingItem) return;
+    if (!confirm(confirmMsg)) return;
+
+    setDeletingItem(id);
+    try {
+      const resp = await fetch(`/api/rooms/${roomId}/${type}/${id}`, {
+        method: "DELETE",
+      });
+      if (!resp.ok) throw new Error(`删除失败: ${resp.status}`);
+      router.refresh();
+    } catch (err) {
+      showError(err, "删除失败");
+    } finally {
+      setDeletingItem(null);
+    }
+  };
+
+  const handleModalSuccess = () => {
+    setModal({ type: null });
+    router.refresh();
+  };
+
   return (
     <aside className="hidden min-h-0 w-80 shrink-0 overflow-y-auto border-l border-warm-200 bg-white/72 p-4 xl:block">
       <div className="space-y-4">
@@ -112,60 +148,93 @@ export function LifePanel({
           )}
         </section>
 
-        <PanelSection title="提醒事项" empty="还没有提醒事项">
-          {reminders.map((reminder) => (
-            <div key={reminder.id} className="rounded-lg border border-warm-200 bg-white p-3 text-sm">
-              <p className="font-medium text-ink">{reminder.title}</p>
-              {reminder.dueAt ? <p className="mt-1 text-xs text-ink/55">{formatDateTime(reminder.dueAt, reminder.timezone)}</p> : null}
-            </div>
-          ))}
-        </PanelSection>
-
-        <PanelSection title="周期任务" empty="还没有周期任务">
+        <PanelSection
+          title="任务"
+          empty="还没有任务"
+          onAdd={() => setModal({ type: "job" })}
+        >
           {scheduledJobs.map((job) => {
             const description = typeof job.payload?.description === "string" ? job.payload.description : null;
             const prompt = typeof job.payload?.prompt === "string" ? job.payload.prompt : null;
             const runOnce = job.payload?.runOnce === true;
             return (
-              <div key={job.id} className="rounded-lg border border-sage-100 bg-white p-3 text-sm">
+              <div key={job.id} className="group relative rounded-lg border border-sage-100 bg-white p-3 text-sm">
                 <p className="font-medium text-ink">{description ?? prompt ?? job.cron}</p>
                 <p className="mt-1 text-xs text-ink/55">
                   {runOnce
                     ? `一次性 · ${formatDateTime(job.nextRunAt, job.timezone)}`
                     : `下次：${formatDateTime(job.nextRunAt, job.timezone)} · ${job.cron}`}
                 </p>
+                <ItemActions
+                  onEdit={() => setModal({ type: "job", item: job })}
+                  onDelete={() => handleDelete("scheduled-jobs", job.id, "确定要停用这个任务吗？")}
+                  isDeleting={deletingItem === job.id}
+                  editTitle="编辑任务"
+                  deleteTitle="停用任务"
+                />
               </div>
             );
           })}
         </PanelSection>
 
-        <PanelSection title="备忘录" empty="还没有备忘录">
+        <PanelSection
+          title="备忘录"
+          empty="还没有备忘录"
+          onAdd={() => setModal({ type: "memo" })}
+        >
           {memos.map((memo) => (
-            <div key={memo.id} className="rounded-lg border border-sage-100 bg-white p-3 text-sm">
+            <div key={memo.id} className="group relative rounded-lg border border-sage-100 bg-white p-3 text-sm">
               <p className="font-medium text-ink">{memo.title}</p>
               <p className="mt-1 leading-5 text-ink/65">{memo.content}</p>
-            </div>
-          ))}
-        </PanelSection>
-
-        <PanelSection title="小便签" empty="还没有便签">
-          {notes.map((note) => (
-            <div key={note.id} className="rounded-lg border border-warm-200 bg-white p-3 text-sm leading-5 text-ink/70">
-              {note.content}
+              <ItemActions
+                onEdit={() => setModal({ type: "memo", item: memo })}
+                onDelete={() => handleDelete("memos", memo.id, "确定要删除这条备忘录吗？")}
+                isDeleting={deletingItem === memo.id}
+                editTitle="编辑备忘录"
+                deleteTitle="删除备忘录"
+              />
             </div>
           ))}
         </PanelSection>
       </div>
+
+      <MemoModal
+        isOpen={modal.type === "memo"}
+        onClose={() => setModal({ type: null })}
+        roomId={roomId}
+        memo={modal.type === "memo" ? modal.item : undefined}
+        onSuccess={handleModalSuccess}
+      />
+      <ScheduledJobModal
+        isOpen={modal.type === "job"}
+        onClose={() => setModal({ type: null })}
+        roomId={roomId}
+        job={modal.type === "job" ? modal.item : undefined}
+        participants={participants}
+        onSuccess={handleModalSuccess}
+      />
     </aside>
   );
 }
 
-function PanelSection({ title, empty, children }: { title: string; empty: string; children: React.ReactNode }) {
+function PanelSection({ title, empty, children, onAdd }: { title: string; empty: string; children: React.ReactNode; onAdd?: () => void }) {
   const hasChildren = Array.isArray(children) ? children.length > 0 : Boolean(children);
 
   return (
     <section>
-      <h2 className="mb-2 text-sm font-semibold text-ink">{title}</h2>
+      <div className="mb-2 flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        {onAdd && (
+          <button
+            type="button"
+            onClick={onAdd}
+            className="rounded border border-sage-300 bg-sage-50 px-2 py-0.5 text-xs font-medium text-sage-700 hover:bg-sage-100"
+            title={`新建${title}`}
+          >
+            + 新建
+          </button>
+        )}
+      </div>
       <div className="space-y-2">{hasChildren ? children : <p className="rounded-lg border border-dashed border-ink/15 p-3 text-sm text-ink/45">{empty}</p>}</div>
     </section>
   );
