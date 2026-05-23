@@ -1,6 +1,7 @@
 import type { Prisma } from "@prisma/client";
 
 import { buildAgentContext } from "@/agent/context-builder";
+import { runPostTaskHooks } from "@/agent/post-task";
 import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
 import { buildClarifyPlan, repairPlan } from "@/agent/plan-repair";
@@ -301,6 +302,8 @@ export async function runAgentTask(taskId: string) {
       createdAt: finalMessage.createdAt
     });
 
+    runPostTaskHooks(task.roomId);
+
     return prisma.agentTask.findUniqueOrThrow({
       where: { id: task.id },
       include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
@@ -449,6 +452,61 @@ function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
     return `备忘录已保存：${output?.title ?? "新的备忘录"}。`;
   }
 
+  if (byTool.has("web.search")) {
+    const output = byTool.get("web.search")?.output as
+      | {
+          provider?: "tavily" | "mock";
+          query?: string;
+          answer?: string;
+          results?: Array<{
+            title: string;
+            url: string;
+            content: string;
+            score: number;
+            publishedDate?: string;
+          }>;
+          fallbackReason?: string;
+        }
+      | undefined;
+
+    if (!output) {
+      return plan.finalResponseText || "搜索完成。";
+    }
+
+    const parts: string[] = [];
+
+    // AI 摘要（如果有）
+    if (output.answer) {
+      parts.push(output.answer);
+    }
+
+    // 搜索结果列表
+    if (output.results && output.results.length > 0) {
+      const resultLines = output.results
+        .slice(0, 3) // 最多显示 3 条
+        .map((r, i) => {
+          const title = r.title || "无标题";
+          const snippet = r.content.slice(0, 80) + (r.content.length > 80 ? "..." : "");
+          const url = r.url;
+          // 为前端卡片展示预留：包含完整 URL，前端可以渲染为可点击链接
+          return `${i + 1}. ${title}\n   ${snippet}\n   ${url}`;
+        })
+        .join("\n\n");
+
+      if (output.answer) {
+        parts.push(`\n相关来源：\n${resultLines}`);
+      } else {
+        parts.push(`关于「${output.query}」的搜索结果：\n${resultLines}`);
+      }
+    }
+
+    // Mock 降级提示
+    if (output.provider === "mock" && output.fallbackReason) {
+      parts.push(`\n（注：当前使用模拟数据，原因：${output.fallbackReason}）`);
+    }
+
+    return parts.join("\n");
+  }
 
   if (plan.finalResponseText) {
     return plan.finalResponseText;

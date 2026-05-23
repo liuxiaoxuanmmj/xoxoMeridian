@@ -270,11 +270,14 @@ model MessageSummary {
   rangeStartId  String?
   rangeEndId    String?
   summary       String
+  type          String   @default("range")
+  messageCount  Int?
   tokenEstimate Int?
   createdAt     DateTime @default(now())
   room          Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
 
   @@index([roomId, createdAt])
+  @@index([roomId, type])
 }
 
 model Memory {

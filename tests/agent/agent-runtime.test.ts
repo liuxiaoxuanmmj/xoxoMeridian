@@ -33,7 +33,8 @@ describe("agent dispatch primitives", () => {
       "schedule.list",
       "schedule.update",
       "timezone.compare",
-      "weather.get"
+      "weather.get",
+      "web.search"
     ]);
   });
 
@@ -47,8 +48,8 @@ describe("agent dispatch primitives", () => {
         recentMessages: [],
         pinnedMemos: [],
         activeSchedules: [],
-        semanticMemory: [],
-        summaries: []
+        semanticMemory: { aboutHer: [], aboutMe: [], shared: [] },
+        summaries: { global: null, recent: [] }
       },
       availableTools: [{ name: "weather.get", description: "", schema: {} }]
     });

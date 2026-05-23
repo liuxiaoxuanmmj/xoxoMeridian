@@ -8,6 +8,7 @@ import {
   createScheduleListTool,
   createScheduleUpdateTool
 } from "@/agent/tools/schedule-tool";
+import { createSearchTool } from "@/agent/tools/search-tool";
 import { createTimezoneTool } from "@/agent/tools/timezone-tool";
 import { createWeatherTool } from "@/agent/tools/weather-tool";
 
@@ -58,6 +59,7 @@ export function createToolRegistry() {
   const registry = new ToolRegistry();
   registry.register(createWeatherTool());
   registry.register(createTimezoneTool());
+  registry.register(createSearchTool());
   registry.register(createMemoTool());
 
   registry.register(createScheduleCreateTool());

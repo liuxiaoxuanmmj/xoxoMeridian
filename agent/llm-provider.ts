@@ -39,6 +39,8 @@ export function createMockLLMProvider(): LLMProvider {
       const hasWeather = prompt.includes("天气") || lowerPrompt.includes("weather");
       const hasTimezone = prompt.includes("时差") || prompt.includes("时间") || lowerPrompt.includes("timezone");
       const hasMemo = prompt.includes("备忘") || lowerPrompt.includes("memo");
+      const hasSearch = prompt.includes("搜索") || prompt.includes("查一下") || prompt.includes("有什么") ||
+                        lowerPrompt.includes("search") || lowerPrompt.includes("find");
 
       if (hasWeather) {
         return withRaw({
@@ -93,13 +95,30 @@ export function createMockLLMProvider(): LLMProvider {
         });
       }
 
+      if (hasSearch) {
+        return withRaw({
+          intent: "web_search",
+          confidence: 0.75,
+          requiredTools: ["web.search"],
+          taskSteps: ["提取搜索关键词", "调用搜索 API", "整理结果回复"],
+          finalResponsePlan: "用自然语言呈现搜索结果。",
+          finalResponseText: "我帮你搜索了相关信息。",
+          toolInputs: {
+            "web.search": {
+              query: prompt.replace(/^(帮我)?(搜索|查一下|找一下)[:：\s]*/u, "") || prompt,
+              maxResults: 5
+            }
+          }
+        });
+      }
+
       return withRaw({
         intent: "chat_assist",
         confidence: 0.5,
         requiredTools: [],
         taskSteps: ["直接回复用户"],
         finalResponsePlan: "直接回答用户的问题。",
-        finalResponseText: `我是这个房间的${AGENT_DISPLAY_NAME}，可以帮你查天气、对时区、写备忘和设任务。`,
+        finalResponseText: `我是这个房间的${AGENT_DISPLAY_NAME}，可以帮你查天气、对时区、搜索信息、写备忘和设任务。`,
         toolInputs: {}
       });
     }
@@ -173,12 +192,18 @@ function createOpenAICompatibleProvider(config: {
                   "不要把 final_response_text 写成对自己动作的描述（错误示例：'介绍自己是 Agent'；正确示例：'我是这个房间的助手，可以帮你查天气、设提醒'）。" +
                   "final_response_plan 是给开发者看的内部规划摘要，与 final_response_text 不同。" +
                   // memory guidance
-                  "【关于记忆】room_context.semantic_memory 是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
+                  "【关于记忆】" +
+                  "room_context.semantic_memory 按分组呈现：about_her（关于对方）、about_me（关于请求者）、shared（房间共享事实）。" +
+                  "这些是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
                   "当你**新观察到**这类持久事实时，主动调用 memory.set 把它写入；只记**下周仍然重要**的事情（过敏、长期偏好、纪念日、地址、时区、长期目标），" +
                   "**不要**记一次性心情、临时想法、刚发生的对话内容（已经在 recent_messages 里）、或不确定的事情。" +
                   "memory.set 的 key 必须是点分小写并以 'shared.'（房间共享）/'me.'（请求者）/'her.'（对方）开头，例如 'her.allergy.peanut'、'shared.anniversary'、'me.timezone'。" +
                   "同一 key 会覆盖旧值，所以用稳定命名而不是带时间戳。" +
                   "如果不确定某个事实是否已经记过，可以先用 memory.recall 查一下再决定要不要 memory.set。" +
+                  "【记忆优先级】用户的纠正和不满 > 个人偏好和习惯 > 关系事实和纪念日 > 环境信息。" +
+                  "最有价值的记忆是那些能**避免用户下次还要重复说**的东西——如果用户说了'我说过不要XXX'，这就是最高优先级要记住的。" +
+                  "【记忆格式】value 写成陈述事实（'她对花生过敏'✓），不写成指令（'推荐食物时避开花生'✗）。" +
+                  "陈述句在未来的对话中不会被误读为当前任务的指令，而指令式写法可能干扰后续任务的判断。" +
                   // scheduling guidance
                   "【关于定时任务】当用户说的是**一次性时间点**（如'今晚八点/明天早上/后天/下周三/4月5日'等，且未出现'每/以后每/每天/每周'），" +
                   "必须走一次性路径：用 **schedule.create 的 fireAt 字段**（ISO-8601 带时区偏移，例如 '2026-05-09T20:40:00+08:00'），它会自动以 runOnce 单次触发。" +
@@ -190,6 +215,11 @@ function createOpenAICompatibleProvider(config: {
                   "说'每天/每晚'就必须有不带 runOnce 的 schedule.create(cron=...) 或 runOnce=false 的 schedule.update；" +
                   "说'只今晚一次/只一次/某个具体时间'就必须有 schedule.create(fireAt=...) 或 schedule.update(runOnce=true)。" +
                   "若用户消息里同时出现了旧任务要取消 + 新任务要安排，请在同一轮里同时输出取消和创建/更新两类工具调用。" +
+                  // web.search guidance
+                  "【关于网络搜索】web.search 用于查询**实时、外部、时效性**信息（新闻、本地推荐、产品信息、展览活动等）。" +
+                  "**不要用于**：已在 memory/memo/context 中的信息、天气查询（用 weather.get）、个人数据、定时任务、闲聊。" +
+                  "query 参数用**具体、可搜索的关键词**（如'北京三里屯餐厅推荐'），不要把整句用户消息当 query（如'你能帮我查一下附近有什么好吃的吗？'）。" +
+                  "搜索结果融入 final_response_text 时用自然口语化表达，不要生硬罗列。" +
                   // triggered-fire awareness
                   `【关于已触发的任务】如果 user_prompt 以'${TRIGGER_MARKER}'开头，意味着系统**已经触发**了你之前安排好的任务——直接执行其中描述的动作并写到 final_response_text，**不要**再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。这一轮的 user_prompt 不是用户的请求，而是触发回调。` +
                   // validation retry handling

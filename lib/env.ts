@@ -32,6 +32,8 @@ const baseSchema = z.object({
   QWEATHER_API_HOST: z.string().optional().default("devapi.qweather.com"),
   QWEATHER_GEOAPI_HOST: z.string().optional().default("geoapi.qweather.com"),
 
+  TAVILY_API_KEY: z.string().optional().default(""),
+
   EMAIL_PROVIDER: z.string().default("mock"),
   EMAIL_API_KEY: z.string().optional().default(""),
   EMAIL_FROM: z.string().email().default("noreply@example.com"),

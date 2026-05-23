@@ -1,4 +1,5 @@
 import type { AgentTool } from "@/agent/types";
+import { deduplicatedMemoryWrite } from "@/agent/memory-dedup";
 
 type MemorySetInput = {
   key?: string;
@@ -53,13 +54,16 @@ export function createMemorySetTool(): AgentTool<MemorySetInput> {
 
       const userId = resolveUserId(key, context);
 
-      const memory = await context.prisma.memory.upsert({
-        where: { roomId_key: { roomId: context.roomId, key } },
-        update: { value, source: input.source ?? "agent-runtime", userId },
-        create: { roomId: context.roomId, key, value, source: input.source ?? "agent-runtime", userId }
-      });
+      const result = await deduplicatedMemoryWrite(
+        context.prisma,
+        context.roomId,
+        key,
+        value,
+        input.source ?? "agent-runtime",
+        userId
+      );
 
-      return { memoryId: memory.id, key: memory.key, value: memory.value };
+      return { memoryId: result.memoryId, key, value, ...(result.merged && { merged: result.merged }) };
     }
   };
 }

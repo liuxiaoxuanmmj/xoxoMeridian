@@ -2,7 +2,7 @@ import type { StructuredRoomContext } from "@/agent/types";
 import { prisma } from "@/lib/prisma";
 
 export async function buildAgentContext(roomId: string) {
-  const [room, recentMessages, memos, memories, summaries, scheduledJobs] = await Promise.all([
+  const [room, recentMessages, memos, memories, globalSummary, rangeSummaries, scheduledJobs] = await Promise.all([
     prisma.room.findUniqueOrThrow({
       where: { id: roomId },
       include: {
@@ -26,8 +26,13 @@ export async function buildAgentContext(roomId: string) {
       }
     }),
     prisma.memo.findMany({ where: { roomId }, orderBy: [{ pinned: "desc" }, { createdAt: "desc" }], take: 10 }),
-    prisma.memory.findMany({ where: { roomId }, orderBy: { updatedAt: "desc" }, take: 30 }),
-    prisma.messageSummary.findMany({ where: { roomId }, orderBy: { createdAt: "desc" }, take: 3 }),
+    prisma.memory.findMany({
+      where: { roomId, NOT: { key: { startsWith: "_system." } } },
+      orderBy: { updatedAt: "desc" },
+      take: 30
+    }),
+    prisma.messageSummary.findFirst({ where: { roomId, type: "global" } }),
+    prisma.messageSummary.findMany({ where: { roomId, type: "range" }, orderBy: { createdAt: "desc" }, take: 5 }),
     prisma.scheduledJob.findMany({
       where: { roomId, enabled: true },
       orderBy: { nextRunAt: "asc" },
@@ -36,6 +41,17 @@ export async function buildAgentContext(roomId: string) {
   ]);
 
   const messages = recentMessages.reverse();
+
+  const categorizedMemories = memories.reduce(
+    (acc, m) => {
+      const entry = { key: m.key, value: m.value };
+      if (m.key.startsWith("her.")) acc.aboutHer.push(entry);
+      else if (m.key.startsWith("me.")) acc.aboutMe.push(entry);
+      else if (m.key.startsWith("shared.")) acc.shared.push(entry);
+      return acc;
+    },
+    { aboutHer: [] as Array<{ key: string; value: string }>, aboutMe: [] as Array<{ key: string; value: string }>, shared: [] as Array<{ key: string; value: string }> }
+  );
 
   const roomContext: StructuredRoomContext = {
     room: { name: room.name, slug: room.slug },
@@ -59,8 +75,13 @@ export async function buildAgentContext(roomId: string) {
       description:
         (j.payload as { description?: string | null } | null)?.description ?? null
     })),
-    semanticMemory: memories.map((m) => ({ key: m.key, value: m.value })),
-    summaries: summaries.map((s) => ({ summary: s.summary, createdAt: s.createdAt.toISOString() }))
+    semanticMemory: categorizedMemories,
+    summaries: {
+      global: globalSummary
+        ? { summary: globalSummary.summary, createdAt: globalSummary.createdAt.toISOString() }
+        : null,
+      recent: rangeSummaries.map((s) => ({ summary: s.summary, createdAt: s.createdAt.toISOString() }))
+    }
   };
 
   return {
@@ -69,7 +90,8 @@ export async function buildAgentContext(roomId: string) {
     recentMessages: messages,
     memos,
     memories,
-    summaries,
+    globalSummary,
+    rangeSummaries,
     scheduledJobs,
     roomContext
   };

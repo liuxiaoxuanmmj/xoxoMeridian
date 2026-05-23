@@ -35,8 +35,15 @@ export type StructuredRoomContext = {
     nextRunAt: string;
     description: string | null;
   }>;
-  semanticMemory: Array<{ key: string; value: string }>;
-  summaries: Array<{ summary: string; createdAt: string }>;
+  semanticMemory: {
+    aboutHer: Array<{ key: string; value: string }>;
+    aboutMe: Array<{ key: string; value: string }>;
+    shared: Array<{ key: string; value: string }>;
+  };
+  summaries: {
+    global: { summary: string; createdAt: string } | null;
+    recent: Array<{ summary: string; createdAt: string }>;
+  };
 };
 
 export type LLMPlanRequest = {
