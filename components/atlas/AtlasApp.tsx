@@ -25,6 +25,7 @@ export function AtlasApp({
   viewportRef.current = viewport;
   const [connectMode, setConnectMode] = useState(false);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
+  const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const maxZRef = useRef(
     initialSnapshot.elements.reduce((max, el) => Math.max(max, el.zIndex), 0)
@@ -176,15 +177,23 @@ export function AtlasApp({
 
   const onElementClick = useCallback(
     async (id: string) => {
-      if (!connectMode) return;
       if (!connectFrom) {
         setConnectFrom(id);
+        if (connectTimeoutRef.current) clearTimeout(connectTimeoutRef.current);
+        if (!connectMode) {
+          connectTimeoutRef.current = setTimeout(() => {
+            setConnectFrom(null);
+            connectTimeoutRef.current = null;
+          }, 1500);
+        }
         return;
       }
       if (connectFrom === id) {
+        if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
         setConnectFrom(null);
         return;
       }
+      if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
       const resp = await fetch(`/api/atlas/connections`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -234,6 +243,7 @@ export function AtlasApp({
         onToggleConnectMode={() => {
           setConnectMode((v) => !v);
           setConnectFrom(null);
+          if (connectTimeoutRef.current) { clearTimeout(connectTimeoutRef.current); connectTimeoutRef.current = null; }
         }}
         connectFrom={connectFrom}
         onClearBoard={onClearBoard}
