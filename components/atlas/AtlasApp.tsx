@@ -26,6 +26,8 @@ export function AtlasApp({
   const [connectMode, setConnectMode] = useState(false);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ screenX: number; screenY: number; canvasX: number; canvasY: number } | null>(null);
+  const [uploadPosition, setUploadPosition] = useState<{ x: number; y: number } | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const maxZRef = useRef(
     initialSnapshot.elements.reduce((max, el) => Math.max(max, el.zIndex), 0)
@@ -231,6 +233,27 @@ export function AtlasApp({
     return maxZRef.current;
   }, []);
 
+  const onCanvasContextMenu = useCallback(
+    (screenX: number, screenY: number, canvasX: number, canvasY: number) => {
+      setContextMenu({ screenX, screenY, canvasX, canvasY });
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close(); };
+    window.addEventListener("pointerdown", close);
+    window.addEventListener("wheel", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", close);
+      window.removeEventListener("wheel", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [contextMenu]);
+
   return (
     <div className="flex h-screen flex-col bg-warm-50 text-ink">
       <AtlasToolbar
@@ -263,17 +286,52 @@ export function AtlasApp({
         getNextZIndex={getNextZIndex}
         connectMode={connectMode}
         connectFrom={connectFrom}
+        onContextMenu={onCanvasContextMenu}
       />
       <AtlasUploadModal
         isOpen={uploadOpen}
-        onClose={() => setUploadOpen(false)}
+        onClose={() => { setUploadOpen(false); setUploadPosition(null); }}
         onUploaded={(element) => {
-          const vp = viewportRef.current;
-          const cx = -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
-          const cy = -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
-          setElements((prev) => [...prev, { ...element, x: cx, y: cy }]);
+          if (uploadPosition) {
+            setElements((prev) => [...prev, { ...element, x: uploadPosition.x, y: uploadPosition.y }]);
+          } else {
+            const vp = viewportRef.current;
+            const cx = -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
+            const cy = -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
+            setElements((prev) => [...prev, { ...element, x: cx, y: cy }]);
+          }
+          setUploadPosition(null);
         }}
       />
+      {contextMenu && (
+        <div
+          className="fixed z-50 min-w-[140px] overflow-hidden rounded-lg border border-warm-200 bg-white shadow-lg"
+          style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
+          onPointerDown={(e) => e.stopPropagation()}
+        >
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink/80 hover:bg-warm-50"
+            onClick={() => {
+              setUploadPosition({ x: contextMenu.canvasX, y: contextMenu.canvasY });
+              setUploadOpen(true);
+              setContextMenu(null);
+            }}
+          >
+            <span className="text-base">&#128247;</span> + 照片
+          </button>
+          <button
+            type="button"
+            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink/80 hover:bg-warm-50"
+            onClick={() => {
+              onAddNote(contextMenu.canvasX, contextMenu.canvasY);
+              setContextMenu(null);
+            }}
+          >
+            <span className="text-base">&#128221;</span> + 便签
+          </button>
+        </div>
+      )}
     </div>
   );
 }
