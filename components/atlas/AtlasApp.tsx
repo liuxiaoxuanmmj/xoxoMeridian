@@ -32,6 +32,7 @@ export function AtlasApp({
 
   // Track which elements the current user is dragging locally
   const localDragIds = useRef(new Set<string>());
+  const localDragTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
 
   // SSE connection
   const reconnectRef = useRef<{ attempt: number; timer: number | null }>({
@@ -93,6 +94,8 @@ export function AtlasApp({
   }, []);
 
   const onElementDragStart = useCallback((id: string) => {
+    const prev = localDragTimers.current.get(id);
+    if (prev) { clearTimeout(prev); localDragTimers.current.delete(id); }
     localDragIds.current.add(id);
   }, []);
 
@@ -121,7 +124,11 @@ export function AtlasApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x, y }),
       }).catch(() => {});
-      setTimeout(() => localDragIds.current.delete(id), 1000);
+      const timer = setTimeout(() => {
+        localDragIds.current.delete(id);
+        localDragTimers.current.delete(id);
+      }, 1000);
+      localDragTimers.current.set(id, timer);
     },
     []
   );
