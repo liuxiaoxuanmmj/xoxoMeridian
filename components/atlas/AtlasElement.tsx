@@ -59,6 +59,11 @@ export function AtlasElement({
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
+      const hit = e.target as HTMLElement;
+      if (hit.closest('[data-caption-area]') || hit.closest('[data-note-area]') || hit.closest('button[title="删除"]')) {
+        return;
+      }
+
       if (connectMode) {
         e.stopPropagation();
         onClick(element.id);
