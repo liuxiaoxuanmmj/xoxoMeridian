@@ -10,30 +10,9 @@ import { MessageComposer } from "@/components/chat/MessageComposer";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUser, RoomSnapshot } from "@/components/chat/types";
 import { dedupedReplace } from "@/lib/router-dedup";
+import { stableMergeBy } from "@/lib/stable-merge";
 
 type ConnState = "connecting" | "open" | "reconnecting";
-
-// Reuses prev-tick references for items that are deeply unchanged so React.memo
-// downstream can skip re-rendering them.
-function stableMergeBy<T>(prev: T[], next: T[], getKey: (item: T) => string): T[] {
-  if (prev === next) return prev;
-  if (prev.length === 0 && next.length === 0) return prev;
-  const prevByKey = new Map(prev.map((item) => [getKey(item), item]));
-  let identical = prev.length === next.length;
-  const merged: T[] = new Array(next.length);
-  for (let i = 0; i < next.length; i++) {
-    const item = next[i];
-    const old = prevByKey.get(getKey(item));
-    if (old && JSON.stringify(old) === JSON.stringify(item)) {
-      merged[i] = old;
-      if (prev[i] !== old) identical = false;
-    } else {
-      merged[i] = item;
-      identical = false;
-    }
-  }
-  return identical ? prev : merged;
-}
 
 function mergeSnapshot(prev: RoomSnapshot, next: RoomSnapshot): RoomSnapshot {
   const messages = stableMergeBy(prev.messages, next.messages, (m) => m.id);
@@ -93,7 +72,6 @@ export function ChatApp({
   initialSnapshot: RoomSnapshot;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
-  const [draftPrompt, setDraftPrompt] = useState("");
   const [connState, setConnState] = useState<ConnState>("connecting");
   const roomId = snapshot.room.id;
   const router = useRouter();
@@ -267,16 +245,12 @@ export function ChatApp({
           currentRoomId={roomId}
           participants={participants}
           rooms={snapshot.rooms ?? []}
-          onQuickPrompt={(prompt) => {
-            setDraftPrompt(prompt);
-          }}
         />
 
         <section className="flex min-w-0 flex-1 flex-col">
           <MessageList currentUser={currentUser} messages={snapshot.messages} />
           <MessageComposer
             currentUser={currentUser}
-            externalDraft={draftPrompt}
             onSendComplete={replaceMessage}
             onSendFailed={removeMessage}
             onSent={appendMessage}

@@ -13,3 +13,4 @@ prisma/migrations/*/migration_lock.toml
 .DS_Store
 *.log
 data/chat-logs/
+data/atlas-uploads/

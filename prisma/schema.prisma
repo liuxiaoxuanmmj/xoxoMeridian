@@ -61,6 +61,7 @@ model User {
   eventLogs            EventLog[]
   memories             Memory[]
   scheduledJobs        ScheduledJob[]
+  atlasElements        AtlasElement[]
   sessions             Session[]
   passwordResetTokens  PasswordResetToken[]
 }
@@ -333,4 +334,57 @@ model ScheduledJob {
 
   @@index([enabled, nextRunAt])
   @@index([roomId])
+}
+
+enum AtlasElementType {
+  photo
+  note
+}
+
+model AtlasBoard {
+  id          String            @id @default(cuid())
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  elements    AtlasElement[]
+  connections AtlasConnection[]
+}
+
+model AtlasElement {
+  id              String              @id @default(cuid())
+  boardId         String
+  type            AtlasElementType
+  x               Float
+  y               Float
+  rotation        Float               @default(0)
+  zIndex          Int                 @default(0)
+  content         String?
+  imageUrl        String?
+  caption         String?
+  width           Float               @default(200)
+  height          Float               @default(250)
+  createdById     String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  board           AtlasBoard          @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdBy       User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  connectionsFrom AtlasConnection[]   @relation("FromElement")
+  connectionsTo   AtlasConnection[]   @relation("ToElement")
+
+  @@index([boardId, x, y])
+  @@index([boardId, zIndex])
+}
+
+model AtlasConnection {
+  id        String       @id @default(cuid())
+  boardId   String
+  fromId    String
+  toId      String
+  color     String       @default("#8B7355")
+  createdAt DateTime     @default(now())
+  board     AtlasBoard   @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  fromEl    AtlasElement @relation("FromElement", fields: [fromId], references: [id], onDelete: Cascade)
+  toEl      AtlasElement @relation("ToElement", fields: [toId], references: [id], onDelete: Cascade)
+
+  @@unique([boardId, fromId, toId])
+  @@index([boardId])
 }

@@ -5,20 +5,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 import type { ChatUser, RoomSummary } from "@/components/chat/types";
-import { MENTION_AGENT } from "@/lib/identity";
 
 export function LeftRail({
   currentUser,
   participants,
   currentRoomId,
   rooms,
-  onQuickPrompt
 }: {
   currentUser: ChatUser;
   participants: ChatUser[];
   currentRoomId: string;
   rooms: RoomSummary[];
-  onQuickPrompt: (prompt: string) => void;
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<null | "create" | "wipe" | "delete">(null);
@@ -159,26 +156,23 @@ export function LeftRail({
         </section>
 
         <section>
-          <h2 className="text-sm font-semibold text-ink">快捷工具</h2>
-          <div className="mt-3 space-y-2">
-            <QuickButton label="查对方天气" onClick={() => onQuickPrompt(`${MENTION_AGENT} 查一下对方今天的天气`)} />
-            <QuickButton label="看看两地时间" onClick={() => onQuickPrompt(`${MENTION_AGENT} 比较一下我们现在的时差和适合联系时间`)} />
-            <QuickButton label="创建早安提醒" onClick={() => onQuickPrompt(`${MENTION_AGENT} 明天提醒我给对方发早安`)} />
+          <h2 className="text-sm font-semibold text-ink">空间</h2>
+          <div className="mt-3">
+            <Link
+              href={`/chat/${currentRoomId}/atlas`}
+              className="flex w-full items-center gap-3 rounded-lg border border-sage-100 bg-sage-50 px-3 py-2.5 text-left text-sm font-medium text-sage-700 transition hover:bg-sage-100"
+            >
+              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-sage-200 text-base">
+                🗺
+              </span>
+              <div>
+                <p className="leading-tight">Atlas</p>
+                <p className="text-[11px] font-normal text-sage-500">记忆画板</p>
+              </div>
+            </Link>
           </div>
         </section>
       </div>
     </aside>
-  );
-}
-
-function QuickButton({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      className="w-full rounded-lg border border-sage-100 bg-sage-50 px-3 py-2 text-left text-sm font-medium text-sage-700 transition hover:bg-sage-100"
-      onClick={onClick}
-      type="button"
-    >
-      {label}
-    </button>
   );
 }

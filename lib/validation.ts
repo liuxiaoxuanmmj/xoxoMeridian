@@ -120,6 +120,44 @@ export class ValidationError extends Error {
   }
 }
 
+// --------------- Atlas ---------------
+
+export const atlasElementCreateSchema = z.object({
+  type: z.enum(["note", "photo"]),
+  x: z.number().finite(),
+  y: z.number().finite(),
+  content: z.preprocess(trim, z.string().max(2000)).optional(),
+  caption: z.preprocess(trim, z.string().max(200)).optional(),
+  rotation: z.number().min(-15).max(15).optional(),
+});
+
+export const atlasElementPatchSchema = z
+  .object({
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    rotation: z.number().min(-15).max(15).optional(),
+    zIndex: z.number().int().min(0).max(10000).optional(),
+    content: z.preprocess(trim, z.string().max(2000)).optional(),
+    caption: z.preprocess(trim, z.string().max(200)).optional(),
+    width: z.number().positive().max(800).optional(),
+    height: z.number().positive().max(800).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
+
+export const atlasConnectionCreateSchema = z.object({
+  fromId: z.string().min(1),
+  toId: z.string().min(1),
+  color: z.string().max(20).optional(),
+});
+
+export const atlasDragSchema = z.object({
+  elementId: z.string().min(1),
+  x: z.number().finite(),
+  y: z.number().finite(),
+});
+
 export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const result = schema.safeParse(body);
   if (!result.success) {
