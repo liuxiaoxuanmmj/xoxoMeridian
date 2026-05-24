@@ -3,6 +3,8 @@
 import { useSearchParams } from "next/navigation";
 import { useState } from "react";
 
+import { PasswordInput } from "@/components/auth/PasswordInput";
+
 export function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
@@ -79,26 +81,22 @@ export function ResetPasswordForm() {
 
   return (
     <form onSubmit={submit} className="space-y-3">
-      <input
-        type="password"
+      <PasswordInput
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         placeholder="新密码（至少 8 个字符）"
         autoComplete="new-password"
         required
         minLength={8}
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
         disabled={submitting}
       />
-      <input
-        type="password"
+      <PasswordInput
         value={confirmPassword}
         onChange={(event) => setConfirmPassword(event.target.value)}
         placeholder="确认新密码"
         autoComplete="new-password"
         required
         minLength={8}
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
         disabled={submitting}
       />
       <button

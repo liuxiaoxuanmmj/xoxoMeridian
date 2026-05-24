@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { PasswordInput } from "@/components/auth/PasswordInput";
+
 export function RegisterForm() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -74,15 +76,13 @@ export function RegisterForm() {
         className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
         disabled={submitting}
       />
-      <input
-        type="password"
+      <PasswordInput
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         placeholder="密码（至少 8 位）"
         autoComplete="new-password"
         minLength={8}
         required
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
         disabled={submitting}
       />
       <input
