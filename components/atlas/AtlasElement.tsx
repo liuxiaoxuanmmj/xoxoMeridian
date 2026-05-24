@@ -40,6 +40,9 @@ export function AtlasElement({
     lastSend: number;
     currentX: number;
     currentY: number;
+    startClientX: number;
+    startClientY: number;
+    downTime: number;
   }>({
     active: false,
     offsetX: 0,
@@ -47,6 +50,9 @@ export function AtlasElement({
     lastSend: 0,
     currentX: element.x,
     currentY: element.y,
+    startClientX: 0,
+    startClientY: 0,
+    downTime: 0,
   });
 
   const onDragRef = useRef(onDrag);
@@ -95,6 +101,9 @@ export function AtlasElement({
         lastSend: 0,
         currentX: element.x,
         currentY: element.y,
+        startClientX: e.clientX,
+        startClientY: e.clientY,
+        downTime: Date.now(),
       };
     },
     [element.id, element.x, element.y, connectMode, onClick, getNextZIndex, onDragStart]
@@ -129,11 +138,22 @@ export function AtlasElement({
     [element.id, element.rotation]
   );
 
-  const onPointerUp = useCallback(() => {
+  const onClickRef = useRef(onClick);
+  useEffect(() => { onClickRef.current = onClick; }, [onClick]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current.active) return;
     dragRef.current.active = false;
     setIsDragging(false);
-    const { currentX, currentY } = dragRef.current;
+    const { currentX, currentY, startClientX, startClientY, downTime } = dragRef.current;
+
+    const dist = Math.hypot(e.clientX - startClientX, e.clientY - startClientY);
+    const duration = Date.now() - downTime;
+
+    if (dist < 5 && duration < 300) {
+      onClickRef.current(element.id);
+      return;
+    }
 
     onDragRef.current(element.id, currentX, currentY);
     onDragEndRef.current(element.id, currentX, currentY);
