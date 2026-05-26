@@ -14,3 +14,9 @@ prisma/migrations/*/migration_lock.toml
 *.log
 data/chat-logs/
 data/atlas-uploads/
+
+# Superpowers brainstorm sessions
+.superpowers/
+
+# Study notes and experiments
+study/
