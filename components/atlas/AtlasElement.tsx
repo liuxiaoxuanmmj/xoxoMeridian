@@ -1,14 +1,12 @@
 "use client";
 
-import { useCallback, useRef, useState, useEffect } from "react";
+import { useCallback, useRef, useState, useEffect, useLayoutEffect, memo } from "react";
 
 import type { AtlasElementData } from "@/components/atlas/types";
 import { NoteCard } from "@/components/atlas/NoteCard";
 import { PolaroidCard } from "@/components/atlas/PolaroidCard";
 
-const DRAG_THROTTLE_MS = 100;
-
-export function AtlasElement({
+function AtlasElementInner({
   element,
   onDragStart,
   onDrag,
@@ -57,11 +55,26 @@ export function AtlasElement({
 
   const onDragRef = useRef(onDrag);
   const onDragEndRef = useRef(onDragEnd);
+  const onUpdateRef = useRef(onUpdate);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const lastReportedHeight = useRef(element.height);
 
   useEffect(() => {
     onDragRef.current = onDrag;
     onDragEndRef.current = onDragEnd;
-  }, [onDrag, onDragEnd]);
+    onUpdateRef.current = onUpdate;
+  }, [onDrag, onDragEnd, onUpdate]);
+
+  useLayoutEffect(() => {
+    if (element.type !== "note") return;
+    const el = wrapperRef.current;
+    if (!el) return;
+    const rendered = el.offsetHeight;
+    if (Math.abs(rendered - lastReportedHeight.current) > 10) {
+      lastReportedHeight.current = rendered;
+      onUpdateRef.current(element.id, { height: rendered });
+    }
+  }, [element.id, element.type, element.content]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -126,14 +139,9 @@ export function AtlasElement({
       dragRef.current.currentX = x;
       dragRef.current.currentY = y;
 
-      // Update position via inline style for performance (no React state update per frame)
       target.style.transform = `translate3d(${x}px, ${y}px, 0) rotate(${element.rotation}deg)`;
 
-      const now = Date.now();
-      if (now - dragRef.current.lastSend >= DRAG_THROTTLE_MS) {
-        dragRef.current.lastSend = now;
-        onDragRef.current(element.id, x, y);
-      }
+      onDragRef.current(element.id, x, y);
     },
     [element.id, element.rotation]
   );
@@ -161,6 +169,7 @@ export function AtlasElement({
 
   return (
     <div
+      ref={wrapperRef}
       className={`absolute select-none ${connectMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} ${
         isConnectFrom ? "ring-2 ring-amber-400 ring-offset-2" : ""
       }`}
@@ -193,3 +202,5 @@ export function AtlasElement({
     </div>
   );
 }
+
+export const AtlasElement = memo(AtlasElementInner);

@@ -31,7 +31,7 @@ export function NoteCard({
       {editing ? (
         <textarea
           ref={textareaRef}
-          className="w-full resize-none bg-transparent text-sm text-ink outline-none"
+          className="w-full resize-none bg-transparent text-sm text-ink outline-none break-words"
           data-note-area
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -44,7 +44,7 @@ export function NoteCard({
         />
       ) : (
         <div
-          className="min-h-[3rem] whitespace-pre-wrap text-sm text-ink/80 cursor-text"
+          className="min-h-[3rem] whitespace-pre-wrap break-words text-sm text-ink/80 cursor-text"
           data-note-area
           onClick={(e) => {
             e.stopPropagation();

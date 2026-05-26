@@ -1,13 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
-import type { AtlasBoardSnapshot, AtlasElementData, AtlasConnectionData } from "@/components/atlas/types";
+import type { AtlasBoardSnapshot, AtlasElementData, AtlasConnectionData, OptimisticOp } from "@/components/atlas/types";
 import type { ChatUser } from "@/components/chat/types";
 import { AtlasCanvas } from "@/components/atlas/AtlasCanvas";
 import { AtlasToolbar } from "@/components/atlas/AtlasToolbar";
 import { AtlasUploadModal } from "@/components/atlas/AtlasUploadModal";
 import { stableMergeBy } from "@/lib/stable-merge";
+import { reconcileOps, pushOp } from "@/lib/atlas-reconcile";
 
 export function AtlasApp({
   roomId,
@@ -18,8 +19,14 @@ export function AtlasApp({
   currentUser: ChatUser;
   initialSnapshot: AtlasBoardSnapshot;
 }) {
-  const [elements, setElements] = useState<AtlasElementData[]>(initialSnapshot.elements);
-  const [connections, setConnections] = useState<AtlasConnectionData[]>(initialSnapshot.connections);
+  // === Server Layer ===
+  const [serverElements, setServerElements] = useState<AtlasElementData[]>(initialSnapshot.elements);
+  const [serverConnections, setServerConnections] = useState<AtlasConnectionData[]>(initialSnapshot.connections);
+
+  // === Optimistic Layer ===
+  const [optimisticOps, setOptimisticOps] = useState<OptimisticOp[]>([]);
+
+  // === UI State ===
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
   const viewportRef = useRef(viewport);
   viewportRef.current = viewport;
@@ -33,16 +40,81 @@ export function AtlasApp({
     initialSnapshot.elements.reduce((max, el) => Math.max(max, el.zIndex), 0)
   );
 
-  // Track which elements the current user is dragging locally
-  const localDragIds = useRef(new Set<string>());
-  const localDragTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  // === Drag refs (performance path, no React state) ===
+  const activeDrags = useRef(new Map<string, { x: number; y: number }>());
+  const dragSyncTimestamps = useRef(new Map<string, number>());
 
-  // SSE connection
+  // === SSE connection ===
   const reconnectRef = useRef<{ attempt: number; timer: number | null }>({
     attempt: 0,
     timer: null,
   });
 
+  // === Derived render state ===
+  const elements = useMemo(() => {
+    if (optimisticOps.length === 0) return serverElements;
+
+    const result = [...serverElements];
+    const indexById = new Map(result.map((el, i) => [el.id, i]));
+    const deletedIds = new Set<string>();
+
+    for (const op of optimisticOps) {
+      if (op.type === "add") {
+        if (!indexById.has(op.id)) {
+          indexById.set(op.id, result.length);
+          result.push(op.element);
+        }
+      } else if (op.type === "update") {
+        const i = indexById.get(op.id);
+        if (i !== undefined) result[i] = { ...result[i], ...op.patch };
+      } else if (op.type === "delete") {
+        deletedIds.add(op.id);
+      } else if (op.type === "drag") {
+        const i = indexById.get(op.id);
+        if (i !== undefined) result[i] = { ...result[i], x: op.x, y: op.y };
+      }
+    }
+
+    return deletedIds.size > 0
+      ? result.filter((el) => !deletedIds.has(el.id))
+      : result;
+  }, [serverElements, optimisticOps]);
+
+  const connections = useMemo(() => {
+    if (optimisticOps.length === 0) return serverConnections;
+
+    const deletedElIds = new Set<string>();
+    const deletedConnIds = new Set<string>();
+    const addedConns: AtlasConnectionData[] = [];
+    const existingConnIds = new Set(serverConnections.map((c) => c.id));
+
+    for (const op of optimisticOps) {
+      if (op.type === "delete") {
+        deletedElIds.add(op.id);
+      } else if (op.type === "addConn") {
+        if (!existingConnIds.has(op.id)) {
+          existingConnIds.add(op.id);
+          addedConns.push(op.connection);
+        }
+      } else if (op.type === "deleteConn") {
+        deletedConnIds.add(op.id);
+      }
+    }
+
+    let result = serverConnections;
+    if (deletedConnIds.size > 0 || deletedElIds.size > 0) {
+      result = result.filter(
+        (c) => !deletedConnIds.has(c.id) && !deletedElIds.has(c.fromId) && !deletedElIds.has(c.toId)
+      );
+    }
+    if (addedConns.length > 0) {
+      result = [...result, ...addedConns];
+    }
+
+    return result;
+  }, [serverConnections, optimisticOps]);
+
+  // === SSE effect ===
   useEffect(() => {
     let cancelled = false;
     let source: EventSource | null = null;
@@ -57,19 +129,9 @@ export function AtlasApp({
 
       source.addEventListener("snapshot", (event) => {
         const next = JSON.parse((event as MessageEvent).data) as AtlasBoardSnapshot;
-        setElements((prev) => {
-          const merged = stableMergeBy(prev, next.elements, (e) => e.id);
-          // Don't overwrite elements the current user is actively dragging
-          if (localDragIds.current.size === 0) return merged;
-          return merged.map((el) => {
-            if (localDragIds.current.has(el.id)) {
-              const local = prev.find((p) => p.id === el.id);
-              return local ?? el;
-            }
-            return el;
-          });
-        });
-        setConnections((prev) => stableMergeBy(prev, next.connections, (c) => c.id));
+        setServerElements((prev) => stableMergeBy(prev, next.elements, (e) => e.id));
+        setServerConnections((prev) => stableMergeBy(prev, next.connections, (c) => c.id));
+        setOptimisticOps((ops) => reconcileOps(ops, next));
       });
 
       source.addEventListener("error", () => {
@@ -96,27 +158,35 @@ export function AtlasApp({
     };
   }, []);
 
+  // === Callbacks ===
   const onElementDragStart = useCallback((id: string) => {
-    const prev = localDragTimers.current.get(id);
-    if (prev) { clearTimeout(prev); localDragTimers.current.delete(id); }
-    localDragIds.current.add(id);
+    activeDrags.current.set(id, { x: 0, y: 0 });
   }, []);
 
   const onElementDrag = useCallback(
     (id: string, x: number, y: number) => {
-      setElements((prev) => prev.map((el) => (el.id === id ? { ...el, x, y } : el)));
-      fetch(`/api/atlas/drag`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ elementId: id, x, y }),
-      }).catch(() => {});
+      const pos = activeDrags.current.get(id);
+      if (pos) { pos.x = x; pos.y = y; }
+      else { activeDrags.current.set(id, { x, y }); }
+      setOptimisticOps((ops) => pushOp(ops, { type: "drag", id, x, y, ts: Date.now() }));
+      const now = Date.now();
+      const last = dragSyncTimestamps.current.get(id) ?? 0;
+      if (now - last >= 100) {
+        dragSyncTimestamps.current.set(id, now);
+        fetch(`/api/atlas/drag`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ elementId: id, x, y }),
+        }).catch(() => {});
+      }
     },
     []
   );
 
   const onElementDragEnd = useCallback(
     async (id: string, x: number, y: number) => {
-      setElements((prev) => prev.map((el) => (el.id === id ? { ...el, x, y } : el)));
+      activeDrags.current.delete(id);
+      setOptimisticOps((ops) => pushOp(ops, { type: "drag", id, x, y, ts: Date.now() }));
       fetch(`/api/atlas/drag`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -127,18 +197,13 @@ export function AtlasApp({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ x, y }),
       }).catch(() => {});
-      const timer = setTimeout(() => {
-        localDragIds.current.delete(id);
-        localDragTimers.current.delete(id);
-      }, 1000);
-      localDragTimers.current.set(id, timer);
     },
     []
   );
 
   const onElementUpdate = useCallback(
     async (id: string, patch: Partial<AtlasElementData>) => {
-      setElements((prev) => prev.map((el) => (el.id === id ? { ...el, ...patch } : el)));
+      setOptimisticOps((ops) => pushOp(ops, { type: "update", id, patch, ts: Date.now() }));
       await fetch(`/api/atlas/elements/${id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
@@ -150,11 +215,8 @@ export function AtlasApp({
 
   const onElementDelete = useCallback(
     async (id: string) => {
-      setElements((prev) => prev.filter((el) => el.id !== id));
-      setConnections((prev) => prev.filter((c) => c.fromId !== id && c.toId !== id));
-      await fetch(`/api/atlas/elements/${id}`, { method: "DELETE" }).catch(
-        () => {}
-      );
+      setOptimisticOps((ops) => [...ops, { type: "delete", id, ts: Date.now() }]);
+      await fetch(`/api/atlas/elements/${id}`, { method: "DELETE" }).catch(() => {});
     },
     []
   );
@@ -171,7 +233,7 @@ export function AtlasApp({
       });
       if (resp.ok) {
         const { element } = await resp.json();
-        setElements((prev) => [...prev, element]);
+        setOptimisticOps((ops) => [...ops, { type: "add", id: element.id, element, ts: Date.now() }]);
       }
     },
     []
@@ -203,7 +265,7 @@ export function AtlasApp({
       });
       if (resp.ok) {
         const { connection } = await resp.json();
-        setConnections((prev) => [...prev, connection]);
+        setOptimisticOps((ops) => [...ops, { type: "addConn", id: connection.id, connection, ts: Date.now() }]);
       }
       setConnectFrom(null);
     },
@@ -212,10 +274,8 @@ export function AtlasApp({
 
   const onConnectionDelete = useCallback(
     async (id: string) => {
-      setConnections((prev) => prev.filter((c) => c.id !== id));
-      await fetch(`/api/atlas/connections?id=${id}`, {
-        method: "DELETE",
-      }).catch(() => {});
+      setOptimisticOps((ops) => [...ops, { type: "deleteConn", id, ts: Date.now() }]);
+      await fetch(`/api/atlas/connections?id=${id}`, { method: "DELETE" }).catch(() => {});
     },
     []
   );
@@ -223,8 +283,9 @@ export function AtlasApp({
   const onClearBoard = useCallback(async () => {
     const resp = await fetch("/api/atlas", { method: "DELETE" });
     if (resp.ok) {
-      setElements([]);
-      setConnections([]);
+      setServerElements([]);
+      setServerConnections([]);
+      setOptimisticOps([]);
     }
   }, []);
 
@@ -291,15 +352,23 @@ export function AtlasApp({
       <AtlasUploadModal
         isOpen={uploadOpen}
         onClose={() => { setUploadOpen(false); setUploadPosition(null); }}
-        onUploaded={(element) => {
+        onUploaded={async (element) => {
+          let finalX: number, finalY: number;
           if (uploadPosition) {
-            setElements((prev) => [...prev, { ...element, x: uploadPosition.x, y: uploadPosition.y }]);
+            finalX = uploadPosition.x;
+            finalY = uploadPosition.y;
           } else {
             const vp = viewportRef.current;
-            const cx = -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
-            const cy = -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
-            setElements((prev) => [...prev, { ...element, x: cx, y: cy }]);
+            finalX = -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
+            finalY = -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
           }
+          await fetch(`/api/atlas/elements/${element.id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ x: finalX, y: finalY }),
+          }).catch(() => {});
+          const positioned = { ...element, x: finalX, y: finalY };
+          setOptimisticOps((ops) => [...ops, { type: "add", id: element.id, element: positioned, ts: Date.now() }]);
           setUploadPosition(null);
         }}
       />
