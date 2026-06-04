@@ -1,6 +1,25 @@
 import { Resend } from "resend";
+import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
 import { env } from "@/lib/env";
 import type { EmailProvider, EmailPayload, EmailResult, EmailAddress } from "./types";
+
+// Utility functions
+function formatEmailAddress(addr: EmailAddress): string {
+  return addr.name ? `${addr.name} <${addr.email}>` : addr.email;
+}
+
+function normalizeRecipients(to: EmailAddress | EmailAddress[]): EmailAddress[] {
+  return Array.isArray(to) ? to : [to];
+}
+
+function handleProviderError(error: unknown, providerName: string): EmailResult {
+  console.error(`[email] ${providerName} exception:`, error);
+  return {
+    success: false,
+    error: error instanceof Error ? error.message : "Unknown error",
+  };
+}
 
 class ResendProvider implements EmailProvider {
   private client: Resend;
@@ -11,18 +30,14 @@ class ResendProvider implements EmailProvider {
 
   async send(payload: EmailPayload): Promise<EmailResult> {
     try {
-      const to = Array.isArray(payload.to) ? payload.to : [payload.to];
+      const to = normalizeRecipients(payload.to);
       const response = await this.client.emails.send({
         from: env.EMAIL_FROM,
-        to: to.map((addr) => (addr.name ? `${addr.name} <${addr.email}>` : addr.email)),
+        to: to.map(formatEmailAddress),
         subject: payload.subject,
         html: payload.html,
         text: payload.text,
-        replyTo: payload.replyTo
-          ? payload.replyTo.name
-            ? `${payload.replyTo.name} <${payload.replyTo.email}>`
-            : payload.replyTo.email
-          : undefined,
+        replyTo: payload.replyTo ? formatEmailAddress(payload.replyTo) : undefined,
       });
 
       if (response.error) {
@@ -38,33 +53,127 @@ class ResendProvider implements EmailProvider {
         messageId: response.data?.id,
       };
     } catch (error) {
-      console.error("[email] Resend exception:", error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+      return handleProviderError(error, "Resend");
+    }
+  }
+}
+
+class TurboSMTPProvider implements EmailProvider {
+  private consumerKey: string;
+  private consumerSecret: string;
+  private apiUrl: string;
+
+  constructor(consumerKey: string, consumerSecret: string, region: "us" | "eu" = "us") {
+    this.consumerKey = consumerKey;
+    this.consumerSecret = consumerSecret;
+    this.apiUrl =
+      region === "eu"
+        ? "https://api.eu.turbo-smtp.com/api/v2/mail/send"
+        : "https://api.turbo-smtp.com/api/v2/mail/send";
+  }
+
+  async send(payload: EmailPayload): Promise<EmailResult> {
+    try {
+      const to = normalizeRecipients(payload.to);
+      const toEmails = to.map((addr) => addr.email).join(",");
+
+      const requestBody = {
+        from: env.EMAIL_FROM,
+        to: toEmails,
+        subject: payload.subject,
+        html_content: payload.html,
+        content: payload.text || undefined,
+        reply_to: payload.replyTo?.email || undefined,
       };
+
+      const response = await fetch(this.apiUrl, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          consumerKey: this.consumerKey,
+          consumerSecret: this.consumerSecret,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        console.error("[email] TurboSMTP error:", response.status, result);
+        return {
+          success: false,
+          error: result.message || `HTTP ${response.status}: ${response.statusText}`,
+        };
+      }
+
+      return {
+        success: true,
+        messageId: result.messageID || result.message_id,
+      };
+    } catch (error) {
+      return handleProviderError(error, "TurboSMTP");
     }
   }
 }
 
 class MockProvider implements EmailProvider {
   async send(payload: EmailPayload): Promise<EmailResult> {
-    const to = Array.isArray(payload.to) ? payload.to : [payload.to];
+    const to = normalizeRecipients(payload.to);
     const recipients = to.map((addr) => addr.email).join(", ");
 
-    console.log("[email] Mock provider - Email would be sent:");
-    console.log(`  From: ${env.EMAIL_FROM}`);
-    console.log(`  To: ${recipients}`);
-    console.log(`  Subject: ${payload.subject}`);
-    console.log(`  HTML length: ${payload.html.length} chars`);
-    if (payload.text) {
-      console.log(`  Text length: ${payload.text.length} chars`);
-    }
+    console.log("[email] Mock provider - Email would be sent:", {
+      from: env.EMAIL_FROM,
+      to: recipients,
+      subject: payload.subject,
+      htmlLength: payload.html.length,
+      textLength: payload.text?.length,
+    });
 
     return {
       success: true,
       messageId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     };
+  }
+}
+
+class SMTPProvider implements EmailProvider {
+  private transporter: Transporter;
+
+  constructor(host: string, port: number, secure: boolean, user: string, password: string) {
+    this.transporter = nodemailer.createTransport({
+      host,
+      port,
+      secure, // true for 465, false for other ports
+      auth: {
+        user,
+        pass: password,
+      },
+    });
+  }
+
+  async send(payload: EmailPayload): Promise<EmailResult> {
+    try {
+      const to = normalizeRecipients(payload.to);
+
+      const mailOptions = {
+        from: env.EMAIL_FROM,
+        to: to.map(formatEmailAddress),
+        subject: payload.subject,
+        html: payload.html,
+        text: payload.text,
+        replyTo: payload.replyTo ? formatEmailAddress(payload.replyTo) : undefined,
+      };
+
+      const info = await this.transporter.sendMail(mailOptions);
+
+      return {
+        success: true,
+        messageId: info.messageId,
+      };
+    } catch (error) {
+      return handleProviderError(error, "SMTP");
+    }
   }
 }
 
@@ -85,6 +194,35 @@ export function getEmailProvider(): EmailProvider {
       providerInstance = new MockProvider();
     } else {
       providerInstance = new ResendProvider(env.EMAIL_API_KEY);
+    }
+  } else if (provider === "turbosmtp") {
+    if (!env.TURBOSMTP_CONSUMER_KEY || !env.TURBOSMTP_CONSUMER_SECRET) {
+      console.warn(
+        "[email] EMAIL_PROVIDER=turbosmtp but TURBOSMTP_CONSUMER_KEY or TURBOSMTP_CONSUMER_SECRET is empty. Falling back to mock provider."
+      );
+      providerInstance = new MockProvider();
+    } else {
+      const region = (env.TURBOSMTP_REGION?.toLowerCase() === "eu" ? "eu" : "us") as "us" | "eu";
+      providerInstance = new TurboSMTPProvider(
+        env.TURBOSMTP_CONSUMER_KEY,
+        env.TURBOSMTP_CONSUMER_SECRET,
+        region
+      );
+    }
+  } else if (provider === "smtp") {
+    if (!env.SMTP_HOST || !env.SMTP_USER || !env.SMTP_PASSWORD) {
+      console.warn(
+        "[email] EMAIL_PROVIDER=smtp but SMTP_HOST, SMTP_USER, or SMTP_PASSWORD is empty. Falling back to mock provider."
+      );
+      providerInstance = new MockProvider();
+    } else {
+      providerInstance = new SMTPProvider(
+        env.SMTP_HOST,
+        env.SMTP_PORT,
+        env.SMTP_SECURE,
+        env.SMTP_USER,
+        env.SMTP_PASSWORD
+      );
     }
   } else {
     providerInstance = new MockProvider();

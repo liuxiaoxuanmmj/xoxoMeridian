@@ -3,6 +3,8 @@ import { redirect } from "next/navigation";
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
 import { getCurrentUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export default async function ResetPasswordPage() {
   const user = await getCurrentUser();
   if (user) {

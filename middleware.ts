@@ -27,28 +27,40 @@ const ALLOWED_ORIGINS: Set<string> = (() => {
 })();
 
 export const config = {
-  matcher: ["/api/:path*"],
+  matcher: ["/api/:path*", "/chat/:path*", "/me"],
 };
 
 export function middleware(request: NextRequest) {
-  if (SAFE_METHODS.has(request.method)) return NextResponse.next();
-  if (ALLOWED_ORIGINS.size === 0) return NextResponse.next();
+  const pathname = request.nextUrl.pathname;
+  const isApiRequest = pathname.startsWith("/api/");
 
-  const candidate =
-    request.headers.get("origin") ?? safeOrigin(request.headers.get("referer"));
+  let response: NextResponse;
 
-  if (!candidate) {
-    return NextResponse.json(
-      { error: "Origin header required for state-changing requests" },
-      { status: 403 }
-    );
+  if (!SAFE_METHODS.has(request.method) && isApiRequest && ALLOWED_ORIGINS.size > 0) {
+    const candidate =
+      request.headers.get("origin") ?? safeOrigin(request.headers.get("referer"));
+
+    if (!candidate) {
+      response = NextResponse.json(
+        { error: "Origin header required for state-changing requests" },
+        { status: 403 }
+      );
+      applyNoStoreHeaders(response);
+      return response;
+    }
+
+    if (!ALLOWED_ORIGINS.has(candidate)) {
+      response = NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
+      applyNoStoreHeaders(response);
+      return response;
+    }
   }
 
-  if (!ALLOWED_ORIGINS.has(candidate)) {
-    return NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
+  response = NextResponse.next();
+  if (isNoStorePath(pathname)) {
+    applyNoStoreHeaders(response);
   }
-
-  return NextResponse.next();
+  return response;
 }
 
 function safeOrigin(url: string | null): string | null {
@@ -58,4 +70,23 @@ function safeOrigin(url: string | null): string | null {
   } catch {
     return null;
   }
+}
+
+export function isNoStorePath(pathname: string): boolean {
+  return (
+    pathname === "/me" ||
+    pathname === "/chat" ||
+    pathname.startsWith("/chat/") ||
+    pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/rooms/")
+  );
+}
+
+function applyNoStoreHeaders(response: NextResponse) {
+  response.headers.set("Cache-Control", "private, no-store, no-cache, max-age=0, must-revalidate");
+  response.headers.set("CDN-Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  response.headers.set("X-Accel-Expires", "0");
+  response.headers.append("Vary", "Cookie");
 }

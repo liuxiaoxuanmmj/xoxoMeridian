@@ -1,6 +1,8 @@
 import { SessionHeartbeat } from "@/components/auth/SessionHeartbeat";
 import { requirePageUser } from "@/lib/auth";
 
+export const dynamic = "force-dynamic";
+
 export default async function ChatLayout({ children }: { children: React.ReactNode }) {
   const user = await requirePageUser();
   return (

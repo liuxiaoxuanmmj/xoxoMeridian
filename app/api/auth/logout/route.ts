@@ -1,7 +1,7 @@
 import { cookies } from "next/headers";
 
-import { jsonOk } from "@/lib/api";
-import { USER_COOKIE, verifySession, isSecureRequest } from "@/lib/auth";
+import { applyNoStoreHeaders, jsonOk } from "@/lib/api";
+import { USER_COOKIE, appendClearSessionCookieHeaders, verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
 export const dynamic = "force-dynamic";
@@ -28,16 +28,10 @@ export async function POST() {
     console.log("[Logout API] session deleted successfully");
   }
 
-  // CRITICAL: Must pass the same options (path, secure, etc.) that were used
-  // when setting the cookie, otherwise the browser won't delete it properly.
-  console.log("[Logout API] clearing cookie");
-  jar.delete({
-    name: USER_COOKIE,
-    path: "/",
-    secure: isSecureRequest(),
-    sameSite: "lax",
-  });
+  const response = jsonOk({ ok: true });
+  applyNoStoreHeaders(response.headers);
+  appendClearSessionCookieHeaders(response.headers);
 
   console.log("[Logout API] logout complete");
-  return jsonOk({ ok: true });
+  return response;
 }

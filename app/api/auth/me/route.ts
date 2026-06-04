@@ -1,7 +1,7 @@
 import { lookupViaCity } from "city-timezones";
 
-import { errorToResponse, jsonOk } from "@/lib/api";
-import { requireCurrentUser } from "@/lib/auth";
+import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
+import { getCurrentUser, requireCurrentUser } from "@/lib/auth";
 import { normalizeCityName, normalizeCountryName } from "@/lib/geo-normalize";
 import { prisma } from "@/lib/prisma";
 import { profileUpdateSchema, readJsonBody } from "@/lib/validation";
@@ -17,10 +17,18 @@ export const dynamic = "force-dynamic";
 //                       detect same-device cookie clobber by another tab.
 export async function GET(request: Request) {
   try {
-    const user = await requireCurrentUser();
+    const user = await getCurrentUser();
+    if (!user) {
+      const response = new Response("Unauthorized", { status: 401 });
+      applyNoStoreHeaders(response.headers);
+      return response;
+    }
+
     const expect = new URL(request.url).searchParams.get("expect");
     if (expect && expect !== user.id) {
-      return new Response("Unauthorized", { status: 401 });
+      const response = new Response("Unauthorized", { status: 401 });
+      applyNoStoreHeaders(response.headers);
+      return response;
     }
 
     const profile = await prisma.userProfile.findUnique({
@@ -33,18 +41,19 @@ export async function GET(request: Request) {
       },
     });
 
-    return jsonOk(
-      {
-        id: user.id,
-        email: user.email,
-        displayName: user.displayName,
-        avatarLabel: user.avatarLabel,
-        profile,
-      },
-      { headers: { "Cache-Control": "no-store" } }
-    );
+    const response = jsonOk({
+      id: user.id,
+      email: user.email,
+      displayName: user.displayName,
+      avatarLabel: user.avatarLabel,
+      profile,
+    });
+    applyNoStoreHeaders(response.headers);
+    return response;
   } catch (error) {
-    return errorToResponse(error);
+    const response = errorToResponse(error);
+    applyNoStoreHeaders(response.headers);
+    return response;
   }
 }
 

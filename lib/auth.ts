@@ -1,4 +1,5 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
+import { isIP } from "node:net";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -12,6 +13,18 @@ export type SessionPayload = {
   sessionId: string;
   userId: string;
   expiresAt: number;
+};
+
+type SessionCookie = {
+  name: string;
+  value: string;
+  httpOnly: true;
+  sameSite: "lax";
+  secure: boolean;
+  path: "/";
+  domain?: string;
+  maxAge: number;
+  expires?: Date;
 };
 
 function hmac(payload: string): Buffer {
@@ -67,6 +80,89 @@ function getUserAgent(): string | null {
   return headersList.get("user-agent");
 }
 
+function normalizeHostname(hostOrUrl: string | null | undefined): string | undefined {
+  const raw = hostOrUrl?.trim();
+  if (!raw) return undefined;
+
+  try {
+    const url = raw.includes("://") ? new URL(raw) : new URL(`http://${raw}`);
+    return url.hostname.toLowerCase().replace(/\.$/, "");
+  } catch {
+    return undefined;
+  }
+}
+
+function isIpAddress(hostname: string): boolean {
+  return isIP(hostname) !== 0;
+}
+
+function isInternalProxyHost(hostOrUrl: string | null | undefined): boolean {
+  const hostname = normalizeHostname(hostOrUrl);
+  if (!hostname || hostname === "localhost") return true;
+  if (hostname === "::1" || hostname === "0.0.0.0") return true;
+  if (!isIpAddress(hostname)) return false;
+
+  if (hostname.startsWith("127.")) return true;
+  if (hostname.startsWith("10.")) return true;
+  if (hostname.startsWith("192.168.")) return true;
+
+  const parts = hostname.split(".");
+  if (parts.length === 4 && parts[0] === "172") {
+    const second = Number.parseInt(parts[1], 10);
+    return Number.isInteger(second) && second >= 16 && second <= 31;
+  }
+
+  return false;
+}
+
+function isCookieDomainAllowedForHost(domain: string, hostOrUrl: string | null | undefined): boolean {
+  const hostname = normalizeHostname(hostOrUrl);
+  return Boolean(hostname && (hostname === domain || hostname.endsWith(`.${domain}`)));
+}
+
+export function getSessionCookieDomainForHost(hostOrUrl: string | null | undefined): string | undefined {
+  const hostname = normalizeHostname(hostOrUrl);
+  if (!hostname || hostname === "localhost" || isIpAddress(hostname)) {
+    return undefined;
+  }
+  return hostname.startsWith("www.") ? hostname.slice(4) : hostname;
+}
+
+export function getSessionCookieDomainCandidates(
+  appBaseUrl: string,
+  requestHost: string | null | undefined
+): string[] {
+  const domains = new Set<string>();
+  const requestDomain = getSessionCookieDomainForHost(requestHost);
+  if (requestDomain) {
+    domains.add(requestDomain);
+  }
+
+  const configuredDomain = getSessionCookieDomainForHost(appBaseUrl);
+  if (
+    configuredDomain &&
+    (isCookieDomainAllowedForHost(configuredDomain, requestHost) ||
+      isInternalProxyHost(requestHost))
+  ) {
+    domains.add(configuredDomain);
+  }
+
+  return [...domains];
+}
+
+export function getConfiguredSessionCookieDomain(): string | undefined {
+  return getSessionCookieDomainForHost(env.APP_BASE_URL);
+}
+
+function getRequestHostForCookie(): string | undefined {
+  const headersList = headers();
+  return headersList.get("x-forwarded-host")?.split(",")[0]?.trim() ?? headersList.get("host") ?? undefined;
+}
+
+function getSessionCookieDomainForRequest(): string | undefined {
+  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie())[0];
+}
+
 export function signSession(sessionId: string, userId: string, expiresAt: number): string {
   const payload = `${sessionId}.${userId}.${expiresAt}`;
   const sig = hmac(payload).toString("base64url");
@@ -100,11 +196,69 @@ export function verifySession(token: string | undefined, now = Date.now()): Sess
   return { sessionId, userId, expiresAt };
 }
 
-export async function setSessionCookie(userId: string): Promise<string> {
+function buildSessionCookie(value: string, domain?: string): SessionCookie {
+  return {
+    name: USER_COOKIE,
+    value,
+    httpOnly: true,
+    sameSite: "lax",
+    secure: isSecureRequest(),
+    path: "/",
+    domain,
+    maxAge: env.SESSION_MAX_AGE_SECONDS,
+  };
+}
+
+function buildClearSessionCookie(domain?: string): SessionCookie {
+  return {
+    ...buildSessionCookie("", domain),
+    maxAge: 0,
+    expires: new Date(0),
+  };
+}
+
+function serializeSessionCookie(cookie: SessionCookie): string {
+  const parts = [`${cookie.name}=${cookie.value}`, `Path=${cookie.path}`];
+  if (cookie.expires) parts.push(`Expires=${cookie.expires.toUTCString()}`);
+  parts.push(`Max-Age=${cookie.maxAge}`);
+  if (cookie.domain) parts.push(`Domain=${cookie.domain}`);
+  if (cookie.httpOnly) parts.push("HttpOnly");
+  if (cookie.secure) parts.push("Secure");
+  parts.push("SameSite=Lax");
+  return parts.join("; ");
+}
+
+function getClearSessionCookieDomainsForRequest(): string[] {
+  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie());
+}
+
+export function appendClearSessionCookieHeaders(responseHeaders: Headers) {
+  responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie()));
+  for (const domain of getClearSessionCookieDomainsForRequest()) {
+    responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie(domain)));
+  }
+}
+
+export function appendSessionCookieHeaders(responseHeaders: Headers, cookie: SessionCookie) {
+  appendClearSessionCookieHeaders(responseHeaders);
+  responseHeaders.append("Set-Cookie", serializeSessionCookie(cookie));
+}
+
+export async function createSessionCookie(userId: string): Promise<{ sessionId: string; cookie: SessionCookie }> {
+  const jar = cookies();
+  const previousSession = verifySession(jar.get(USER_COOKIE)?.value);
   const clientIp = getClientIp();
   const userAgent = getUserAgent();
   const now = Date.now();
   const expiresAt = new Date(now + env.SESSION_MAX_AGE_SECONDS * 1000);
+
+  if (previousSession && previousSession.userId !== userId) {
+    await prisma.session.delete({
+      where: { id: previousSession.sessionId },
+    }).catch(() => {
+      // The previous browser session may already be gone; login can continue.
+    });
+  }
 
   // Invalidate all existing sessions for this user to ensure only one active session
   // This prevents old tabs from interfering with newly logged-in sessions
@@ -118,7 +272,6 @@ export async function setSessionCookie(userId: string): Promise<string> {
     data: {
       id: sessionToken,
       userId,
-      token: sessionToken,
       ipAddress: clientIp,
       userAgent,
       expiresAt,
@@ -128,17 +281,16 @@ export async function setSessionCookie(userId: string): Promise<string> {
   // Set cookie with signed session token
   const cookieValue = signSession(session.id, userId, Math.floor(expiresAt.getTime() / 1000));
 
-  cookies().set({
-    name: USER_COOKIE,
-    value: cookieValue,
-    httpOnly: true,
-    sameSite: "lax",
-    secure: isSecureRequest(),
-    path: "/",
-    maxAge: env.SESSION_MAX_AGE_SECONDS,
-  });
+  return {
+    sessionId: session.id,
+    cookie: buildSessionCookie(cookieValue, getSessionCookieDomainForRequest()),
+  };
+}
 
-  return session.id;
+export async function setSessionCookie(userId: string): Promise<string> {
+  const { sessionId, cookie } = await createSessionCookie(userId);
+  cookies().set(cookie);
+  return sessionId;
 }
 
 export async function getCurrentUser() {

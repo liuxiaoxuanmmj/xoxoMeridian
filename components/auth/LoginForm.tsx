@@ -30,20 +30,28 @@ export function LoginForm() {
         return;
       }
 
+      const payload = (await response.json().catch(() => null)) as {
+        user?: { id: string };
+      } | null;
+
       // Verify the session cookie actually persisted before navigating. If
       // APP_BASE_URL is https but the client accessed via http, browsers drop
       // the Secure cookie silently — without this probe the user would just
       // see /chat bounce them back to /, looking like a no-op login.
-      const probe = await fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" });
+      const expectedUserId = payload?.user?.id;
+      const probe = await fetch(
+        expectedUserId ? `/api/auth/me?expect=${encodeURIComponent(expectedUserId)}` : "/api/auth/me",
+        { cache: "no-store", credentials: "same-origin" }
+      );
       if (!probe.ok) {
         setError(
-          "登录已通过验证，但浏览器没有保存登录态。请确认访问地址的协议（http/https）与服务器配置的 APP_BASE_URL 一致。"
+          "登录已通过验证，但浏览器没有切换到该账号。请清理旧登录 Cookie 后重试。"
         );
         setSubmitting(false);
         return;
       }
 
-      window.location.href = "/chat";
+      window.location.replace(`/chat?auth=${encodeURIComponent(expectedUserId ?? String(Date.now()))}`);
     } catch {
       setError("登录请求失败，请稍后重试。");
       setSubmitting(false);

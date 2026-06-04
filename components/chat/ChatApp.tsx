@@ -72,9 +72,52 @@ export function ChatApp({
   initialSnapshot: RoomSnapshot;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [authSyncing, setAuthSyncing] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
   const roomId = snapshot.room.id;
   const router = useRouter();
+  const activeUser = currentUser;
+
+  useEffect(() => {
+    setSnapshot(initialSnapshot);
+    setConnState("connecting");
+  }, [initialSnapshot]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncCurrentSessionUser = async () => {
+      try {
+        const response = await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "same-origin"
+        });
+        if (response.status === 401) {
+          dedupedReplace(router, "/");
+          return;
+        }
+        if (!response.ok) return;
+
+        const sessionUser = (await response.json()) as ChatUser;
+        if (cancelled) return;
+        if (sessionUser.id !== currentUser.id) {
+          setAuthSyncing(true);
+          window.location.replace(`/chat?auth=${encodeURIComponent(sessionUser.id)}-${Date.now()}`);
+        }
+      } catch {
+        // Keep the server-rendered user during transient network failures.
+      }
+    };
+
+    void syncCurrentSessionUser();
+    window.addEventListener("focus", syncCurrentSessionUser);
+    window.addEventListener("pageshow", syncCurrentSessionUser);
+
+    return () => {
+      cancelled = true;
+      window.removeEventListener("focus", syncCurrentSessionUser);
+      window.removeEventListener("pageshow", syncCurrentSessionUser);
+    };
+  }, [currentUser.id, router]);
 
   const refresh = useCallback(async () => {
     const response = await fetch(`/api/rooms/${roomId}/messages`, {
@@ -94,13 +137,13 @@ export function ChatApp({
       // Attach the current user's display info so the optimistic bubble doesn't
       // render as "未知"; the real row from SSE/refresh will overwrite by id.
       const enriched: ChatMessage =
-        message.senderType === "human" && message.senderId === currentUser.id && !message.sender
+        message.senderType === "human" && message.senderId === activeUser.id && !message.sender
           ? {
               ...message,
               sender: {
-                id: currentUser.id,
-                displayName: currentUser.displayName,
-                avatarLabel: currentUser.avatarLabel
+                id: activeUser.id,
+                displayName: activeUser.displayName,
+                avatarLabel: activeUser.avatarLabel
               }
             }
           : message;
@@ -110,10 +153,17 @@ export function ChatApp({
         return { ...current, messages: [...current.messages, enriched] };
       });
     },
-    [currentUser]
+    [activeUser]
   );
 
   const replaceMessage = useCallback((tempId: string, real: ChatMessage) => {
+    const senderId = real.senderId;
+    if (real.senderType === "human" && senderId && senderId !== currentUser.id) {
+      setAuthSyncing(true);
+      window.location.replace(`/chat?auth=${encodeURIComponent(senderId)}-${Date.now()}`);
+      return;
+    }
+
     setSnapshot((current) => {
       const idx = current.messages.findIndex((m) => m.id === tempId);
       if (idx < 0) {
@@ -128,7 +178,7 @@ export function ChatApp({
       next[idx] = real;
       return { ...current, messages: next };
     });
-  }, []);
+  }, [currentUser.id]);
 
   const removeMessage = useCallback((messageId: string) => {
     setSnapshot((current) => {
@@ -149,6 +199,7 @@ export function ChatApp({
     let cancelled = false;
     let terminated = false;
     let source: EventSource | null = null;
+    const reconnect = reconnectRef.current;
 
     const connect = () => {
       if (cancelled || terminated) return;
@@ -172,15 +223,24 @@ export function ChatApp({
       // Server tells us this cookie has been superseded by a newer login on
       // another browser. Close the stream permanently (skip reconnect), drop
       // the cookie, bounce to the login page.
-      source.addEventListener("kicked", () => {
+      source.addEventListener("kicked", async () => {
         if (terminated || cancelled) return;
         terminated = true;
         source?.close();
         source = null;
-        // The "kicked" event means the session is already invalid on the server
-        // (sessionVersion mismatch). Calling /api/auth/logout here is redundant
-        // and can cause a race condition where a newly logged-in session gets
-        // invalidated by a stale tab's logout call.
+        try {
+          const response = await fetch("/api/auth/me", {
+            cache: "no-store",
+            credentials: "same-origin"
+          });
+          if (response.ok) {
+            const user = (await response.json()) as ChatUser;
+            window.location.replace(`/chat?auth=${encodeURIComponent(user.id)}-${Date.now()}`);
+            return;
+          }
+        } catch {
+          // Fall back to the unauthenticated route below.
+        }
         dedupedReplace(router, "/");
       });
 
@@ -209,17 +269,25 @@ export function ChatApp({
 
     return () => {
       cancelled = true;
-      if (reconnectRef.current.timer !== null) {
-        window.clearTimeout(reconnectRef.current.timer);
-        reconnectRef.current.timer = null;
+      if (reconnect.timer !== null) {
+        window.clearTimeout(reconnect.timer);
+        reconnect.timer = null;
       }
-      reconnectRef.current.attempt = 0;
+      reconnect.attempt = 0;
       source?.close();
     };
   }, [roomId, refresh, router]);
 
   const participants = useMemo(() => snapshot.room.participants.map((participant) => participant.user), [snapshot.room.participants]);
   const latestStatus = snapshot.agentStatus.recentTasks[0]?.status;
+
+  if (authSyncing) {
+    return (
+      <main className="flex h-screen min-h-[720px] items-center justify-center bg-warm-50 text-sm text-ink/60">
+        正在同步登录状态…
+      </main>
+    );
+  }
 
   return (
     <main className="flex h-screen min-h-[720px] flex-col text-ink">
@@ -241,16 +309,16 @@ export function ChatApp({
 
       <div className="flex min-h-0 flex-1">
         <LeftRail
-          currentUser={currentUser}
+          currentUser={activeUser}
           currentRoomId={roomId}
           participants={participants}
           rooms={snapshot.rooms ?? []}
         />
 
         <section className="flex min-w-0 flex-1 flex-col">
-          <MessageList currentUser={currentUser} messages={snapshot.messages} />
+          <MessageList currentUser={activeUser} messages={snapshot.messages} />
           <MessageComposer
-            currentUser={currentUser}
+            currentUser={activeUser}
             onSendComplete={replaceMessage}
             onSendFailed={removeMessage}
             onSent={appendMessage}

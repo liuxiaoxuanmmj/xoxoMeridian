@@ -1,6 +1,14 @@
 import { describe, expect, it } from "vitest";
 
-import { signSession, verifySession } from "@/lib/auth";
+import {
+  getSessionCookieDomainCandidates,
+  getSessionCookieDomainForHost,
+  signSession,
+  verifySession
+} from "@/lib/auth";
+import { chatRoomRedirectPath } from "@/lib/chat-redirect";
+import { applyNoStoreHeaders } from "@/lib/api";
+import { isNoStorePath } from "@/middleware";
 
 describe("session signing", () => {
   it("round-trips sessionId and userId through sign and verify", () => {
@@ -32,5 +40,57 @@ describe("session signing", () => {
     expect(verifySession("")).toBeNull();
     expect(verifySession("not-a-token")).toBeNull();
     expect(verifySession("a.b.c")).toBeNull();
+  });
+});
+
+describe("session cookie domains", () => {
+  it("derives the canonical cookie domain from the request host", () => {
+    expect(getSessionCookieDomainForHost("xoxo.top")).toBe("xoxo.top");
+    expect(getSessionCookieDomainForHost("www.xoxo.top")).toBe("xoxo.top");
+    expect(getSessionCookieDomainForHost("127.0.0.1")).toBeUndefined();
+    expect(getSessionCookieDomainForHost("localhost:3000")).toBeUndefined();
+  });
+
+  it("clears stale domain cookies even when APP_BASE_URL is an IP", () => {
+    expect(
+      getSessionCookieDomainCandidates("http://154.12.28.37", "xoxo.top")
+    ).toEqual(["xoxo.top"]);
+    expect(
+      getSessionCookieDomainCandidates("http://154.12.28.37", "www.xoxo.top")
+    ).toEqual(["xoxo.top"]);
+    expect(
+      getSessionCookieDomainCandidates("https://xoxo.top", "154.12.28.37")
+    ).toEqual([]);
+    expect(
+      getSessionCookieDomainCandidates("https://xoxo.top", "127.0.0.1:3000")
+    ).toEqual(["xoxo.top"]);
+  });
+});
+
+describe("auth response caching", () => {
+  it("marks auth responses as uncacheable by browsers and nginx", () => {
+    const headers = new Headers();
+    applyNoStoreHeaders(headers);
+
+    expect(headers.get("Cache-Control")).toContain("no-store");
+    expect(headers.get("X-Accel-Expires")).toBe("0");
+    expect(headers.get("Vary")).toContain("Cookie");
+  });
+
+  it("marks authenticated pages and APIs as no-store middleware paths", () => {
+    expect(isNoStorePath("/chat")).toBe(true);
+    expect(isNoStorePath("/chat/room-1")).toBe(true);
+    expect(isNoStorePath("/me")).toBe(true);
+    expect(isNoStorePath("/api/auth/me")).toBe(true);
+    expect(isNoStorePath("/api/rooms/room-1/messages")).toBe(true);
+    expect(isNoStorePath("/")).toBe(false);
+  });
+});
+
+describe("chat auth redirects", () => {
+  it("preserves auth cache-bust query when redirecting to the default room", () => {
+    expect(chatRoomRedirectPath("room-1", "user-1")).toBe("/chat/room-1?auth=user-1");
+    expect(chatRoomRedirectPath("room-1", "user 1")).toBe("/chat/room-1?auth=user+1");
+    expect(chatRoomRedirectPath("room-1", null)).toBe("/chat/room-1");
   });
 });

@@ -38,6 +38,22 @@ const baseSchema = z.object({
   EMAIL_API_KEY: z.string().optional().default(""),
   EMAIL_FROM: z.string().email().default("noreply@example.com"),
 
+  // TurboSMTP API (REST API 方式)
+  TURBOSMTP_CONSUMER_KEY: z.string().optional().default(""),
+  TURBOSMTP_CONSUMER_SECRET: z.string().optional().default(""),
+  TURBOSMTP_REGION: z.enum(["us", "eu"]).optional().default("us"),
+
+  // SMTP 通用配置（支持 TurboSMTP SMTP、Gmail SMTP 等）
+  SMTP_HOST: z.string().optional().default(""),
+  SMTP_PORT: z.coerce.number().int().positive().optional().default(587),
+  SMTP_SECURE: z
+    .enum(["true", "false"])
+    .optional()
+    .default("false")
+    .transform((v) => v === "true"),
+  SMTP_USER: z.string().optional().default(""),
+  SMTP_PASSWORD: z.string().optional().default(""),
+
   AGENT_WORKER_POLL_MS: z.coerce.number().int().positive().default(3000),
   AGENT_TASK_INLINE_RUN: z
     .enum(["true", "false"])

@@ -38,16 +38,24 @@ export function RegisterForm() {
         return;
       }
 
-      const probe = await fetch("/api/auth/me", { cache: "no-store", credentials: "same-origin" });
+      const payload = (await response.json().catch(() => null)) as {
+        user?: { id: string };
+      } | null;
+
+      const expectedUserId = payload?.user?.id;
+      const probe = await fetch(
+        expectedUserId ? `/api/auth/me?expect=${encodeURIComponent(expectedUserId)}` : "/api/auth/me",
+        { cache: "no-store", credentials: "same-origin" }
+      );
       if (!probe.ok) {
         setError(
-          "注册成功，但浏览器没有保存登录态。请确认访问地址的协议（http/https）与服务器配置的 APP_BASE_URL 一致。"
+          "注册成功，但浏览器没有切换到该账号。请清理旧登录 Cookie 后重试。"
         );
         setSubmitting(false);
         return;
       }
 
-      window.location.href = "/chat";
+      window.location.replace(`/chat?auth=${encodeURIComponent(expectedUserId ?? String(Date.now()))}`);
     } catch {
       setError("注册请求失败，请稍后重试。");
       setSubmitting(false);

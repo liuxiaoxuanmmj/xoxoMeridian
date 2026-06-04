@@ -24,6 +24,40 @@ export function SessionHeartbeat({ expectedUserId }: { expectedUserId: string })
     let probeTimer: number | null = null;
     let attempt = 0;
 
+    const reloadForCurrentSession = () => {
+      if (terminated || cancelled) return;
+      terminated = true;
+      source?.close();
+      source = null;
+
+      if (probeTimer !== null) {
+        window.clearTimeout(probeTimer);
+        probeTimer = null;
+      }
+      if (retryTimer !== null) {
+        window.clearTimeout(retryTimer);
+        retryTimer = null;
+      }
+
+      window.location.replace(`/chat?auth=${Date.now()}`);
+    };
+
+    const reconcileOrKick = async () => {
+      try {
+        const current = await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "same-origin",
+        });
+        if (current.ok) {
+          reloadForCurrentSession();
+          return;
+        }
+      } catch {
+        // Network blip — fall through to the existing unauthenticated path.
+      }
+      kick();
+    };
+
     const kick = () => {
       if (terminated || cancelled) return;
       console.log("[SessionHeartbeat] kick() called, cleaning up...");
@@ -61,8 +95,8 @@ export function SessionHeartbeat({ expectedUserId }: { expectedUserId: string })
         });
         console.log("[SessionHeartbeat] probe response:", response.status);
         if (!response.ok) {
-          console.log("[SessionHeartbeat] probe failed, calling kick()");
-          kick();
+          console.log("[SessionHeartbeat] probe failed, reconciling session");
+          await reconcileOrKick();
           return;
         }
       } catch (error) {
@@ -105,8 +139,8 @@ export function SessionHeartbeat({ expectedUserId }: { expectedUserId: string })
           });
           console.log("[SessionHeartbeat] error probe response:", probeResponse.status);
           if (probeResponse.status === 401) {
-            console.log("[SessionHeartbeat] 401 detected, calling kick()");
-            kick(); // 认证失败，立即停止所有活动
+            console.log("[SessionHeartbeat] 401 detected, reconciling session");
+            await reconcileOrKick(); // 认证失败或身份切换，立即停止旧连接
             return;
           }
         } catch (error) {

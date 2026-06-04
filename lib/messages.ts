@@ -2,6 +2,12 @@ import { prisma } from "@/lib/prisma";
 import { detectAgentTarget } from "@/lib/agent-detection";
 import { appendChatLog } from "@/lib/chat-log-file";
 
+const messageInclude = {
+  sender: { select: { id: true, displayName: true, avatarLabel: true } },
+  senderAgent: { select: { id: true, displayName: true, slug: true } },
+  sourceTask: { select: { id: true, status: true } }
+} as const;
+
 export async function createHumanMessage(input: {
   roomId: string;
   userId: string;
@@ -26,7 +32,8 @@ export async function createHumanMessage(input: {
           detection,
           forceAgent: Boolean(input.forceAgent)
         }
-      }
+      },
+      include: messageInclude
     });
 
     let task = null;
@@ -64,6 +71,14 @@ export async function createHumanMessage(input: {
     return { message, task };
   });
 
+  const message =
+    result.task
+      ? await prisma.message.findUnique({
+          where: { id: result.message.id },
+          include: messageInclude
+        })
+      : result.message;
+
   await appendChatLog(input.roomId, {
     kind: "message.human",
     messageId: result.message.id,
@@ -72,5 +87,5 @@ export async function createHumanMessage(input: {
     createdAt: result.message.createdAt
   });
 
-  return result;
+  return { message: message ?? result.message, task: result.task };
 }

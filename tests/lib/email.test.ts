@@ -9,6 +9,14 @@ vi.mock("@/lib/env", () => ({
     EMAIL_API_KEY: "",
     EMAIL_FROM: "test@example.com",
     APP_BASE_URL: "http://localhost:3000",
+    TURBOSMTP_CONSUMER_KEY: "",
+    TURBOSMTP_CONSUMER_SECRET: "",
+    TURBOSMTP_REGION: "us",
+    SMTP_HOST: "",
+    SMTP_PORT: 587,
+    SMTP_SECURE: false,
+    SMTP_USER: "",
+    SMTP_PASSWORD: "",
   },
 }));
 
@@ -81,7 +89,14 @@ describe("Email Provider", () => {
       expect(result.success).toBe(true);
       expect(result.messageId).toMatch(/^mock-/);
       expect(consoleSpy).toHaveBeenCalledWith(
-        expect.stringContaining("[email] Mock provider - Email would be sent:")
+        expect.stringContaining("[email] Mock provider - Email would be sent:"),
+        expect.objectContaining({
+          from: "test@example.com",
+          to: "test@example.com",
+          subject: "Test Subject",
+          htmlLength: 16,
+          textLength: 9,
+        })
       );
 
       consoleSpy.mockRestore();
@@ -99,7 +114,14 @@ describe("Email Provider", () => {
       const result = await sendEmail(payload);
 
       expect(result.success).toBe(true);
-      expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("user1@example.com, user2@example.com"));
+      expect(consoleSpy).toHaveBeenCalledWith(
+        expect.stringContaining("[email] Mock provider - Email would be sent:"),
+        expect.objectContaining({
+          to: "user1@example.com, user2@example.com",
+          subject: "Test Subject",
+          htmlLength: 16,
+        })
+      );
 
       consoleSpy.mockRestore();
     });

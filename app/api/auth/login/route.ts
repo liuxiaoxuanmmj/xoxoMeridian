@@ -1,7 +1,7 @@
 import { getDefaultRoomForUser } from "@/lib/access";
-import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
-import { setSessionCookie } from "@/lib/auth";
-import { verifyPassword } from "@/lib/password";
+import { applyNoStoreHeaders, errorToResponse, jsonError, jsonOk } from "@/lib/api";
+import { appendSessionCookieHeaders, createSessionCookie } from "@/lib/auth";
+import { verifyPassword, verifyPasswordDummy } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { loginSchema, readJsonBody } from "@/lib/validation";
@@ -17,14 +17,21 @@ export async function POST(request: Request) {
     if (limited) return limited;
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user || !(await verifyPassword(password, user.passwordHash))) {
+
+    // Always perform bcrypt comparison to prevent timing attacks that could
+    // reveal whether an email exists. Use dummy hash when user doesn't exist.
+    const isValid = user
+      ? await verifyPassword(password, user.passwordHash)
+      : await verifyPasswordDummy(password);
+
+    if (!user || !isValid) {
       return jsonError("Invalid credentials", 401);
     }
 
     const room = await getDefaultRoomForUser(user);
-    await setSessionCookie(user.id);
+    const sessionCookie = await createSessionCookie(user.id);
 
-    return jsonOk({
+    const response = jsonOk({
       user: {
         id: user.id,
         email: user.email,
@@ -33,6 +40,9 @@ export async function POST(request: Request) {
       },
       room: { id: room.id, slug: room.slug, name: room.name },
     });
+    applyNoStoreHeaders(response.headers);
+    appendSessionCookieHeaders(response.headers, sessionCookie.cookie);
+    return response;
   } catch (error) {
     return errorToResponse(error);
   }

@@ -44,32 +44,31 @@ enum LLMCallStatus {
 }
 
 model User {
-  id                   String                @id @default(cuid())
-  email                String                @unique
-  displayName          String
-  avatarLabel          String
-  passwordHash         String
-  sessionVersion       Int                   @default(0)
-  createdAt            DateTime              @default(now())
-  updatedAt            DateTime              @updatedAt
-  profile              UserProfile?
-  participants         RoomParticipant[]
-  messages             Message[]
-  requestedTasks       AgentTask[]           @relation("RequestedTasks")
-  memos                Memo[]
+  id             String            @id @default(cuid())
+  email          String            @unique
+  displayName    String
+  avatarLabel    String
+  passwordHash   String
+  sessionVersion Int               @default(0)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  profile        UserProfile?
+  participants   RoomParticipant[]
+  messages       Message[]
+  requestedTasks AgentTask[]       @relation("RequestedTasks")
+  memos          Memo[]
 
-  eventLogs            EventLog[]
-  memories             Memory[]
-  scheduledJobs        ScheduledJob[]
-  atlasElements        AtlasElement[]
-  sessions             Session[]
-  passwordResetTokens  PasswordResetToken[]
+  eventLogs           EventLog[]
+  memories            Memory[]
+  scheduledJobs       ScheduledJob[]
+  atlasElements       AtlasElement[]
+  sessions            Session[]
+  passwordResetTokens PasswordResetToken[]
 }
 
 model Session {
-  id        String   @id @default(cuid())
+  id        String   @id
   userId    String
-  token     String   @unique
   ipAddress String?
   userAgent String?
   expiresAt DateTime
@@ -264,7 +263,6 @@ model Memo {
   @@index([roomId, createdAt])
 }
 
-
 model MessageSummary {
   id            String   @id @default(cuid())
   roomId        String
@@ -350,25 +348,25 @@ model AtlasBoard {
 }
 
 model AtlasElement {
-  id              String              @id @default(cuid())
+  id              String            @id @default(cuid())
   boardId         String
   type            AtlasElementType
   x               Float
   y               Float
-  rotation        Float               @default(0)
-  zIndex          Int                 @default(0)
+  rotation        Float             @default(0)
+  zIndex          Int               @default(0)
   content         String?
   imageUrl        String?
   caption         String?
-  width           Float               @default(200)
-  height          Float               @default(250)
+  width           Float             @default(200)
+  height          Float             @default(250)
   createdById     String?
-  createdAt       DateTime            @default(now())
-  updatedAt       DateTime            @updatedAt
-  board           AtlasBoard          @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  createdBy       User?               @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  connectionsFrom AtlasConnection[]   @relation("FromElement")
-  connectionsTo   AtlasConnection[]   @relation("ToElement")
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  board           AtlasBoard        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  createdBy       User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  connectionsFrom AtlasConnection[] @relation("FromElement")
+  connectionsTo   AtlasConnection[] @relation("ToElement")
 
   @@index([boardId, x, y])
   @@index([boardId, zIndex])

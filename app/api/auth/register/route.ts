@@ -1,7 +1,7 @@
 import { Prisma } from "@prisma/client";
 
-import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
-import { setSessionCookie } from "@/lib/auth";
+import { applyNoStoreHeaders, errorToResponse, jsonError, jsonOk } from "@/lib/api";
+import { appendSessionCookieHeaders, createSessionCookie } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
@@ -78,9 +78,9 @@ export async function POST(request: Request) {
       throw err;
     }
 
-    await setSessionCookie(user.id);
+    const sessionCookie = await createSessionCookie(user.id);
 
-    return jsonOk({
+    const response = jsonOk({
       user: {
         id: user.id,
         email: user.email,
@@ -89,6 +89,9 @@ export async function POST(request: Request) {
       },
       room: { id: room.id, slug: room.slug, name: room.name },
     });
+    applyNoStoreHeaders(response.headers);
+    appendSessionCookieHeaders(response.headers, sessionCookie.cookie);
+    return response;
   } catch (error) {
     return errorToResponse(error);
   }

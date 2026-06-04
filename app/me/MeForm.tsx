@@ -93,7 +93,7 @@ export function MeForm({ initial }: { initial: Initial }) {
       }
       // 使用硬刷新确保所有组件和连接被完全清理
       console.log("[Logout] redirecting to / with hard refresh...");
-      window.location.href = "/";
+      window.location.replace(`/?logout=${Date.now()}`);
     }
   };
 

@@ -8,10 +8,10 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 // Lightweight session-validity heartbeat. Every authenticated client opens one
-// and gets a `kicked` event within ~3s if their session is deleted from the
+// and gets a `kicked` event within ~10s if their session is deleted from the
 // database (e.g., by a login from a different IP).
 
-const HEARTBEAT_MS = 3000;
+const HEARTBEAT_MS = 10_000;
 
 export async function GET(request: Request) {
   const token = cookies().get(USER_COOKIE)?.value;

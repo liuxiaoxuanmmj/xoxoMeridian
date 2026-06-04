@@ -5,6 +5,8 @@ import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
 
+export const dynamic = "force-dynamic";
+
 export default async function ChatRoomPage({ params }: { params: { roomId: string } }) {
   const user = await requirePageUser();
 
@@ -19,6 +21,7 @@ export default async function ChatRoomPage({ params }: { params: { roomId: strin
 
   return (
     <ChatApp
+      key={`${user.id}:${params.roomId}`}
       currentUser={JSON.parse(JSON.stringify(user))}
       initialSnapshot={JSON.parse(JSON.stringify(snapshot))}
     />
