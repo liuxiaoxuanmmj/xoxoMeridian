@@ -51,24 +51,24 @@ function MessageBubble({
     <div className={cn("flex", isMine ? "justify-end" : "justify-start")}>
       <article
         className={cn(
-          "max-w-[82%] rounded-lg border px-4 py-3 shadow-sm",
+          "max-w-[82%] rounded-[10px] border px-4 py-3 shadow-sm",
           isMine && "border-ink/10 bg-ink text-white",
-          isAgent && "border-sage-100 bg-sage-50 text-ink",
-          isSystem && "border-warm-200 bg-white/75 text-ink/70",
-          !isMine && !isAgent && !isSystem && "border-warm-200 bg-white text-ink"
+          isAgent && "border-[#e8e8e8] bg-[#fafbfc] text-ink",
+          isSystem && "border-[#e8e8e8] bg-white text-ink/60",
+          !isMine && !isAgent && !isSystem && "border-[#e8e8e8] bg-white text-ink"
         )}
       >
-        <header className={cn("mb-1 flex flex-wrap items-center gap-2 text-xs", isMine ? "text-white/70" : "text-ink/55")}>
+        <header className={cn("mb-1 flex flex-wrap items-center gap-2 text-xs", isMine ? "text-white/70" : "text-black/50")}>
           <span className="font-semibold">{senderName}</span>
           <span>{formatTime(message.createdAt)}</span>
-          {isAgent ? <span className="rounded-full bg-white/70 px-2 py-0.5 text-sage-700">由 {MENTION_AGENT} 处理</span> : null}
+          {isAgent ? <span className="rounded-full bg-[#3a5b22]/10 px-2 py-0.5 text-[#3a5b22]">由 {MENTION_AGENT} 处理</span> : null}
           {message.sourceTask ? <span className="rounded-full bg-warm-100 px-2 py-0.5 text-warm-700">已派发</span> : null}
         </header>
 
         <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>
 
         {isAgent && message.finalTask ? (
-          <details className={cn("mt-3 rounded-md border p-2 text-xs", isMine ? "border-white/20" : "border-sage-100 bg-white/60")}>
+          <details className={cn("mt-3 rounded-[8px] border p-2 text-xs", isMine ? "border-white/20" : "border-[#e8e8e8] bg-white")}>
             <summary className="cursor-pointer select-none font-medium">执行链路</summary>
             <div className="mt-2 space-y-2">
               <p>task_id: {message.finalTask.id}</p>

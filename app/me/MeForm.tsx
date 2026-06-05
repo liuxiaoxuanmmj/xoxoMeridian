@@ -131,10 +131,10 @@ export function MeForm({ initial }: { initial: Initial }) {
   const noteLength = form.profileNote.length;
 
   return (
-    <form className="space-y-5 rounded-lg border border-warm-200 bg-white/85 p-6" onSubmit={onSubmit}>
+    <form className="space-y-5 rounded-[10px] border border-[#e8e8e8] bg-white p-6" onSubmit={onSubmit}>
       <Field label="昵称">
         <input
-          className="w-full rounded-md border border-warm-200 bg-white px-3 py-2 text-sm outline-none focus:border-warm-500"
+          className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
           maxLength={40}
           onChange={(event) => update("displayName", event.target.value)}
           type="text"
@@ -145,7 +145,7 @@ export function MeForm({ initial }: { initial: Initial }) {
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Field label="城市">
           <input
-            className="w-full rounded-md border border-warm-200 bg-white px-3 py-2 text-sm outline-none focus:border-warm-500"
+            className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
             onChange={(event) => update("city", event.target.value)}
             type="text"
             value={form.city}
@@ -153,7 +153,7 @@ export function MeForm({ initial }: { initial: Initial }) {
         </Field>
         <Field label="国家">
           <input
-            className="w-full rounded-md border border-warm-200 bg-white px-3 py-2 text-sm outline-none focus:border-warm-500"
+            className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
             onChange={(event) => update("country", event.target.value)}
             type="text"
             value={form.country}
@@ -163,7 +163,7 @@ export function MeForm({ initial }: { initial: Initial }) {
 
       <Field label={`自我介绍 / 给助手的背景说明（${noteLength}/${NOTE_LIMIT}）`}>
         <textarea
-          className="min-h-[160px] w-full resize-y rounded-md border border-warm-200 bg-white px-3 py-2 text-sm leading-6 outline-none focus:border-warm-500"
+          className="min-h-[160px] w-full resize-y rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
           maxLength={NOTE_LIMIT}
           onChange={(event) => update("profileNote", event.target.value)}
           placeholder="例如：我对花生过敏；我喜欢早睡；遇到我说焦虑时请先共情再给建议。"
@@ -174,7 +174,7 @@ export function MeForm({ initial }: { initial: Initial }) {
             type="button"
             onClick={onRefineNote}
             disabled={refining || !form.profileNote.trim()}
-            className="rounded-md border border-sage-300 bg-sage-50 px-3 py-1.5 text-xs font-medium text-sage-700 hover:bg-sage-100 disabled:opacity-50"
+            className="rounded-[10px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs font-medium text-[#3a5b22] transition-colors duration-200 hover:bg-[#3a5b22] hover:text-white focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:opacity-50 cursor-pointer"
           >
             {refining ? "优化中…" : "小助手优化"}
           </button>
@@ -182,28 +182,28 @@ export function MeForm({ initial }: { initial: Initial }) {
             <button
               type="button"
               onClick={onUndoRefine}
-              className="rounded-md border border-warm-300 bg-white px-3 py-1.5 text-xs text-ink/70 hover:bg-warm-100"
+              className="rounded-[10px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
             >
               撤销
             </button>
           ) : null}
-          {refineMsg ? <span className="text-xs text-ink/55">{refineMsg}</span> : null}
+          {refineMsg ? <span className="text-xs text-black/50">{refineMsg}</span> : null}
         </div>
       </Field>
 
       <div className="flex items-center justify-end gap-3">
-        {status === "saved" ? <span className="text-xs text-sage-700">已保存</span> : null}
+        {status === "saved" ? <span className="text-xs text-[#3a5b22]">已保存</span> : null}
         {status === "error" ? <span className="text-xs text-red-700">{errorMsg}</span> : null}
         <button
           type="button"
           onClick={onLogout}
           disabled={loggingOut}
-          className="rounded-md border border-red-200 bg-white px-4 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
+          className="rounded-[10px] border border-red-200 bg-white px-4 py-2.5 text-sm text-red-600 transition-colors duration-200 hover:bg-red-50 focus:ring-2 focus:ring-red-500/15 focus:outline-none disabled:opacity-50 cursor-pointer"
         >
           {loggingOut ? "退出中…" : "退出登录"}
         </button>
         <button
-          className="rounded-md bg-ink px-4 py-2 text-sm font-medium text-white transition hover:bg-ink/90 disabled:opacity-60"
+          className="rounded-[10px] bg-[#3a5b22] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#2e4a1a] focus:ring-2 focus:ring-[#3a5b22]/30 focus:outline-none disabled:opacity-50 cursor-pointer"
           disabled={saving}
           type="submit"
         >
@@ -217,7 +217,7 @@ export function MeForm({ initial }: { initial: Initial }) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block space-y-1">
-      <span className="text-xs font-medium text-ink/65">{label}</span>
+      <span className="text-[15px] font-medium leading-none text-black">{label}</span>
       {children}
     </label>
   );

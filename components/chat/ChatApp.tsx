@@ -283,18 +283,18 @@ export function ChatApp({
 
   if (authSyncing) {
     return (
-      <main className="flex h-screen min-h-[720px] items-center justify-center bg-warm-50 text-sm text-ink/60">
+      <main className="flex h-screen min-h-[720px] items-center justify-center bg-sage-50 text-sm text-black/50">
         正在同步登录状态…
       </main>
     );
   }
 
   return (
-    <main className="flex h-screen min-h-[720px] flex-col text-ink">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-warm-200 bg-white/80 px-4 backdrop-blur">
+    <main className="flex h-screen min-h-[720px] flex-col bg-sage-50 text-ink">
+      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#e8e8e8] bg-white px-5">
         <div>
-          <h1 className="text-base font-semibold text-ink">{snapshot.room.name}</h1>
-          <p className="text-xs text-ink/50">
+          <h1 className="text-base font-semibold text-black">{snapshot.room.name}</h1>
+          <p className="text-xs text-black/50">
             私密双人聊天室 · 本地 Agent Runtime
             {connState !== "open" && (
               <span className="ml-2 inline-flex items-center gap-1 text-amber-600">

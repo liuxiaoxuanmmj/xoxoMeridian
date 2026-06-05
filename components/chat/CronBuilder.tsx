@@ -19,8 +19,8 @@ const WEEKDAYS = [
   { label: "日", value: "0" },
 ];
 
-const ACTIVE_CLS = "border-sage-500 bg-sage-50 font-medium text-sage-700";
-const INACTIVE_CLS = "border-warm-200 text-ink/60 hover:border-warm-300";
+const ACTIVE_CLS = "border-[#3a5b22] bg-[#3a5b22]/10 font-medium text-[#3a5b22]";
+const INACTIVE_CLS = "border-[#d9d9d9] text-black/60 hover:border-[#3a5b22]/30";
 
 const DOW_NAMES: Record<string, string> = {
   "0": "周日",
@@ -69,7 +69,7 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
   return (
     <div className="space-y-3">
       <div>
-        <label className="block text-xs font-medium text-ink/70">
+        <label className="block text-xs font-medium text-black/70">
           执行时间
         </label>
         <div className="mt-1 flex items-center gap-1">
@@ -79,36 +79,36 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
             max={23}
             value={parts.hour}
             onChange={(e) => updateTime(e.target.value, parts.minute)}
-            className="w-16 rounded border border-warm-300 px-2 py-1.5 text-center text-sm focus:border-sage-400 focus:outline-none"
+            className="w-16 rounded-[8px] border border-[#d9d9d9] bg-white px-2 py-1.5 text-center text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
           />
-          <span className="text-ink/50">:</span>
+          <span className="text-black/40">:</span>
           <input
             type="number"
             min={0}
             max={59}
             value={parts.minute}
             onChange={(e) => updateTime(parts.hour, e.target.value)}
-            className="w-16 rounded border border-warm-300 px-2 py-1.5 text-center text-sm focus:border-sage-400 focus:outline-none"
+            className="w-16 rounded-[8px] border border-[#d9d9d9] bg-white px-2 py-1.5 text-center text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
           />
         </div>
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-ink/70">
+        <label className="block text-xs font-medium text-black/70">
           重复日期
         </label>
         <div className="mt-1 flex flex-wrap gap-1">
           <button
             type="button"
             onClick={() => setShortcut("*")}
-            className={`rounded border px-2 py-1 text-xs ${isAllDays ? ACTIVE_CLS : INACTIVE_CLS}`}
+            className={`rounded-[8px] border px-2 py-1 text-xs transition-colors duration-200 cursor-pointer ${isAllDays ? ACTIVE_CLS : INACTIVE_CLS}`}
           >
             每天
           </button>
           <button
             type="button"
             onClick={() => setShortcut(WEEKDAYS_DOW)}
-            className={`rounded border px-2 py-1 text-xs ${
+            className={`rounded-[8px] border px-2 py-1 text-xs transition-colors duration-200 cursor-pointer ${
               isWeekdaySet(selected) && !isAllDays ? ACTIVE_CLS : INACTIVE_CLS
             }`}
           >
@@ -120,7 +120,7 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
               key={d.value}
               type="button"
               onClick={() => toggleDay(d.value)}
-              className={`w-7 rounded border py-1 text-xs ${
+              className={`w-7 rounded-[8px] border py-1 text-xs transition-colors duration-200 cursor-pointer ${
                 !isAllDays && selected.has(d.value) ? ACTIVE_CLS : INACTIVE_CLS
               }`}
             >
@@ -130,7 +130,7 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
         </div>
       </div>
 
-      <p className="rounded bg-skysoft-50 px-3 py-1.5 text-xs text-skysoft-500">
+      <p className="rounded-[8px] bg-[#fafbfc] px-3 py-1.5 text-xs text-[#3a5b22]">
         {description}
       </p>
     </div>

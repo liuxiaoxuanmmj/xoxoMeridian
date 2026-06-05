@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { AtlasBoardSnapshot, AtlasElementData, AtlasConnectionData, OptimisticOp } from "@/components/atlas/types";
+import { CameraIcon, EditIcon } from "@/components/icons";
 import type { ChatUser } from "@/components/chat/types";
 import { AtlasCanvas } from "@/components/atlas/AtlasCanvas";
 import { AtlasToolbar } from "@/components/atlas/AtlasToolbar";
@@ -316,7 +317,7 @@ export function AtlasApp({
   }, [contextMenu]);
 
   return (
-    <div className="flex h-screen flex-col bg-warm-50 text-ink">
+    <div className="flex h-screen flex-col bg-[#fafbfc] text-ink">
       <AtlasToolbar
         roomId={roomId}
         zoom={viewport.zoom}
@@ -374,30 +375,32 @@ export function AtlasApp({
       />
       {contextMenu && (
         <div
-          className="fixed z-50 min-w-[140px] overflow-hidden rounded-lg border border-warm-200 bg-white shadow-lg"
+          className="fixed z-50 min-w-[150px] overflow-hidden rounded-[10px] border border-[#e8e8e8] bg-white shadow-lg"
           style={{ left: contextMenu.screenX, top: contextMenu.screenY }}
           onPointerDown={(e) => e.stopPropagation()}
         >
           <button
             type="button"
-            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink/80 hover:bg-warm-50"
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-black/70 transition-colors duration-200 hover:bg-[#fafbfc] cursor-pointer"
             onClick={() => {
               setUploadPosition({ x: contextMenu.canvasX, y: contextMenu.canvasY });
               setUploadOpen(true);
               setContextMenu(null);
             }}
           >
-            <span className="text-base">&#128247;</span> + 照片
+            <CameraIcon size={16} />
+            + 照片
           </button>
           <button
             type="button"
-            className="flex w-full items-center gap-2 px-4 py-2.5 text-sm text-ink/80 hover:bg-warm-50"
+            className="flex w-full items-center gap-2.5 px-4 py-2.5 text-sm text-black/70 transition-colors duration-200 hover:bg-[#fafbfc] cursor-pointer"
             onClick={() => {
               onAddNote(contextMenu.canvasX, contextMenu.canvasY);
               setContextMenu(null);
             }}
           >
-            <span className="text-base">&#128221;</span> + 便签
+            <EditIcon size={16} />
+            + 便签
           </button>
         </div>
       )}

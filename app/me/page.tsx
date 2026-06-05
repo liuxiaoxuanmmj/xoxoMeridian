@@ -18,17 +18,17 @@ export default async function MePage() {
   });
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-10">
+    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-6 px-6 py-10 bg-sage-50">
       <header className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-ink">个人设置</h1>
-          <p className="mt-1 text-sm text-ink/55">
+          <h1 className="text-[28px] font-semibold text-black">个人设置</h1>
+          <p className="mt-1 text-[15px] leading-relaxed text-black/50">
             这里的内容会作为额外背景注入到房间助手的提示里。
           </p>
         </div>
         <Link
           href="/chat"
-          className="rounded-md border border-warm-200 bg-white px-3 py-1.5 text-sm text-ink/70 hover:bg-warm-100"
+          className="rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-2.5 text-sm font-medium text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
         >
           返回聊天
         </Link>

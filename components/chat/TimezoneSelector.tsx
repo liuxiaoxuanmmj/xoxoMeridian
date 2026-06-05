@@ -17,11 +17,11 @@ export function TimezoneSelector({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-ink/70">{label}</label>
+      <label className="block text-sm font-medium text-black/70">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+        className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
       >
         {options.map((o) => (
           <option key={o.value} value={o.value}>

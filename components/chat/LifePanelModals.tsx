@@ -66,22 +66,22 @@ export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModa
     <BaseModal isOpen={isOpen} onClose={onClose} title={memo ? "编辑备忘录" : "新建备忘录"}>
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-ink/70">标题 *</label>
+          <label className="block text-sm font-medium text-black/70">标题 *</label>
           <input
             type="text"
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-            className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+            className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             required
             maxLength={200}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-ink/70">内容 *</label>
+          <label className="block text-sm font-medium text-black/70">内容 *</label>
           <textarea
             value={formData.content}
             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
-            className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+            className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             rows={5}
             required
             maxLength={8000}
@@ -95,7 +95,7 @@ export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModa
             onChange={(e) => setFormData({ ...formData, pinned: e.target.checked })}
             className="h-4 w-4 rounded border-warm-300 text-sage-600 focus:ring-sage-500"
           />
-          <label htmlFor="pinned" className="text-sm font-medium text-ink/70">
+          <label htmlFor="pinned" className="text-sm font-medium text-black/70">
             置顶
           </label>
         </div>
@@ -194,10 +194,10 @@ export function ScheduledJobModal({
           <button
             type="button"
             onClick={() => handleModeChange("once")}
-            className={`flex-1 rounded px-3 py-2 text-sm font-medium ${
+            className={`flex-1 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-colors duration-200 cursor-pointer ${
               mode === "once"
-                ? "bg-sage-100 text-sage-700"
-                : "bg-warm-50 text-ink/60 hover:bg-warm-100"
+                ? "bg-[#3a5b22]/10 text-[#3a5b22]"
+                : "bg-[#fafbfc] text-black/60 hover:bg-neutral-100"
             }`}
           >
             一次性任务
@@ -215,22 +215,22 @@ export function ScheduledJobModal({
           </button>
         </div>
         <div>
-          <label className="block text-sm font-medium text-ink/70">任务描述</label>
+          <label className="block text-sm font-medium text-black/70">任务描述</label>
           <input
             type="text"
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+            className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             placeholder="例如：每天早上的问候"
             maxLength={200}
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-ink/70">执行指令 *</label>
+          <label className="block text-sm font-medium text-black/70">执行指令 *</label>
           <textarea
             value={formData.prompt}
             onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
-            className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+            className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             rows={3}
             required
             maxLength={500}
@@ -239,18 +239,18 @@ export function ScheduledJobModal({
         </div>
         {mode === "once" ? (
           <div>
-            <label className="block text-sm font-medium text-ink/70">执行时间 *</label>
+            <label className="block text-sm font-medium text-black/70">执行时间 *</label>
             <input
               type="datetime-local"
               value={formData.fireAt}
               onChange={(e) => setFormData({ ...formData, fireAt: e.target.value })}
-              className="mt-1 w-full rounded border border-warm-300 px-3 py-2 text-sm focus:border-sage-400 focus:outline-none"
+              className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
               required
             />
           </div>
         ) : (
           <div>
-            <label className="block text-sm font-medium text-ink/70">执行周期</label>
+            <label className="block text-sm font-medium text-black/70">执行周期</label>
             <div className="mt-1">
               <CronBuilder
                 value={formData.cron}

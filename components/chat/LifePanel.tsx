@@ -116,31 +116,31 @@ export function LifePanel({
   };
 
   return (
-    <aside className="hidden min-h-0 w-80 shrink-0 overflow-y-auto border-l border-warm-200 bg-white/72 p-4 xl:block">
+    <aside className="hidden min-h-0 w-80 shrink-0 overflow-y-auto border-l border-[#e8e8e8] bg-white p-4 xl:block">
       <div className="space-y-4">
-        <section className="rounded-lg border border-skysoft-100 bg-skysoft-50 p-4">
-          <h2 className="text-sm font-semibold text-ink">两地时间</h2>
+        <section className="rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] p-4">
+          <h2 className="text-sm font-semibold text-black">两地时间</h2>
           <div className="mt-3 space-y-3 text-sm">
             {[selfUser, partnerUser].filter(Boolean).map((user) => (
               <div key={user.id} className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="font-medium text-ink">{user.displayName}</p>
-                  <p className="text-xs text-ink/55">{user.profile?.city ?? "未设置城市"}</p>
+                  <p className="font-medium text-black">{user.displayName}</p>
+                  <p className="text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
                 </div>
-                <p className="text-right font-semibold text-skysoft-500">{formatTime(now, user.profile?.timezone)}</p>
+                <p className="text-right font-semibold text-[#3a5b22]">{formatTime(now, user.profile?.timezone)}</p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-warm-200 bg-warm-50 p-4">
-          <h2 className="text-sm font-semibold text-ink">天气</h2>
+        <section className="rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] p-4">
+          <h2 className="text-sm font-semibold text-black">天气</h2>
           {weatherLoading && !weather ? (
-            <p className="mt-2 text-sm leading-6 text-ink/55">读取天气中…</p>
+            <p className="mt-2 text-sm leading-6 text-black/50">读取天气中…</p>
           ) : weather?.snapshot ? (
             <WeatherCard result={weather} />
           ) : (
-            <p className="mt-2 text-sm leading-6 text-ink/55">
+            <p className="mt-2 text-sm leading-6 text-black/50">
               {weather?.error === "city not set on profile"
                 ? `${weather.displayName ?? "对方"}还没有设置城市`
                 : "暂时拿不到天气，稍后会自动重试。"}
@@ -158,9 +158,9 @@ export function LifePanel({
             const prompt = typeof job.payload?.prompt === "string" ? job.payload.prompt : null;
             const runOnce = job.payload?.runOnce === true;
             return (
-              <div key={job.id} className="group relative rounded-lg border border-sage-100 bg-white p-3 text-sm">
-                <p className="font-medium text-ink">{description ?? prompt ?? job.cron}</p>
-                <p className="mt-1 text-xs text-ink/55">
+              <div key={job.id} className="group relative rounded-[10px] border border-[#e8e8e8] bg-white p-3 text-sm">
+                <p className="font-medium text-black">{description ?? prompt ?? job.cron}</p>
+                <p className="mt-1 text-xs text-black/50">
                   {runOnce
                     ? `一次性 · ${formatDateTime(job.nextRunAt, job.timezone)}`
                     : `下次：${formatDateTime(job.nextRunAt, job.timezone)} · ${job.cron}`}
@@ -183,9 +183,9 @@ export function LifePanel({
           onAdd={() => setModal({ type: "memo" })}
         >
           {memos.map((memo) => (
-            <div key={memo.id} className="group relative rounded-lg border border-sage-100 bg-white p-3 text-sm">
-              <p className="font-medium text-ink">{memo.title}</p>
-              <p className="mt-1 leading-5 text-ink/65">{memo.content}</p>
+            <div key={memo.id} className="group relative rounded-[10px] border border-[#e8e8e8] bg-white p-3 text-sm">
+              <p className="font-medium text-black">{memo.title}</p>
+              <p className="mt-1 leading-5 text-black/60">{memo.content}</p>
               <ItemActions
                 onEdit={() => setModal({ type: "memo", item: memo })}
                 onDelete={() => handleDelete("memos", memo.id, "确定要删除这条备忘录吗？")}
@@ -223,19 +223,19 @@ function PanelSection({ title, empty, children, onAdd }: { title: string; empty:
   return (
     <section>
       <div className="mb-2 flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-ink">{title}</h2>
+        <h2 className="text-sm font-semibold text-black">{title}</h2>
         {onAdd && (
           <button
             type="button"
             onClick={onAdd}
-            className="rounded border border-sage-300 bg-sage-50 px-2 py-0.5 text-xs font-medium text-sage-700 hover:bg-sage-100"
+            className="rounded-[10px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-[#3a5b22] transition-colors duration-200 hover:bg-[#3a5b22] hover:text-white focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
             title={`新建${title}`}
           >
             + 新建
           </button>
         )}
       </div>
-      <div className="space-y-2">{hasChildren ? children : <p className="rounded-lg border border-dashed border-ink/15 p-3 text-sm text-ink/45">{empty}</p>}</div>
+      <div className="space-y-2">{hasChildren ? children : <p className="rounded-[10px] border border-dashed border-black/10 p-3 text-sm text-black/40">{empty}</p>}</div>
     </section>
   );
 }
@@ -282,10 +282,10 @@ function WeatherCard({ result }: { result: WeatherResult }) {
   ].filter(Boolean);
 
   return (
-    <div className="mt-2 space-y-1 text-sm leading-6 text-ink/75">
-      <p className="text-ink">{line1Parts.join("，")}</p>
-      {line2Parts.length ? <p className="text-xs text-ink/55">{line2Parts.join(" · ")}</p> : null}
-      {snap.advice ? <p className="text-xs text-ink/55">{snap.advice}</p> : null}
+    <div className="mt-2 space-y-1 text-sm leading-6 text-black/70">
+      <p className="text-black">{line1Parts.join("，")}</p>
+      {line2Parts.length ? <p className="text-xs text-black/50">{line2Parts.join(" · ")}</p> : null}
+      {snap.advice ? <p className="text-xs text-black/50">{snap.advice}</p> : null}
       {isMock ? (
         <p className="text-[11px] text-amber-700/80">
           正在使用 Mock 数据{snap.fallbackReason ? `（${snap.fallbackReason}）` : ""}

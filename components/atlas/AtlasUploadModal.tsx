@@ -87,12 +87,12 @@ export function AtlasUploadModal({
               <img
                 src={preview}
                 alt="Preview"
-                className="w-full rounded-md object-cover"
+                className="w-full rounded-[8px] object-cover"
                 style={{ maxHeight: 240 }}
               />
               <button
                 type="button"
-                className="absolute right-2 top-2 rounded bg-black/40 px-2 py-0.5 text-xs text-white hover:bg-black/60"
+                className="absolute right-2 top-2 rounded-[6px] bg-black/40 px-2 py-0.5 text-xs text-white transition-colors duration-200 hover:bg-black/60 cursor-pointer"
                 onClick={() => {
                   URL.revokeObjectURL(preview);
                   setFile(null);
@@ -106,7 +106,7 @@ export function AtlasUploadModal({
             <button
               type="button"
               onClick={() => inputRef.current?.click()}
-              className="flex h-32 w-full items-center justify-center rounded-md border-2 border-dashed border-warm-300 bg-warm-50 text-sm text-ink/40 hover:border-sage-400 hover:text-sage-600"
+              className="flex h-32 w-full items-center justify-center rounded-[10px] border-2 border-dashed border-[#d9d9d9] bg-[#fafbfc] text-sm text-black/40 transition-colors duration-200 hover:border-[#3a5b22] hover:text-[#3a5b22] cursor-pointer"
             >
               点击选择图片（JPG / PNG / WebP，≤5MB）
             </button>
@@ -114,18 +114,18 @@ export function AtlasUploadModal({
         </div>
 
         <div>
-          <label className="text-xs font-medium text-ink/60">标注（可选）</label>
+          <label className="text-sm font-medium text-black/70">标注（可选）</label>
           <input
             type="text"
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
             maxLength={200}
-            className="mt-1 w-full rounded border border-warm-300 bg-white px-3 py-1.5 text-sm text-ink outline-none focus:border-sage-400 focus:ring-1 focus:ring-sage-400"
+            className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
             placeholder="给照片添加一行标注…"
           />
         </div>
 
-        {error && <p className="text-xs text-red-500">{error}</p>}
+        {error && <p className="rounded-lg bg-red-50 px-4 py-3 text-sm leading-relaxed text-red-700">{error}</p>}
 
         <ModalActions
           busy={busy}

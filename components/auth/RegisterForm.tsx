@@ -4,7 +4,7 @@ import { useState } from "react";
 
 import { PasswordInput } from "@/components/auth/PasswordInput";
 
-export function RegisterForm() {
+export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void }) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [displayName, setDisplayName] = useState("");
@@ -63,54 +63,84 @@ export function RegisterForm() {
   }
 
   return (
-    <form onSubmit={submit} className="space-y-3">
-      <input
-        type="email"
-        value={email}
-        onChange={(event) => setEmail(event.target.value)}
-        placeholder="邮箱"
-        autoComplete="email"
-        required
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
-        disabled={submitting}
-      />
-      <input
-        type="text"
-        value={displayName}
-        onChange={(event) => setDisplayName(event.target.value)}
-        placeholder="昵称（聊天里看到的名字）"
-        maxLength={40}
-        required
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
-        disabled={submitting}
-      />
-      <PasswordInput
-        value={password}
-        onChange={(event) => setPassword(event.target.value)}
-        placeholder="密码（至少 8 位）"
-        autoComplete="new-password"
-        minLength={8}
-        required
-        disabled={submitting}
-      />
-      <input
-        type="text"
-        value={inviteCode}
-        onChange={(event) => setInviteCode(event.target.value)}
-        placeholder="邀请码"
-        autoComplete="one-time-code"
-        required
-        className="w-full rounded-lg border border-warm-200 bg-white px-4 py-3 text-sm text-ink placeholder-ink/40 focus:border-sage-400 focus:outline-none"
-        disabled={submitting}
-      />
+    <form onSubmit={submit} className="flex flex-col gap-5">
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[15px] font-medium leading-none text-black">邮箱</label>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          placeholder="输入邮箱地址"
+          autoComplete="email"
+          required
+          disabled={submitting}
+          className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] font-medium leading-normal text-black placeholder:text-[#b0b0b0] placeholder:text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[15px] font-medium leading-none text-black">昵称</label>
+        <input
+          type="text"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+          placeholder="聊天里看到的名字"
+          maxLength={40}
+          required
+          disabled={submitting}
+          className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] font-medium leading-normal text-black placeholder:text-[#b0b0b0] placeholder:text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[15px] font-medium leading-none text-black">密码</label>
+        <PasswordInput
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          placeholder="至少 8 位"
+          autoComplete="new-password"
+          minLength={8}
+          required
+          disabled={submitting}
+        />
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label className="text-[15px] font-medium leading-none text-black">邀请码</label>
+        <input
+          type="text"
+          value={inviteCode}
+          onChange={(e) => setInviteCode(e.target.value)}
+          placeholder="输入邀请码"
+          autoComplete="one-time-code"
+          required
+          disabled={submitting}
+          className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] font-medium leading-normal text-black placeholder:text-[#b0b0b0] placeholder:text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:cursor-not-allowed disabled:bg-neutral-50"
+        />
+      </div>
+
       <button
         type="submit"
-        className="w-full rounded-lg bg-ink px-4 py-3 font-medium text-white transition hover:bg-ink/90 disabled:cursor-not-allowed disabled:opacity-60"
         disabled={submitting}
+        className="mt-1 w-full min-h-[44px] rounded-[10px] bg-[#3a5b22] px-4 py-3 text-[15px] font-semibold text-white transition-colors duration-200 hover:bg-[#2e4a1a] focus:ring-2 focus:ring-[#3a5b22]/30 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer"
       >
-        {submitting ? "注册中…" : "注册并进入房间"}
+        {submitting ? "注册中…" : "注册"}
       </button>
-      {error ? <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">{error}</p> : null}
+
+      {error && (
+        <p className="rounded-lg bg-red-50 px-4 py-3 text-sm leading-relaxed text-red-700">{error}</p>
+      )}
+
+      <p className="text-center text-[15px] font-medium leading-relaxed text-black">
+        已有账号？{" "}
+        <button
+          type="button"
+          onClick={onSwitchToLogin}
+          className="text-[#0f3dde] transition-colors duration-200 hover:text-[#0c35c0] focus:ring-2 focus:ring-[#0f3dde]/20 rounded-sm focus:outline-none cursor-pointer"
+        >
+          登录
+        </button>
+      </p>
     </form>
   );
 }

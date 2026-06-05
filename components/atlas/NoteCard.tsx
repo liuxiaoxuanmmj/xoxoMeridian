@@ -25,7 +25,7 @@ export function NoteCard({
 
   return (
     <div
-      className="relative rounded-sm border border-amber-200/60 bg-amber-50 shadow-sm"
+      className="relative rounded-[6px] border border-amber-200/60 bg-amber-50 shadow-sm"
       style={{ minHeight: 80, padding: "12px 14px 24px" }}
     >
       {editing ? (
@@ -44,7 +44,7 @@ export function NoteCard({
         />
       ) : (
         <div
-          className="min-h-[3rem] whitespace-pre-wrap break-words text-sm text-ink/80 cursor-text"
+          className="min-h-[3rem] whitespace-pre-wrap break-words text-sm text-black/80 cursor-text"
           data-note-area
           onClick={(e) => {
             e.stopPropagation();
@@ -52,14 +52,14 @@ export function NoteCard({
           }}
         >
           {element.content || (
-            <span className="italic text-ink/30">点击编辑…</span>
+            <span className="italic text-black/30">点击编辑…</span>
           )}
         </div>
       )}
 
       <button
         type="button"
-        className="absolute right-1 top-1 rounded p-0.5 text-[10px] text-ink/30 hover:bg-red-100 hover:text-red-500"
+        className="absolute right-1 top-1 rounded-[4px] p-0.5 text-[10px] text-black/30 transition-colors duration-200 hover:bg-red-100 hover:text-red-500 cursor-pointer"
         onClick={(e) => {
           e.stopPropagation();
           onDelete(element.id);

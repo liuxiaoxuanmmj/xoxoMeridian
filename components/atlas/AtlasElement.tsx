@@ -171,7 +171,7 @@ function AtlasElementInner({
     <div
       ref={wrapperRef}
       className={`absolute select-none ${connectMode ? "cursor-pointer" : "cursor-grab active:cursor-grabbing"} ${
-        isConnectFrom ? "ring-2 ring-amber-400 ring-offset-2" : ""
+        isConnectFrom ? "ring-2 ring-[#3a5b22] ring-offset-2" : ""
       }`}
       style={{
         transform: `translate3d(${element.x}px, ${element.y}px, 0) rotate(${element.rotation}deg)`,

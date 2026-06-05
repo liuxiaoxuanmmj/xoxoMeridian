@@ -73,16 +73,16 @@ export function LeftRail({
   };
 
   return (
-    <aside className="hidden w-64 shrink-0 border-r border-warm-200 bg-white/72 p-4 lg:block">
+    <aside className="hidden w-64 shrink-0 border-r border-[#e8e8e8] bg-white p-4 lg:block">
       <div className="space-y-5">
         <section>
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-ink">会话列表</h2>
+            <h2 className="text-sm font-semibold text-black">会话列表</h2>
             <button
               type="button"
               onClick={onCreate}
               disabled={busy !== null}
-              className="rounded border border-sage-300 bg-sage-50 px-2 py-0.5 text-xs font-medium text-sage-700 hover:bg-sage-100 disabled:opacity-50"
+              className="rounded-[10px] border border-[#d9d9d9] bg-white px-2.5 py-1 text-xs font-medium text-[#3a5b22] transition-colors duration-200 hover:bg-[#3a5b22] hover:text-white focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:opacity-50 cursor-pointer"
             >
               + 新建
             </button>
@@ -95,25 +95,25 @@ export function LeftRail({
                   key={room.id}
                   type="button"
                   onClick={() => !active && router.push(`/chat/${room.id}`)}
-                  className={`flex w-full items-center justify-between rounded-md px-2 py-1.5 text-left text-xs ${
+                  className={`flex w-full items-center justify-between rounded-[10px] px-2.5 py-1.5 text-left text-xs transition-colors duration-200 cursor-pointer ${
                     active
-                      ? "bg-sage-100 font-medium text-sage-800"
-                      : "text-ink/70 hover:bg-warm-100"
+                      ? "bg-[#3a5b22]/10 font-medium text-[#3a5b22]"
+                      : "text-black/60 hover:bg-[#fafbfc]"
                   }`}
                 >
                   <span className="truncate">{room.name}</span>
-                  <span className="ml-2 shrink-0 text-[10px] text-ink/40">{room.messageCount}</span>
+                  <span className="ml-2 shrink-0 text-[10px] text-black/30">{room.messageCount}</span>
                 </button>
               );
             })}
-            {rooms.length === 0 && <p className="px-2 py-1 text-xs text-ink/40">载入中…</p>}
+            {rooms.length === 0 && <p className="px-2 py-1 text-xs text-black/40">载入中…</p>}
           </div>
-          <div className="mt-2 flex gap-1">
+          <div className="mt-2 flex gap-1.5">
             <button
               type="button"
               onClick={onWipe}
               disabled={busy !== null}
-              className="flex-1 rounded border border-warm-300 bg-white px-2 py-1 text-xs text-ink/70 hover:bg-warm-100 disabled:opacity-50"
+              className="flex-1 rounded-[10px] border border-[#d9d9d9] bg-white px-2 py-1.5 text-xs text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:opacity-50 cursor-pointer"
               title="清空当前会话的所有数据，保留房间"
             >
               {busy === "wipe" ? "清空中…" : "清空当前"}
@@ -122,7 +122,7 @@ export function LeftRail({
               type="button"
               onClick={onDelete}
               disabled={busy !== null}
-              className="flex-1 rounded border border-red-200 bg-white px-2 py-1 text-xs text-red-600 hover:bg-red-50 disabled:opacity-50"
+              className="flex-1 rounded-[10px] border border-red-200 bg-white px-2 py-1.5 text-xs text-red-600 transition-colors duration-200 hover:bg-red-50 focus:ring-2 focus:ring-red-500/15 focus:outline-none disabled:opacity-50 cursor-pointer"
               title="彻底删除整个会话窗口"
             >
               {busy === "delete" ? "删除中…" : "删除会话"}
@@ -131,21 +131,21 @@ export function LeftRail({
         </section>
 
         <section>
-          <h2 className="text-sm font-semibold text-ink">房间成员</h2>
+          <h2 className="text-sm font-semibold text-black">房间成员</h2>
           <div className="mt-3 space-y-2">
             {participants.map((user) => (
-              <div key={user.id} className="flex items-center gap-3 rounded-lg border border-warm-200 bg-white p-3">
-                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-warm-100 text-sm font-semibold text-warm-700">
+              <div key={user.id} className="flex items-center gap-3 rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] p-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-full bg-[#3a5b22]/10 text-sm font-semibold text-[#3a5b22]">
                   {user.avatarLabel}
                 </div>
                 <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-ink">
+                  <p className="truncate text-sm font-medium text-black">
                     {user.displayName}
                     {user.id === currentUser.id ? " · 当前" : ""}
                   </p>
-                  <p className="truncate text-xs text-ink/50">{user.profile?.city ?? "未设置城市"}</p>
+                  <p className="truncate text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
                   {user.id === currentUser.id ? (
-                    <Link className="text-[11px] text-sage-700 hover:underline" href="/me">
+                    <Link className="text-[11px] text-[#0f3dde] transition-colors duration-200 hover:text-[#0c35c0] hover:underline" href="/me">
                       个人设置
                     </Link>
                   ) : null}
@@ -156,18 +156,18 @@ export function LeftRail({
         </section>
 
         <section>
-          <h2 className="text-sm font-semibold text-ink">空间</h2>
+          <h2 className="text-sm font-semibold text-black">空间</h2>
           <div className="mt-3">
             <Link
               href={`/chat/${currentRoomId}/atlas`}
-              className="flex w-full items-center gap-3 rounded-lg border border-sage-100 bg-sage-50 px-3 py-2.5 text-left text-sm font-medium text-sage-700 transition hover:bg-sage-100"
+              className="flex w-full items-center gap-3 rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] px-3 py-2.5 text-left text-sm font-medium text-[#3a5b22] transition-colors duration-200 hover:bg-[#3a5b22]/10 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             >
-              <span className="flex h-8 w-8 items-center justify-center rounded-md bg-sage-200 text-base">
+              <span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#3a5b22]/10 text-base">
                 🗺
               </span>
               <div>
                 <p className="leading-tight">Atlas</p>
-                <p className="text-[11px] font-normal text-sage-500">记忆画板</p>
+                <p className="text-[11px] font-normal text-black/40">记忆画板</p>
               </div>
             </Link>
           </div>

@@ -35,8 +35,8 @@ export function BaseModal({ isOpen, onClose, title, children }: BaseModalProps) 
         if (e.target === backdropRef.current) onClose();
       }}
     >
-      <div className="w-full max-w-md rounded-lg bg-white p-6 shadow-xl">
-        <h2 className="text-lg font-semibold text-ink">{title}</h2>
+      <div className="w-full max-w-md rounded-[10px] bg-white p-6 shadow-xl">
+        <h2 className="text-lg font-semibold text-black">{title}</h2>
         {children}
       </div>
     </div>
@@ -62,14 +62,14 @@ export function ModalActions({
         type="button"
         onClick={onCancel}
         disabled={busy}
-        className="flex-1 rounded border border-warm-300 bg-white px-4 py-2 text-sm font-medium text-ink/70 hover:bg-warm-50 disabled:opacity-50"
+        className="flex-1 rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-2.5 text-sm font-medium text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:opacity-50 cursor-pointer"
       >
         取消
       </button>
       <button
         type="submit"
         disabled={busy}
-        className="flex-1 rounded bg-sage-600 px-4 py-2 text-sm font-medium text-white hover:bg-sage-700 disabled:opacity-50"
+        className="flex-1 rounded-[10px] bg-[#3a5b22] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#2e4a1a] focus:ring-2 focus:ring-[#3a5b22]/30 focus:outline-none disabled:opacity-50 cursor-pointer"
       >
         {busy ? busyLabel : submitLabel}
       </button>
