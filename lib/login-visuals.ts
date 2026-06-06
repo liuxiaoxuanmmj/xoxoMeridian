@@ -1,6 +1,19 @@
 import { z } from "zod";
 
 import { env } from "@/lib/env";
+import { FALLBACK_LOGIN_VISUALS } from "@/lib/login-visuals-shared";
+import type {
+  LoginVisualItem,
+  LoginVisualsManifest,
+  LoginVisualTheme,
+} from "@/lib/login-visuals-shared";
+
+export { FALLBACK_LOGIN_VISUALS } from "@/lib/login-visuals-shared";
+export type {
+  LoginVisualItem,
+  LoginVisualsManifest,
+  LoginVisualTheme,
+} from "@/lib/login-visuals-shared";
 
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const RGBA_PATTERN =
@@ -49,28 +62,6 @@ export const LoginVisualsManifestSchema = z.object({
   intervalMs: z.number().int().min(4000).max(30000).default(7000),
   items: z.array(LoginVisualItemSchema).min(1).max(12),
 });
-
-export type LoginVisualTheme = z.infer<typeof LoginVisualThemeSchema>;
-export type LoginVisualItem = z.infer<typeof LoginVisualItemSchema>;
-export type LoginVisualsManifest = z.infer<typeof LoginVisualsManifestSchema>;
-
-export const FALLBACK_LOGIN_VISUALS: LoginVisualsManifest = {
-  version: 1,
-  intervalMs: 7000,
-  items: [
-    {
-      id: "fallback-login-bg",
-      imageUrl: "/images/login-bg.jpg",
-      theme: {
-        accent: "#3a5b22",
-        accentHover: "#2e4a1a",
-        gradientFrom: "#f5f1e9",
-        gradientTo: "#dbe6cf",
-        overlay: "rgba(255,255,255,0.12)",
-      },
-    },
-  ],
-};
 
 type LoginVisualsFetch = (
   input: string,

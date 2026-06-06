@@ -1,31 +1,18 @@
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 import React from "react";
 import { JSDOM } from "jsdom";
 import { createRoot, type Root } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { LoginVisualsManifest } from "@/lib/login-visuals";
+import {
+  FALLBACK_LOGIN_VISUALS,
+  type LoginVisualsManifest,
+} from "@/lib/login-visuals-shared";
 
 (globalThis as typeof globalThis & { React: typeof React }).React = React;
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-
-const mockedFallbackVisuals = vi.hoisted<LoginVisualsManifest>(() => ({
-  version: 1,
-  intervalMs: 9000,
-  items: [
-    {
-      id: "mocked-fallback",
-      imageUrl: "https://cdn.example.com/login/fallback.jpg",
-      theme: {
-        accent: "#102030",
-        accentHover: "#203040",
-        gradientFrom: "#304050",
-        gradientTo: "#405060",
-        overlay: "rgba(0,0,0,0.18)",
-      },
-    },
-  ],
-}));
 
 vi.mock("@/components/auth/LoginForm", () => ({
   LoginForm: () => React.createElement("form", { "data-testid": "login-form" }),
@@ -33,10 +20,6 @@ vi.mock("@/components/auth/LoginForm", () => ({
 
 vi.mock("@/components/auth/RegisterForm", () => ({
   RegisterForm: () => React.createElement("form", { "data-testid": "register-form" }),
-}));
-
-vi.mock("@/lib/login-visuals", () => ({
-  FALLBACK_LOGIN_VISUALS: mockedFallbackVisuals,
 }));
 
 const twoVisuals: LoginVisualsManifest = {
@@ -132,6 +115,7 @@ describe("AuthPanel login visuals", () => {
 
   it("uses the shared fallback visuals when manifest items are unexpectedly empty", async () => {
     const { AuthPanel } = await import("@/components/auth/AuthPanel");
+    const fallbackVisual = FALLBACK_LOGIN_VISUALS.items[0];
 
     const html = renderToStaticMarkup(
       React.createElement(AuthPanel, {
@@ -139,8 +123,18 @@ describe("AuthPanel login visuals", () => {
       })
     );
 
-    expect(html).toContain("https://cdn.example.com/login/fallback.jpg");
-    expect(html).toContain("--auth-accent:#102030");
+    expect(html).toContain(fallbackVisual.imageUrl);
+    expect(html).toContain(`--auth-accent:${fallbackVisual.theme.accent}`);
+  });
+
+  it("does not import the server login visuals module from the client component", async () => {
+    const source = await readFile(
+      path.join(process.cwd(), "components/auth/AuthPanel.tsx"),
+      "utf8"
+    );
+
+    expect(source).not.toMatch(/from\s+["']@\/lib\/login-visuals["']/);
+    expect(source).toContain("@/lib/login-visuals-shared");
   });
 
   it("rotates visual layers on the configured interval and preloads the next image", async () => {

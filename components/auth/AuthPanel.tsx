@@ -8,7 +8,7 @@ import {
   FALLBACK_LOGIN_VISUALS,
   type LoginVisualItem,
   type LoginVisualsManifest,
-} from "@/lib/login-visuals";
+} from "@/lib/login-visuals-shared";
 
 type Mode = "login" | "register";
 
