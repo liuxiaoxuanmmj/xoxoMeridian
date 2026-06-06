@@ -1,5 +1,5 @@
 import React from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { LoginVisualsManifest } from "@/lib/login-visuals";
 
@@ -30,6 +30,13 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("HomePage login visuals", () => {
+  beforeEach(() => {
+    authPanelMock.mockClear();
+    getCurrentUserMock.mockReset();
+    getLoginVisualsMock.mockReset();
+    redirectMock.mockReset();
+  });
+
   it("passes loaded login visuals to AuthPanel for unauthenticated users", async () => {
     const visuals: LoginVisualsManifest = {
       version: 1,
@@ -58,5 +65,19 @@ describe("HomePage login visuals", () => {
     expect(React.isValidElement(element)).toBe(true);
     expect(element.type).toBe(authPanelMock);
     expect(element.props).toEqual({ visuals });
+  });
+
+  it("redirects authenticated users without loading login visuals", async () => {
+    getCurrentUserMock.mockResolvedValueOnce({ id: "user-1" });
+    redirectMock.mockImplementationOnce(() => {
+      throw new Error("redirect:/chat");
+    });
+
+    const { default: HomePage } = await import("@/app/page");
+
+    await expect(HomePage()).rejects.toThrow("redirect:/chat");
+    expect(redirectMock).toHaveBeenCalledWith("/chat");
+    expect(getLoginVisualsMock).not.toHaveBeenCalled();
+    expect(authPanelMock).not.toHaveBeenCalled();
   });
 });

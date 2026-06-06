@@ -215,6 +215,8 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
             <div
               key={`${visual.id}-${index}`}
               aria-hidden="true"
+              data-testid={`auth-visual-layer-${visual.id}`}
+              data-active={index === boundedActiveIndex ? "true" : "false"}
               className={`absolute inset-0 h-full w-full transition-opacity duration-700 ease-out ${
                 index === boundedActiveIndex ? "opacity-100" : "opacity-0"
               } ${prefersReducedMotion ? "transition-none" : ""}`}
