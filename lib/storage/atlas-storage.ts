@@ -100,6 +100,7 @@ export function normalizeAtlasStorageKey(key: string, prefix = env.ALIYUN_OSS_PR
     normalizedKey.startsWith("/") ||
     normalizedKey.includes("\\") ||
     normalizedKey.includes("..") ||
+    normalizedKey.includes("%") ||
     (normalizedPrefix &&
       (!normalizedKey.startsWith(normalizedPrefix) || normalizedKey === normalizedPrefix))
   ) {
@@ -145,7 +146,13 @@ export function extractAtlasStorageKey(imageUrl: string | null | undefined): str
   }
 
   try {
-    const url = new URL(imageUrl, "http://internal.local");
+    const appOrigin = new URL(env.APP_BASE_URL).origin;
+    const isAbsoluteUrl = /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(imageUrl) || imageUrl.startsWith("//");
+    const url = new URL(imageUrl, env.APP_BASE_URL);
+    if (isAbsoluteUrl && url.origin !== appOrigin) {
+      return null;
+    }
+
     if (!url.pathname.startsWith(ATLAS_UPLOAD_ROUTE)) {
       return null;
     }

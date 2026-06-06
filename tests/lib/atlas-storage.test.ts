@@ -13,6 +13,7 @@ import {
   sanitizeAtlasBaseName,
   validateAtlasImageFile,
 } from "@/lib/storage/atlas-storage";
+import { env } from "@/lib/env";
 
 const tempDirs: string[] = [];
 
@@ -37,7 +38,8 @@ describe("atlas-storage helpers", () => {
 
     expect(url).toBe("/api/atlas/uploads/atlas%2Fabc-photo.jpg");
     expect(extractAtlasStorageKey(url)).toBe(key);
-    expect(extractAtlasStorageKey(`https://example.com${url}`)).toBe(key);
+    expect(extractAtlasStorageKey(`${new URL(env.APP_BASE_URL).origin}${url}`)).toBe(key);
+    expect(extractAtlasStorageKey(`https://example.com${url}`)).toBeNull();
     expect(extractAtlasStorageKey("https://example.com/uploads/atlas%2Fabc-photo.jpg")).toBeNull();
     expect(extractAtlasStorageKey(null)).toBeNull();
   });
@@ -55,6 +57,9 @@ describe("atlas-storage helpers", () => {
     expect(() => normalizeAtlasStorageKey("/atlas/photo.jpg")).toThrow("Invalid atlas storage key");
     expect(() => normalizeAtlasStorageKey("atlas/../photo.jpg")).toThrow("Invalid atlas storage key");
     expect(() => normalizeAtlasStorageKey("atlas\\photo.jpg")).toThrow("Invalid atlas storage key");
+    expect(() => normalizeAtlasStorageKey("atlas/%E0%A4%A.jpg")).toThrow(
+      "Invalid atlas storage key"
+    );
   });
 
   it("generates and validates keys with a custom prefix", () => {
