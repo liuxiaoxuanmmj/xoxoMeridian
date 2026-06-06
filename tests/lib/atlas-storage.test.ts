@@ -40,6 +40,8 @@ describe("atlas-storage helpers", () => {
     expect(extractAtlasStorageKey(url)).toBe(key);
     expect(extractAtlasStorageKey(`${new URL(env.APP_BASE_URL).origin}${url}`)).toBe(key);
     expect(extractAtlasStorageKey(`https://example.com${url}`)).toBeNull();
+    expect(extractAtlasStorageKey(` https://example.com${url}`)).toBeNull();
+    expect(extractAtlasStorageKey(`\n\thttps://example.com${url}`)).toBeNull();
     expect(extractAtlasStorageKey("https://example.com/uploads/atlas%2Fabc-photo.jpg")).toBeNull();
     expect(extractAtlasStorageKey(null)).toBeNull();
   });
