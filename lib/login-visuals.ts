@@ -5,6 +5,7 @@ import { env } from "@/lib/env";
 const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
 const RGBA_PATTERN =
   /^rgba\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*((?:\d+(?:\.\d+)?)|(?:\.\d+))\s*\)$/;
+const LOGIN_VISUALS_FETCH_TIMEOUT_MS = 3000;
 
 function isValidRgba(value: string) {
   const match = RGBA_PATTERN.exec(value);
@@ -73,12 +74,13 @@ export const FALLBACK_LOGIN_VISUALS: LoginVisualsManifest = {
 
 type LoginVisualsFetch = (
   input: string,
-  init: { cache: "no-store" }
+  init: { cache: "no-store"; signal: AbortSignal }
 ) => Promise<Pick<Response, "json" | "ok" | "status">>;
 
 type LoginVisualsLoaderOptions = {
   manifestUrl?: string;
   ttlSeconds?: number;
+  timeoutMs?: number;
   fetchImpl?: LoginVisualsFetch;
   nowMs?: () => number;
 };
@@ -86,9 +88,20 @@ type LoginVisualsLoaderOptions = {
 type ResolvedLoginVisualsLoaderOptions = {
   manifestUrl?: string;
   ttlSeconds: number;
+  timeoutMs: number;
   fetchImpl: LoginVisualsFetch;
   nowMs?: () => number;
 };
+
+type LoginVisualsFallbackSummary =
+  | { reason: "fetch_failed"; status?: number }
+  | { reason: "invalid_json" }
+  | { reason: "validation_failed"; issueCount: number }
+  | { reason: "timeout" };
+
+type LoginVisualsFetchResult =
+  | { ok: true; value: LoginVisualsManifest }
+  | { ok: false; summary: LoginVisualsFallbackSummary };
 
 type LoginVisualsCacheEntry = {
   manifestUrl: string;
@@ -98,13 +111,46 @@ type LoginVisualsCacheEntry = {
 
 let cacheEntry: LoginVisualsCacheEntry | null = null;
 
-function logFallbackError(error: unknown) {
-  console.error("[login-visuals] falling back to default visuals", error);
+function logFallback(summary: LoginVisualsFallbackSummary) {
+  console.error("[login-visuals] falling back to default visuals", summary);
+}
+
+async function fetchLoginVisualsManifest(
+  url: string,
+  fetchImpl: LoginVisualsFetch,
+  signal: AbortSignal
+): Promise<LoginVisualsFetchResult> {
+  const response = await fetchImpl(url, { cache: "no-store", signal });
+
+  if (!response.ok) {
+    return { ok: false, summary: { reason: "fetch_failed", status: response.status } };
+  }
+
+  let json: unknown;
+  try {
+    json = await response.json();
+  } catch {
+    return { ok: false, summary: { reason: "invalid_json" } };
+  }
+
+  const parsed = LoginVisualsManifestSchema.safeParse(json);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      summary: {
+        reason: "validation_failed",
+        issueCount: parsed.error.issues.length,
+      },
+    };
+  }
+
+  return { ok: true, value: parsed.data };
 }
 
 async function loadLoginVisuals({
   manifestUrl,
   ttlSeconds,
+  timeoutMs,
   fetchImpl,
   nowMs,
 }: ResolvedLoginVisualsLoaderOptions): Promise<LoginVisualsManifest> {
@@ -118,23 +164,43 @@ async function loadLoginVisuals({
     return cacheEntry.value;
   }
 
+  const controller = new AbortController();
+  let timedOut = false;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
   try {
-    const response = await fetchImpl(url, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`Manifest request failed with status ${response.status}`);
+    const timeoutPromise = new Promise<never>((_resolve, reject) => {
+      timeoutId = setTimeout(() => {
+        timedOut = true;
+        controller.abort();
+        reject(new Error("Login visuals manifest request timed out"));
+      }, timeoutMs);
+    });
+
+    const result = await Promise.race([
+      fetchLoginVisualsManifest(url, fetchImpl, controller.signal),
+      timeoutPromise,
+    ]);
+
+    if (!result.ok) {
+      logFallback(result.summary);
+      return FALLBACK_LOGIN_VISUALS;
     }
 
-    const parsed = LoginVisualsManifestSchema.parse(await response.json());
     cacheEntry = {
       manifestUrl: url,
       expiresAtMs: now + ttlSeconds * 1000,
-      value: parsed,
+      value: result.value,
     };
 
-    return parsed;
-  } catch (error) {
-    logFallbackError(error);
+    return result.value;
+  } catch {
+    logFallback(timedOut ? { reason: "timeout" } : { reason: "fetch_failed" });
     return FALLBACK_LOGIN_VISUALS;
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
   }
 }
 
@@ -142,6 +208,7 @@ export async function getLoginVisuals(): Promise<LoginVisualsManifest> {
   return loadLoginVisuals({
     manifestUrl: env.LOGIN_VISUALS_MANIFEST_URL,
     ttlSeconds: env.LOGIN_VISUALS_CACHE_TTL_SECONDS,
+    timeoutMs: LOGIN_VISUALS_FETCH_TIMEOUT_MS,
     fetchImpl: globalThis.fetch,
   });
 }
@@ -151,6 +218,7 @@ export async function getLoginVisualsForTest(
 ): Promise<LoginVisualsManifest> {
   return loadLoginVisuals({
     ttlSeconds: 300,
+    timeoutMs: LOGIN_VISUALS_FETCH_TIMEOUT_MS,
     fetchImpl: globalThis.fetch,
     ...options,
   });

@@ -34,6 +34,7 @@ function jsonFetch(body: unknown) {
 
 afterEach(() => {
   resetLoginVisualsCacheForTest();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -127,8 +128,8 @@ describe("getLoginVisualsForTest", () => {
       })
     ).resolves.toEqual(FALLBACK_LOGIN_VISUALS);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[login-visuals]"),
-      expect.any(Error)
+      "[login-visuals] falling back to default visuals",
+      { reason: "fetch_failed" }
     );
   });
 
@@ -149,8 +150,8 @@ describe("getLoginVisualsForTest", () => {
       })
     ).resolves.toEqual(FALLBACK_LOGIN_VISUALS);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[login-visuals]"),
-      expect.any(SyntaxError)
+      "[login-visuals] falling back to default visuals",
+      { reason: "invalid_json" }
     );
   });
 
@@ -166,8 +167,75 @@ describe("getLoginVisualsForTest", () => {
       })
     ).resolves.toEqual(FALLBACK_LOGIN_VISUALS);
     expect(errorSpy).toHaveBeenCalledWith(
-      expect.stringContaining("[login-visuals]"),
-      expect.any(Error)
+      "[login-visuals] falling back to default visuals",
+      { reason: "validation_failed", issueCount: expect.any(Number) }
+    );
+  });
+
+  it("does not cache failed fetches", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({}),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => validManifest,
+      }) as unknown as typeof fetch;
+
+    const first = await getLoginVisualsForTest({
+      manifestUrl: "https://cdn.example.com/login/manifest.json",
+      fetchImpl,
+      ttlSeconds: 60,
+    });
+    const second = await getLoginVisualsForTest({
+      manifestUrl: "https://cdn.example.com/login/manifest.json",
+      fetchImpl,
+      ttlSeconds: 60,
+    });
+
+    expect(first).toEqual(FALLBACK_LOGIN_VISUALS);
+    expect(second).toEqual(validManifest);
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[login-visuals] falling back to default visuals",
+      { reason: "fetch_failed", status: 500 }
+    );
+  });
+
+  it("aborts slow manifest fetches and returns fallback", async () => {
+    vi.useFakeTimers();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    let signal: AbortSignal | undefined;
+    const fetchImpl = vi.fn((_input: string, init: RequestInit) => {
+      signal = init.signal as AbortSignal;
+
+      return new Promise((_resolve, reject) => {
+        signal?.addEventListener("abort", () => {
+          reject(new DOMException("Aborted", "AbortError"));
+        });
+      });
+    }) as unknown as typeof fetch;
+
+    const resultPromise = getLoginVisualsForTest({
+      manifestUrl: "https://cdn.example.com/login/manifest.json",
+      fetchImpl,
+      ttlSeconds: 60,
+      timeoutMs: 10,
+    });
+
+    expect(signal).toBeDefined();
+    await vi.advanceTimersByTimeAsync(10);
+
+    await expect(resultPromise).resolves.toEqual(FALLBACK_LOGIN_VISUALS);
+    expect(signal?.aborted).toBe(true);
+    expect(errorSpy).toHaveBeenCalledWith(
+      "[login-visuals] falling back to default visuals",
+      { reason: "timeout" }
     );
   });
 
@@ -194,6 +262,7 @@ describe("getLoginVisualsForTest", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     expect(fetchImpl).toHaveBeenCalledWith("https://cdn.example.com/login/manifest.json", {
       cache: "no-store",
+      signal: expect.any(AbortSignal),
     });
   });
 });
