@@ -44,6 +44,37 @@ type AliyunOssClient = {
 
 type AliyunOssConstructor = new (options: Record<string, string>) => AliyunOssClient;
 
+function invalidAtlasStorageKey(key: string) {
+  return new Error(`Invalid atlas storage key: ${key}`);
+}
+
+function extensionForAtlasMime(contentType: string | undefined): string | null {
+  switch (contentType) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/png":
+      return "png";
+    case "image/webp":
+      return "webp";
+    default:
+      return null;
+  }
+}
+
+function extensionForOriginalName(originalName: string): string {
+  const extension = extname(originalName).replace(/^\./, "").toLowerCase();
+  switch (extension) {
+    case "jpg":
+    case "jpeg":
+      return "jpg";
+    case "png":
+    case "webp":
+      return extension;
+    default:
+      return "jpg";
+  }
+}
+
 export function sanitizeAtlasBaseName(name: string): string {
   return name
     .replace(/[^\x00-\x7F]+/g, "_")
@@ -60,8 +91,30 @@ export function normalizeAtlasPrefix(prefix: string): string {
   return normalized ? `${normalized}/` : "";
 }
 
-export function makeAtlasObjectKey(originalName: string, prefix = "atlas/"): string {
-  const extension = extname(originalName).replace(/^\./, "").toLowerCase() || "jpg";
+export function normalizeAtlasStorageKey(key: string, prefix = env.ALIYUN_OSS_PREFIX): string {
+  const normalizedKey = key.trim();
+  const normalizedPrefix = normalizeAtlasPrefix(prefix);
+
+  if (
+    !normalizedKey ||
+    normalizedKey.startsWith("/") ||
+    normalizedKey.includes("\\") ||
+    normalizedKey.includes("..") ||
+    (normalizedPrefix &&
+      (!normalizedKey.startsWith(normalizedPrefix) || normalizedKey === normalizedPrefix))
+  ) {
+    throw invalidAtlasStorageKey(key);
+  }
+
+  return normalizedKey;
+}
+
+export function makeAtlasObjectKey(
+  originalName: string,
+  prefix = env.ALIYUN_OSS_PREFIX,
+  contentType?: string
+): string {
+  const extension = extensionForAtlasMime(contentType) ?? extensionForOriginalName(originalName);
   const baseName = originalName.replace(/\.[^.]+$/, "");
   const safeBaseName = sanitizeAtlasBaseName(baseName) || "image";
 
@@ -98,7 +151,7 @@ export function extractAtlasStorageKey(imageUrl: string | null | undefined): str
     }
 
     const encodedKey = url.pathname.slice(ATLAS_UPLOAD_ROUTE.length);
-    return encodedKey ? decodeURIComponent(encodedKey) : null;
+    return normalizeAtlasStorageKey(decodeURIComponent(encodedKey));
   } catch {
     return null;
   }
@@ -108,36 +161,39 @@ export function createLocalAtlasStorage(uploadDir: string): AtlasStorage {
   const root = resolve(uploadDir);
 
   function filepathForKey(key: string) {
-    const filepath = resolve(root, key);
-    if (filepath !== root && !filepath.startsWith(`${root}${sep}`)) {
-      throw new Error(`Invalid atlas storage key: ${key}`);
+    const safeKey = normalizeAtlasStorageKey(key, "");
+    const filepath = resolve(root, safeKey);
+    if (filepath === root || !filepath.startsWith(`${root}${sep}`)) {
+      throw invalidAtlasStorageKey(key);
     }
-    return filepath;
+    return { filepath, key: safeKey };
   }
 
   return {
     async save(input) {
-      const filepath = filepathForKey(input.key);
+      const { filepath, key } = filepathForKey(input.key);
       await mkdir(dirname(filepath), { recursive: true });
       await writeFile(filepath, input.body);
 
       return {
-        key: input.key,
+        key,
         contentType: input.contentType,
         size: input.body.length,
       };
     },
 
     async read(key) {
+      const safeKey = filepathForKey(key);
       return {
-        body: await readFile(filepathForKey(key)),
-        contentType: contentTypeForKey(key),
+        body: await readFile(safeKey.filepath),
+        contentType: contentTypeForKey(safeKey.key),
       };
     },
 
     async delete(key) {
+      const { filepath } = filepathForKey(key);
       try {
-        await unlink(filepathForKey(key));
+        await unlink(filepath);
       } catch {
         // Missing files are harmless for image cleanup.
       }
@@ -158,29 +214,32 @@ export function createAliyunOssAtlasStorage(): AtlasStorage {
 
   return {
     async save(input) {
-      await client.put(input.key, input.body, {
+      const key = normalizeAtlasStorageKey(input.key, env.ALIYUN_OSS_PREFIX);
+      await client.put(key, input.body, {
         mime: input.contentType,
         headers: { "Content-Type": input.contentType },
       });
 
       return {
-        key: input.key,
+        key,
         contentType: input.contentType,
         size: input.body.length,
       };
     },
 
     async read(key) {
-      const result = await client.get(key);
+      const safeKey = normalizeAtlasStorageKey(key, env.ALIYUN_OSS_PREFIX);
+      const result = await client.get(safeKey);
       return {
         body: result.content,
-        contentType: result.res?.headers?.["content-type"] ?? contentTypeForKey(key),
+        contentType: result.res?.headers?.["content-type"] ?? contentTypeForKey(safeKey),
       };
     },
 
     async delete(key) {
+      const safeKey = normalizeAtlasStorageKey(key, env.ALIYUN_OSS_PREFIX);
       try {
-        await client.delete(key);
+        await client.delete(safeKey);
       } catch {
         // OSS delete is best-effort because records may already reference missing objects.
       }
