@@ -89,6 +89,28 @@ describe("atlas-storage helpers", () => {
 });
 
 describe("local atlas storage", () => {
+  it("saves upload inputs by generating a secure atlas key", async () => {
+    const uploadDir = await makeTempDir();
+    const storage = createLocalAtlasStorage(uploadDir);
+    const buffer = Buffer.from("upload image body");
+
+    const saved = await storage.save({
+      originalName: "photo.tmp",
+      mimeType: "image/webp",
+      buffer,
+    });
+
+    expect(saved).toEqual({
+      key: expect.stringMatching(/^atlas\/[0-9a-f-]+-photo\.webp$/),
+      contentType: "image/webp",
+      size: buffer.length,
+    });
+    await expect(storage.read(saved.key)).resolves.toEqual({
+      body: buffer,
+      contentType: "image/webp",
+    });
+  });
+
   it("saves, reads, and deletes images from a temp directory", async () => {
     const uploadDir = await makeTempDir();
     const storage = createLocalAtlasStorage(uploadDir);

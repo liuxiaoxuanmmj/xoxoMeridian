@@ -6,7 +6,6 @@ import { createHumanMessage } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { messagePostSchema, readJsonBody } from "@/lib/validation";
-import { deleteUploadedImage } from "@/lib/atlas-upload";
 
 export const dynamic = "force-dynamic";
 

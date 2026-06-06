@@ -1,15 +1,20 @@
 import { requireCurrentUser } from "@/lib/auth";
-import { getUploadPath } from "@/lib/atlas-upload";
-import { readFile } from "node:fs/promises";
+import type { AtlasStorageReadResult } from "@/lib/storage/atlas-storage";
+import { getAtlasStorage } from "@/lib/storage/atlas-storage";
 
+export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const MIME_MAP: Record<string, string> = {
-  jpg: "image/jpeg",
-  jpeg: "image/jpeg",
-  png: "image/png",
-  webp: "image/webp",
-};
+function isStorageNotFoundError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const err = error as { code?: unknown; status?: unknown; statusCode?: unknown };
+  return (
+    err.code === "ENOENT" ||
+    err.code === "NoSuchKey" ||
+    err.status === 404 ||
+    err.statusCode === 404
+  );
+}
 
 export async function GET(
   _request: Request,
@@ -18,25 +23,29 @@ export async function GET(
   try {
     await requireCurrentUser();
 
-    const filepath = getUploadPath(params.filename);
-    const ext = params.filename.split(".").pop()?.toLowerCase() ?? "jpg";
-    const contentType = MIME_MAP[ext] ?? "application/octet-stream";
-
-    let buffer: Buffer;
+    let key: string;
     try {
-      buffer = await readFile(filepath);
+      key = decodeURIComponent(params.filename);
+    } catch {
+      return new Response("Not found", { status: 404 });
+    }
+
+    let result: AtlasStorageReadResult;
+    try {
+      result = await getAtlasStorage().read(key);
     } catch (err: unknown) {
-      if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
+      if (isStorageNotFoundError(err)) {
         return new Response("Not found", { status: 404 });
       }
       throw err;
     }
 
+    const buffer = result.body;
     const body = buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength) as ArrayBuffer;
 
     return new Response(body, {
       headers: {
-        "Content-Type": contentType,
+        "Content-Type": result.contentType,
         "Cache-Control": "private, max-age=86400",
         "Content-Length": String(buffer.length),
       },

@@ -15,6 +15,12 @@ export type AtlasStorageSaveInput = {
   contentType: string;
 };
 
+export type AtlasStorageUploadInput = {
+  originalName: string;
+  mimeType: string;
+  buffer: Buffer;
+};
+
 export type AtlasStorageSaveResult = {
   key: string;
   contentType: string;
@@ -27,7 +33,7 @@ export type AtlasStorageReadResult = {
 };
 
 export type AtlasStorage = {
-  save(input: AtlasStorageSaveInput): Promise<AtlasStorageSaveResult>;
+  save(input: AtlasStorageSaveInput | AtlasStorageUploadInput): Promise<AtlasStorageSaveResult>;
   read(key: string): Promise<AtlasStorageReadResult>;
   delete(key: string): Promise<void>;
 };
@@ -136,6 +142,21 @@ export function contentTypeForKey(key: string): string {
   }
 }
 
+function resolveAtlasSaveInput(
+  input: AtlasStorageSaveInput | AtlasStorageUploadInput,
+  prefix = env.ALIYUN_OSS_PREFIX
+): AtlasStorageSaveInput {
+  if ("originalName" in input) {
+    return {
+      key: makeAtlasObjectKey(input.originalName, prefix, input.mimeType),
+      body: input.buffer,
+      contentType: input.mimeType,
+    };
+  }
+
+  return input;
+}
+
 export function makeAtlasImageUrl(key: string): string {
   return `${ATLAS_UPLOAD_ROUTE}${encodeURIComponent(key)}`;
 }
@@ -182,14 +203,15 @@ export function createLocalAtlasStorage(uploadDir: string): AtlasStorage {
 
   return {
     async save(input) {
-      const { filepath, key } = filepathForKey(input.key);
+      const resolved = resolveAtlasSaveInput(input);
+      const { filepath, key } = filepathForKey(resolved.key);
       await mkdir(dirname(filepath), { recursive: true });
-      await writeFile(filepath, input.body);
+      await writeFile(filepath, resolved.body);
 
       return {
         key,
-        contentType: input.contentType,
-        size: input.body.length,
+        contentType: resolved.contentType,
+        size: resolved.body.length,
       };
     },
 
@@ -225,16 +247,17 @@ export function createAliyunOssAtlasStorage(): AtlasStorage {
 
   return {
     async save(input) {
-      const key = normalizeAtlasStorageKey(input.key, env.ALIYUN_OSS_PREFIX);
-      await client.put(key, input.body, {
-        mime: input.contentType,
-        headers: { "Content-Type": input.contentType },
+      const resolved = resolveAtlasSaveInput(input, env.ALIYUN_OSS_PREFIX);
+      const key = normalizeAtlasStorageKey(resolved.key, env.ALIYUN_OSS_PREFIX);
+      await client.put(key, resolved.body, {
+        mime: resolved.contentType,
+        headers: { "Content-Type": resolved.contentType },
       });
 
       return {
         key,
-        contentType: input.contentType,
-        size: input.body.length,
+        contentType: resolved.contentType,
+        size: resolved.body.length,
       };
     },
 

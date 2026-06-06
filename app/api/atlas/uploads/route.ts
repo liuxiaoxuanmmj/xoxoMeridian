@@ -1,8 +1,12 @@
 import { jsonOk, jsonError, errorToResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { saveUploadedImage } from "@/lib/atlas-upload";
 import { getOrCreateBoard } from "@/lib/atlas-board";
+import {
+  getAtlasStorage,
+  makeAtlasImageUrl,
+  validateAtlasImageFile,
+} from "@/lib/storage/atlas-storage";
 
 export async function POST(request: Request) {
   try {
@@ -21,9 +25,15 @@ export async function POST(request: Request) {
       return jsonError("No file provided", 400);
     }
 
-    const { filename } = await saveUploadedImage(file);
+    validateAtlasImageFile(file);
 
-    const imageUrl = `/api/atlas/uploads/${filename}`;
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const saved = await getAtlasStorage().save({
+      originalName: file.name,
+      mimeType: file.type,
+      buffer,
+    });
+    const imageUrl = makeAtlasImageUrl(saved.key);
 
     const x = Number(formData.get("x")) || 0;
     const y = Number(formData.get("y")) || 0;

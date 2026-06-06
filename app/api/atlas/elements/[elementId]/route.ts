@@ -2,7 +2,7 @@ import { jsonOk, jsonError, errorToResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readJsonBody, atlasElementPatchSchema } from "@/lib/validation";
-import { deleteUploadedImage } from "@/lib/atlas-upload";
+import { extractAtlasStorageKey, getAtlasStorage } from "@/lib/storage/atlas-storage";
 
 export async function PATCH(
   request: Request,
@@ -50,8 +50,8 @@ export async function DELETE(
     await prisma.atlasElement.delete({ where: { id: params.elementId } });
 
     if (element.type === "photo" && element.imageUrl) {
-      const filename = element.imageUrl.split("/").pop();
-      if (filename) await deleteUploadedImage(filename).catch(() => {});
+      const key = extractAtlasStorageKey(element.imageUrl);
+      if (key) await getAtlasStorage().delete(key).catch(() => {});
     }
 
     return jsonOk({ deleted: true });
