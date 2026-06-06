@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
-import { createRequire } from "node:module";
 import { dirname, extname, resolve, sep } from "node:path";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
+import OSS from "ali-oss";
 import { env } from "@/lib/env";
 
 const ATLAS_UPLOAD_ROUTE = "/api/atlas/uploads/";
@@ -116,6 +116,20 @@ export function normalizeAtlasStorageKey(key: string, prefix = env.ALIYUN_OSS_PR
   return normalizedKey;
 }
 
+export function normalizeLocalAtlasStorageKey(
+  key: string,
+  prefix = env.ALIYUN_OSS_PREFIX
+): string {
+  const normalizedPrefix = normalizeAtlasPrefix(prefix);
+  const normalizedKey = normalizeAtlasStorageKey(key, prefix);
+
+  if (!normalizedPrefix && normalizedKey.includes("/")) {
+    throw invalidAtlasStorageKey(key);
+  }
+
+  return normalizedKey;
+}
+
 export function makeAtlasObjectKey(
   originalName: string,
   prefix = env.ALIYUN_OSS_PREFIX,
@@ -189,11 +203,31 @@ export function extractAtlasStorageKey(imageUrl: string | null | undefined): str
   }
 }
 
-export function createLocalAtlasStorage(uploadDir: string): AtlasStorage {
+export function isAtlasStorageNotFoundError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const err = error as {
+    code?: unknown;
+    message?: unknown;
+    status?: unknown;
+    statusCode?: unknown;
+  };
+  return (
+    err.code === "ENOENT" ||
+    err.code === "NoSuchKey" ||
+    err.status === 404 ||
+    err.statusCode === 404 ||
+    (typeof err.message === "string" && err.message.startsWith("Invalid atlas storage key:"))
+  );
+}
+
+export function createLocalAtlasStorage(
+  uploadDir: string,
+  prefix = env.ALIYUN_OSS_PREFIX
+): AtlasStorage {
   const root = resolve(uploadDir);
 
   function filepathForKey(key: string) {
-    const safeKey = normalizeAtlasStorageKey(key, "");
+    const safeKey = normalizeLocalAtlasStorageKey(key, prefix);
     const filepath = resolve(root, safeKey);
     if (filepath === root || !filepath.startsWith(`${root}${sep}`)) {
       throw invalidAtlasStorageKey(key);
@@ -203,7 +237,7 @@ export function createLocalAtlasStorage(uploadDir: string): AtlasStorage {
 
   return {
     async save(input) {
-      const resolved = resolveAtlasSaveInput(input);
+      const resolved = resolveAtlasSaveInput(input, prefix);
       const { filepath, key } = filepathForKey(resolved.key);
       await mkdir(dirname(filepath), { recursive: true });
       await writeFile(filepath, resolved.body);
@@ -235,8 +269,7 @@ export function createLocalAtlasStorage(uploadDir: string): AtlasStorage {
 }
 
 export function createAliyunOssAtlasStorage(): AtlasStorage {
-  const require = createRequire(import.meta.url);
-  const OssClient = require("ali-oss") as AliyunOssConstructor;
+  const OssClient = OSS as AliyunOssConstructor;
   const client = new OssClient({
     region: env.ALIYUN_OSS_REGION,
     bucket: env.ALIYUN_OSS_BUCKET,

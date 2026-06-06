@@ -154,6 +154,14 @@ describe("local atlas storage", () => {
     await expect(storage.delete(`../${outsideName}`)).rejects.toThrow("Invalid atlas storage key");
     await expect(access(outsidePath)).rejects.toMatchObject({ code: "ENOENT" });
   });
+
+  it("rejects slash keys when no storage prefix is configured", async () => {
+    const uploadDir = await makeTempDir();
+    const storage = createLocalAtlasStorage(uploadDir, "");
+
+    await expect(storage.read("other/file.jpg")).rejects.toThrow("Invalid atlas storage key");
+    await expect(storage.delete("other/file.jpg")).rejects.toThrow("Invalid atlas storage key");
+  });
 });
 
 describe("validateAtlasImageFile", () => {

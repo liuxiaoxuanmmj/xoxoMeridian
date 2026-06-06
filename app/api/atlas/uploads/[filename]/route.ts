@@ -1,20 +1,9 @@
 import { requireCurrentUser } from "@/lib/auth";
 import type { AtlasStorageReadResult } from "@/lib/storage/atlas-storage";
-import { getAtlasStorage } from "@/lib/storage/atlas-storage";
+import { getAtlasStorage, isAtlasStorageNotFoundError } from "@/lib/storage/atlas-storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-
-function isStorageNotFoundError(error: unknown) {
-  if (!error || typeof error !== "object") return false;
-  const err = error as { code?: unknown; status?: unknown; statusCode?: unknown };
-  return (
-    err.code === "ENOENT" ||
-    err.code === "NoSuchKey" ||
-    err.status === 404 ||
-    err.statusCode === 404
-  );
-}
 
 export async function GET(
   _request: Request,
@@ -34,7 +23,7 @@ export async function GET(
     try {
       result = await getAtlasStorage().read(key);
     } catch (err: unknown) {
-      if (isStorageNotFoundError(err)) {
+      if (isAtlasStorageNotFoundError(err)) {
         return new Response("Not found", { status: 404 });
       }
       throw err;

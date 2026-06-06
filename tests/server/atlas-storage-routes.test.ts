@@ -131,6 +131,17 @@ describe("atlas upload storage routes", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 404 for uploaded image keys outside the local storage boundary", async () => {
+    mockStorage.read.mockRejectedValueOnce(new Error("Invalid atlas storage key: other/file.jpg"));
+    const { GET } = await import("@/app/api/atlas/uploads/[filename]/route");
+
+    const response = await GET(new Request("http://localhost/api/atlas/uploads/other%2Ffile.jpg"), {
+      params: { filename: "other%2Ffile.jpg" },
+    });
+
+    expect(response.status).toBe(404);
+  });
+
   it("clears board records before best-effort storage cleanup", async () => {
     mockPrisma.atlasElement.findMany.mockResolvedValue([
       { imageUrl: "/api/atlas/uploads/atlas%2Fone.jpg" },
