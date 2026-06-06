@@ -152,10 +152,8 @@ export function extractAtlasStorageKey(imageUrl: string | null | undefined): str
     }
 
     const appOrigin = new URL(env.APP_BASE_URL).origin;
-    const isAbsoluteUrl =
-      /^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(normalizedUrl) || normalizedUrl.startsWith("//");
     const url = new URL(normalizedUrl, env.APP_BASE_URL);
-    if (isAbsoluteUrl && url.origin !== appOrigin) {
+    if (url.origin !== appOrigin) {
       return null;
     }
 

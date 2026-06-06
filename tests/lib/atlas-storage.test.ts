@@ -42,6 +42,7 @@ describe("atlas-storage helpers", () => {
     expect(extractAtlasStorageKey(`https://example.com${url}`)).toBeNull();
     expect(extractAtlasStorageKey(` https://example.com${url}`)).toBeNull();
     expect(extractAtlasStorageKey(`\n\thttps://example.com${url}`)).toBeNull();
+    expect(extractAtlasStorageKey(`/\\example.com${url}`)).toBeNull();
     expect(extractAtlasStorageKey("https://example.com/uploads/atlas%2Fabc-photo.jpg")).toBeNull();
     expect(extractAtlasStorageKey(null)).toBeNull();
   });
