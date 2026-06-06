@@ -17,6 +17,8 @@ data/atlas-uploads/
 
 # Superpowers brainstorm sessions
 .superpowers/
+.worktrees
+.worktrees/
 
 # Study notes and experiments
 study/
