@@ -494,7 +494,7 @@ export async function GET(
 In `app/api/atlas/route.ts`, replace:
 
 ```ts
-import { deleteUploadedImage } from "@/lib/atlas-upload";
+// Remove the legacy Atlas upload helper import.
 ```
 
 with:
@@ -518,7 +518,7 @@ Replace the cleanup loop with:
 In `app/api/atlas/elements/[elementId]/route.ts`, replace:
 
 ```ts
-import { deleteUploadedImage } from "@/lib/atlas-upload";
+// Remove the legacy Atlas upload helper import.
 ```
 
 with:
