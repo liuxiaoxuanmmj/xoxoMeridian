@@ -75,6 +75,7 @@ const baseSchema = z.object({
 
   LOGIN_VISUALS_MANIFEST_URL: z.string().url().optional().or(z.literal("")).default(""),
   LOGIN_VISUALS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  LOGIN_VISUALS_IMAGE_SRC: z.string().optional().default(""),
 });
 
 const lenientPlaceholders = {
