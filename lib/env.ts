@@ -64,6 +64,18 @@ const baseSchema = z.object({
     .default("false")
     .transform((v) => v === "true"),
   CHAT_LOG_DIR: z.string().optional(),
+  ATLAS_STORAGE_PROVIDER: z.enum(["local", "aliyun-oss"]).default("local"),
+  ATLAS_UPLOAD_DIR: z.string().optional().default("data/atlas-uploads"),
+  ALIYUN_OSS_REGION: z.string().optional().default(""),
+  ALIYUN_OSS_BUCKET: z.string().optional().default(""),
+  ALIYUN_OSS_ACCESS_KEY_ID: z.string().optional().default(""),
+  ALIYUN_OSS_ACCESS_KEY_SECRET: z.string().optional().default(""),
+  ALIYUN_OSS_ENDPOINT: z.string().optional().default(""),
+  ALIYUN_OSS_PREFIX: z.string().optional().default("atlas/"),
+
+  LOGIN_VISUALS_MANIFEST_URL: z.string().url().optional().or(z.literal("")).default(""),
+  LOGIN_VISUALS_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(300),
+  LOGIN_VISUALS_IMAGE_SRC: z.string().optional().default(""),
 });
 
 const lenientPlaceholders = {
@@ -99,6 +111,24 @@ function parseEnv() {
 
     console.error(`[env] ${message}`);
     process.exit(1);
+  }
+
+  if (result.data.ATLAS_STORAGE_PROVIDER === "aliyun-oss") {
+    const missing = [
+      ["ALIYUN_OSS_REGION", result.data.ALIYUN_OSS_REGION],
+      ["ALIYUN_OSS_BUCKET", result.data.ALIYUN_OSS_BUCKET],
+      ["ALIYUN_OSS_ACCESS_KEY_ID", result.data.ALIYUN_OSS_ACCESS_KEY_ID],
+      ["ALIYUN_OSS_ACCESS_KEY_SECRET", result.data.ALIYUN_OSS_ACCESS_KEY_SECRET],
+    ].filter(([, value]) => !value);
+
+    if (missing.length > 0 && !isBuildPhase && !isTest) {
+      console.error(
+        `[env] ATLAS_STORAGE_PROVIDER=aliyun-oss requires: ${missing
+          .map(([key]) => key)
+          .join(", ")}`
+      );
+      process.exit(1);
+    }
   }
 
   return result.data;

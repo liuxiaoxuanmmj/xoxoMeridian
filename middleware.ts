@@ -27,7 +27,7 @@ const ALLOWED_ORIGINS: Set<string> = (() => {
 })();
 
 export const config = {
-  matcher: ["/api/:path*", "/chat/:path*", "/me"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/|images/).*)"],
 };
 
 export function middleware(request: NextRequest) {
@@ -45,18 +45,21 @@ export function middleware(request: NextRequest) {
         { error: "Origin header required for state-changing requests" },
         { status: 403 }
       );
+      applySecurityHeaders(response);
       applyNoStoreHeaders(response);
       return response;
     }
 
     if (!ALLOWED_ORIGINS.has(candidate)) {
       response = NextResponse.json({ error: "Origin not allowed" }, { status: 403 });
+      applySecurityHeaders(response);
       applyNoStoreHeaders(response);
       return response;
     }
   }
 
   response = NextResponse.next();
+  applySecurityHeaders(response);
   if (isNoStorePath(pathname)) {
     applyNoStoreHeaders(response);
   }
@@ -89,4 +92,41 @@ function applyNoStoreHeaders(response: NextResponse) {
   response.headers.set("Expires", "0");
   response.headers.set("X-Accel-Expires", "0");
   response.headers.append("Vary", "Cookie");
+}
+
+function getLoginVisualImageSources() {
+  const raw = process.env.LOGIN_VISUALS_IMAGE_SRC ?? "";
+  return raw
+    .split(/[\s,]+/)
+    .map((source) => source.trim())
+    .filter(Boolean)
+    .filter((source) =>
+      /^https:\/\/(\*\.)?[a-zA-Z0-9.-]+(?::\d+)?$/.test(source) ||
+      /^http:\/\/localhost(?::\d+)?$/.test(source)
+    );
+}
+
+export function buildContentSecurityPolicy(): string {
+  const loginVisualImageSources = getLoginVisualImageSources();
+  return [
+    "default-src 'self'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    "object-src 'none'",
+    `img-src 'self' data: blob:${loginVisualImageSources.length > 0 ? ` ${loginVisualImageSources.join(" ")}` : ""}`,
+    "font-src 'self' data:",
+    "style-src 'self' 'unsafe-inline'",
+    "script-src 'self' 'unsafe-inline'",
+    "connect-src 'self'",
+    "form-action 'self'",
+  ].join("; ");
+}
+
+function applySecurityHeaders(response: NextResponse) {
+  response.headers.set("Strict-Transport-Security", "max-age=63072000; includeSubDomains");
+  response.headers.set("X-Frame-Options", "DENY");
+  response.headers.set("X-Content-Type-Options", "nosniff");
+  response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+  response.headers.set("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+  response.headers.set("Content-Security-Policy", buildContentSecurityPolicy());
 }

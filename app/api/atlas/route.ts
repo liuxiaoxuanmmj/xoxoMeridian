@@ -3,7 +3,7 @@ import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getOrCreateBoard } from "@/lib/atlas-board";
 import { getDragPositions } from "@/lib/atlas-drag-cache";
-import { deleteUploadedImage } from "@/lib/atlas-upload";
+import { extractAtlasStorageKey, getAtlasStorage } from "@/lib/storage/atlas-storage";
 
 export const dynamic = "force-dynamic";
 
@@ -73,11 +73,10 @@ export async function DELETE(_request: Request) {
     ]);
 
     // Clean up uploaded files
+    const storage = getAtlasStorage();
     for (const el of photoElements) {
-      if (el.imageUrl) {
-        const filename = el.imageUrl.split("/").pop();
-        if (filename) await deleteUploadedImage(filename).catch(() => {});
-      }
+      const key = extractAtlasStorageKey(el.imageUrl);
+      if (key) await storage.delete(key).catch(() => {});
     }
 
     return jsonOk({ ok: true });
