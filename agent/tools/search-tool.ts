@@ -74,7 +74,7 @@ export async function fetchSearchResults(
   }
 }
 
-export function createSearchTool(): AgentTool<SearchInput> {
+export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
   return {
     name: "web.search",
     description:
