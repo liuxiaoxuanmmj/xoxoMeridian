@@ -57,6 +57,22 @@ AGENT_TASK_INLINE_RUN=false
 AGENT_WORKER_POLL_MS=3000
 ```
 
+Atlas 和登录页视觉资源上线时还需要：
+
+```env
+ATLAS_STORAGE_PROVIDER=aliyun-oss
+ALIYUN_OSS_REGION=oss-cn-hangzhou
+ALIYUN_OSS_BUCKET=xoxo-atlas-prod
+ALIYUN_OSS_ACCESS_KEY_ID=your_ram_access_key_id
+ALIYUN_OSS_ACCESS_KEY_SECRET=your_ram_access_key_secret
+ALIYUN_OSS_ENDPOINT=https://oss-cn-hangzhou.aliyuncs.com
+ALIYUN_OSS_PREFIX=atlas/prod/
+
+LOGIN_VISUALS_MANIFEST_URL=https://cdn.example.com/login/manifest.json
+LOGIN_VISUALS_CACHE_TTL_SECONDS=300
+LOGIN_VISUALS_IMAGE_SRC=https://cdn.example.com
+```
+
 建议新增：
 
 ```env
@@ -117,6 +133,7 @@ web:
 - 不要在 Dockerfile 中写 `DATABASE_URL` 和 `DIRECT_URL` 默认值，统一由 Compose 或部署平台注入。
 - 使用非 root 用户运行应用。
 - 构建镜像时固定版本标签，例如 `xoxo-meridian-web:2026-04-28-001`。
+- `LOGIN_VISUALS_IMAGE_SRC` 在当前实现中由 middleware 运行时读取，不需要作为 build arg 注入。
 
 最低限度需要删除：
 
@@ -228,6 +245,60 @@ chat.example.com {
 ```
 
 如果 Caddy 和 Compose 在同一网络内，建议只暴露 Caddy 的 80/443，web 不直接暴露公网端口。
+
+## 9a. Atlas 与登录页 OSS 配置
+
+Atlas 用户上传图和登录页展示图必须分开配置。
+
+Atlas 图片：
+
+- 创建私有 OSS bucket，例如 `xoxo-atlas-prod`。
+- Bucket ACL 保持 `private`，不要给 Atlas 图片使用 public-read。
+- 使用专用 prefix，例如 `atlas/prod/`。
+- App 的 RAM 用户或角色只授予该 prefix 下的最小权限：
+
+```json
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "oss:PutObject",
+        "oss:GetObject",
+        "oss:DeleteObject"
+      ],
+      "Resource": [
+        "acs:oss:*:*:xoxo-atlas-prod/atlas/prod/*"
+      ]
+    }
+  ]
+}
+```
+
+- 如果部署在同地域阿里云 ECS，优先使用内网 endpoint；否则使用 HTTPS 公网 endpoint。
+- 浏览器不直接访问 Atlas OSS URL，所有 Atlas 图片都通过 `/api/atlas/uploads/<key>` 由应用鉴权代理读取。
+- 切换到 `ATLAS_STORAGE_PROVIDER=aliyun-oss` 前，先把现有 `data/atlas-uploads` 文件上传到 OSS 对应 prefix。
+
+登录页视觉图：
+
+- 使用单独公开 bucket 或 CDN origin，例如 `https://cdn.example.com/login/`。
+- 登录页 manifest 可公开访问，且不包含秘密。
+- `LOGIN_VISUALS_MANIFEST_URL` 指向 manifest JSON。
+- `LOGIN_VISUALS_IMAGE_SRC` 必须包含 manifest 中 `imageUrl` 的 origin，否则运行期 CSP 会拦截外部图片。
+- `LOGIN_VISUALS_IMAGE_SRC` 支持空格或逗号分隔的 HTTPS origin，例如：
+
+```env
+LOGIN_VISUALS_IMAGE_SRC=https://cdn.example.com https://*.alicdn.com
+```
+
+上线前验证：
+
+- Atlas OSS 对象不能匿名读取。
+- 应用服务器能用 RAM 凭证读取 Atlas OSS 对象。
+- 登录页 manifest 和图片都能通过 HTTPS 匿名访问。
+- 登录页响应头的 `Content-Security-Policy` 中 `img-src` 包含登录图 CDN/OSS origin。
+- Atlas bucket/prefix 不与登录页 public bucket/prefix 混用。
 
 ## 10. 网络与防火墙
 
@@ -355,6 +426,12 @@ docker compose logs --tail=100 agent-worker
 - [ ] 日志不会泄露 API Key。
 - [ ] Docker 日志轮转已配置。
 - [ ] 有服务器磁盘容量告警。
+- [ ] Atlas OSS bucket 是 private。
+- [ ] Atlas RAM 权限只覆盖 `ALIYUN_OSS_PREFIX`。
+- [ ] `ATLAS_STORAGE_PROVIDER=aliyun-oss` 已配置。
+- [ ] 现有本地 Atlas 图片已迁移到 OSS。
+- [ ] 登录页 manifest 可访问且不包含秘密。
+- [ ] `LOGIN_VISUALS_IMAGE_SRC` 已包含登录页图片 CDN/OSS origin。
 
 ## 17. 建议优先级
 

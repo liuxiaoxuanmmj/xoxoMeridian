@@ -1112,6 +1112,7 @@ Production environment values should include:
 ```env
 LOGIN_VISUALS_MANIFEST_URL=https://cdn.example.com/login/manifest.json
 LOGIN_VISUALS_CACHE_TTL_SECONDS=300
+LOGIN_VISUALS_IMAGE_SRC=https://cdn.example.com
 ```
 
 ### Pre-Switch Checks
@@ -1121,6 +1122,7 @@ LOGIN_VISUALS_CACHE_TTL_SECONDS=300
 - Confirm the same Atlas object is not readable anonymously from a browser.
 - Confirm `manifest.json` is reachable anonymously from the production domain or by the app server.
 - Confirm all `imageUrl` values in the login manifest load over HTTPS.
+- Confirm `LOGIN_VISUALS_IMAGE_SRC` includes every CDN/OSS origin used by login manifest `imageUrl` values.
 - Confirm the login manifest has at least one valid item before enabling rotation.
 
 ## Self-Review Checklist
