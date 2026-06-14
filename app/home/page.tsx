@@ -1,9 +1,10 @@
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { Timeline } from "@/components/blog/Timeline";
 import { SiteNav } from "@/components/blog/SiteNav";
 import { PageTransition } from "@/components/layout/PageTransition";
 import { ScrollRestore } from "@/components/layout/ScrollRestore";
+import { HomeTimelineBoard } from "@/components/home/HomeTimelineBoard";
+import { ensureHomePostElements, getHomeBoardSnapshot, getOrCreateHomeBoard } from "@/lib/home-board";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,15 @@ export default async function HomePage() {
     },
   });
 
+  const board = await getOrCreateHomeBoard();
+  await ensureHomePostElements({
+    boardId: board.id,
+    posts: posts.map((post) => ({ id: post.id, authorId: post.authorId })),
+  });
+  const initialSnapshot = await getHomeBoardSnapshot(board.id);
+
   return (
-    <div className="min-h-screen bg-sage-50 relative overflow-hidden">
+    <div className="home-linen-page min-h-screen relative overflow-hidden">
       <div
         className="fixed top-[-20%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-sage-100/40 blur-3xl pointer-events-none"
         aria-hidden="true"
@@ -36,12 +44,11 @@ export default async function HomePage() {
       <ScrollRestore storageKey="home-timeline" />
       <SiteNav currentUser={user} />
       <PageTransition>
-        <main className="relative mx-auto max-w-3xl px-6 py-12">
-          <Timeline
-            posts={JSON.parse(JSON.stringify(posts))}
-            currentUserId={user.id}
-          />
-        </main>
+        <HomeTimelineBoard
+          posts={JSON.parse(JSON.stringify(posts))}
+          currentUserId={user.id}
+          initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
+        />
       </PageTransition>
     </div>
   );
