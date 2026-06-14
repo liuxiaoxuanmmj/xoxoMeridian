@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatPostTime } from "@/lib/posts";
+import { formatPostTime } from "@/lib/post-time";
 
 type PostCardProps = {
   post: {
@@ -7,7 +7,7 @@ type PostCardProps = {
     slug: string;
     title: string;
     content: string;
-    publishedAt: Date;
+    publishedAt: Date | string;
     author: {
       id: string;
       displayName: string;

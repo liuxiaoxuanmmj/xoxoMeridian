@@ -1,12 +1,12 @@
 import Link from "next/link";
-import { formatPostTime } from "@/lib/posts";
+import { formatPostTime } from "@/lib/post-time";
 
 type AgentLogCardProps = {
   post: {
     id: string;
     slug: string;
     title: string;
-    publishedAt: Date;
+    publishedAt: Date | string;
     metadata?: Record<string, unknown> | null;
   };
 };

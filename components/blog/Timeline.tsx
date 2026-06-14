@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { PostCard } from "@/components/blog/PostCard";
 import { AgentLogCard } from "@/components/blog/AgentLogCard";
+import { PostCardSpatialShell } from "@/components/home/PostCardSpatialShell";
 import { useScrollReveal } from "@/lib/useScrollReveal";
 import { cn } from "@/lib/utils";
 
@@ -20,14 +21,14 @@ const ALIGN_CLASS: Record<Direction, string> = {
   center: "justify-center",
 };
 
-type PostWithAuthor = {
+export type TimelinePost = {
   id: string;
   slug: string;
   title: string;
   content: string;
   type: string;
   authorId: string | null;
-  publishedAt: Date;
+  publishedAt: Date | string;
   metadata?: Record<string, unknown> | null;
   author: {
     id: string;
@@ -68,13 +69,24 @@ function TimelineItem({
   );
 }
 
+type TimelineSpatialProps = {
+  postElementByPostId?: Record<string, string>;
+  connectFromId?: string | null;
+  onSpatialElementClick?: (elementId: string) => void;
+  registerSpatialAnchor?: (elementId: string, getRect: () => DOMRect | null) => () => void;
+};
+
 export function Timeline({
   posts,
   currentUserId,
+  postElementByPostId = {},
+  connectFromId = null,
+  onSpatialElementClick,
+  registerSpatialAnchor,
 }: {
-  posts: PostWithAuthor[];
+  posts: TimelinePost[];
   currentUserId: string;
-}) {
+} & TimelineSpatialProps) {
   const sorted = useMemo(
     () =>
       [...posts].sort(
@@ -130,13 +142,21 @@ export function Timeline({
           }
 
           const isLeft = post.authorId === leftUserId;
+          const elementId = postElementByPostId[post.id];
 
           return (
             <TimelineItem key={post.id} side={isLeft ? "left" : "right"}>
-              <PostCard
-                post={post}
-                isOwner={post.authorId === currentUserId}
-              />
+              <PostCardSpatialShell
+                elementId={elementId}
+                isConnectFrom={connectFromId === elementId}
+                onSpatialClick={onSpatialElementClick}
+                registerSpatialAnchor={registerSpatialAnchor}
+              >
+                <PostCard
+                  post={post}
+                  isOwner={post.authorId === currentUserId}
+                />
+              </PostCardSpatialShell>
             </TimelineItem>
           );
         })}

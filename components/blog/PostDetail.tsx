@@ -1,7 +1,7 @@
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { formatPostTime } from "@/lib/posts";
+import { formatPostTime } from "@/lib/post-time";
 import { AgentTracePanel } from "@/components/blog/AgentTracePanel";
 
 type PostDetailProps = {
