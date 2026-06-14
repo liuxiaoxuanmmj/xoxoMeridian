@@ -367,10 +367,12 @@ model AtlasElement {
   caption         String?
   width           Float             @default(200)
   height          Float             @default(250)
+  postId          String?           @unique
   createdById     String?
   createdAt       DateTime          @default(now())
   updatedAt       DateTime          @updatedAt
   board           AtlasBoard        @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  post            Post?             @relation(fields: [postId], references: [id], onDelete: Cascade)
   createdBy       User?             @relation(fields: [createdById], references: [id], onDelete: SetNull)
   connectionsFrom AtlasConnection[] @relation("FromElement")
   connectionsTo   AtlasConnection[] @relation("ToElement")
@@ -395,19 +397,20 @@ model AtlasConnection {
 }
 
 model Post {
-  id          String    @id @default(cuid())
-  slug        String    @unique
-  title       String
-  content     String    // Markdown
-  type        PostType  @default(user_post)
-  authorId    String?
-  roomId      String?
-  publishedAt DateTime
-  metadata    Json?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
-  author      User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  room        Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  id           String        @id @default(cuid())
+  slug         String        @unique
+  title        String
+  content      String        // Markdown
+  type         PostType      @default(user_post)
+  authorId     String?
+  roomId       String?
+  publishedAt  DateTime
+  metadata     Json?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  author       User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  room         Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  atlasElement AtlasElement?
 
   @@index([type, publishedAt(sort: Desc)])
   @@index([authorId])
