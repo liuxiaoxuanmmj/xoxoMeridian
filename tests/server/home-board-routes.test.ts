@@ -192,4 +192,44 @@ describe("home-board routes", () => {
     expect(response.status).toBe(409);
     expect(mockPrisma.atlasConnection.create).not.toHaveBeenCalled();
   });
+
+  it("deletes a home photo and cleans uploaded storage", async () => {
+    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
+      id: "photo-1",
+      boardId: "home-board",
+      type: "photo",
+      postId: null,
+      imageUrl: "/api/atlas/uploads/atlas%2Fhome-photo.jpg",
+    });
+    mockPrisma.atlasElement.delete.mockResolvedValueOnce({ id: "photo-1" });
+
+    const { DELETE } = await import("@/app/api/home-board/elements/[elementId]/route");
+    const response = await DELETE(
+      new Request("http://localhost/api/home-board/elements/photo-1", { method: "DELETE" }),
+      { params: { elementId: "photo-1" } }
+    );
+
+    expect(response.status).toBe(200);
+    expect(mockPrisma.atlasElement.delete).toHaveBeenCalledWith({ where: { id: "photo-1" } });
+    expect(mockStorage.delete).toHaveBeenCalledWith("atlas/home-photo.jpg");
+  });
+
+  it("does not delete post anchor elements through the photo endpoint", async () => {
+    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
+      id: "post-el",
+      boardId: "home-board",
+      type: "note",
+      postId: "post-1",
+      imageUrl: null,
+    });
+
+    const { DELETE } = await import("@/app/api/home-board/elements/[elementId]/route");
+    const response = await DELETE(
+      new Request("http://localhost/api/home-board/elements/post-el", { method: "DELETE" }),
+      { params: { elementId: "post-el" } }
+    );
+
+    expect(response.status).toBe(400);
+    expect(mockPrisma.atlasElement.delete).not.toHaveBeenCalled();
+  });
 });
