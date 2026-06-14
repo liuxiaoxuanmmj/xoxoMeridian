@@ -152,6 +152,27 @@ export const atlasConnectionCreateSchema = z.object({
   color: z.string().max(20).optional(),
 });
 
+// --------------- Home spatial board ---------------
+
+export const homeBoardElementPatchSchema = z
+  .object({
+    x: z.number().finite().optional(),
+    y: z.number().finite().optional(),
+    zIndex: z.number().int().min(0).max(10000).optional(),
+    caption: z.preprocess(trim, z.string().max(200)).optional(),
+    width: z.number().positive().min(120).max(640).optional(),
+    height: z.number().positive().min(90).max(800).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
+
+export const homeBoardConnectionCreateSchema = z.object({
+  fromId: z.string().min(1),
+  toId: z.string().min(1),
+  color: z.string().max(20).optional(),
+});
+
 export const atlasDragSchema = z.object({
   elementId: z.string().min(1),
   x: z.number().finite(),
