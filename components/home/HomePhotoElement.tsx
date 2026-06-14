@@ -67,7 +67,7 @@ export function HomePhotoElement({
       startY: element.y,
       downTime: Date.now(),
     };
-  }, [element.id, element.x, element.y]);
+  }, [element.x, element.y]);
 
   const onResizePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
     event.preventDefault();
@@ -82,7 +82,7 @@ export function HomePhotoElement({
       startWidth: element.width,
       aspectRatio: element.width / Math.max(element.height, 1),
     };
-  }, [element.id, element.width, element.height]);
+  }, [element.width, element.height]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
     if (!dragRef.current.active || dragRef.current.resizing) return;

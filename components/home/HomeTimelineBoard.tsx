@@ -6,7 +6,7 @@ import { Timeline } from "@/components/blog/Timeline";
 import type { TimelinePost } from "@/components/blog/Timeline";
 import { HomeSpatialLayer } from "@/components/home/HomeSpatialLayer";
 import { HomeUploadModal } from "@/components/home/HomeUploadModal";
-import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData } from "@/components/home/types";
+import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData, HomeSpatialElementData } from "@/components/home/types";
 import { isHomeBlankTarget } from "@/lib/home-spatial";
 
 export function HomeTimelineBoard({
@@ -133,7 +133,7 @@ export function HomeTimelineBoard({
   }, []);
 
   const updatePhoto = useCallback((id: string, patch: Partial<HomePhotoElementData>) => {
-    setElements((prev) => prev.map((element) => element.id === id ? { ...element, ...patch } : element));
+    setElements((prev) => prev.map((element) => element.id === id ? { ...element, ...patch } as HomeSpatialElementData : element));
   }, []);
 
   return (
