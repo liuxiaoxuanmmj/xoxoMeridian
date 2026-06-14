@@ -78,9 +78,12 @@ function safeOrigin(url: string | null): string | null {
 export function isNoStorePath(pathname: string): boolean {
   return (
     pathname === "/me" ||
+    pathname === "/home" ||
     pathname === "/chat" ||
+    pathname.startsWith("/posts/") ||
     pathname.startsWith("/chat/") ||
     pathname.startsWith("/api/auth/") ||
+    pathname.startsWith("/api/posts/") ||
     pathname.startsWith("/api/rooms/")
   );
 }

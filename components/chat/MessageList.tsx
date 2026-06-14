@@ -62,7 +62,7 @@ function MessageBubble({
           <span className="font-semibold">{senderName}</span>
           <span>{formatTime(message.createdAt)}</span>
           {isAgent ? <span className="rounded-full bg-[#3a5b22]/10 px-2 py-0.5 text-[#3a5b22]">由 {MENTION_AGENT} 处理</span> : null}
-          {message.sourceTask ? <span className="rounded-full bg-warm-100 px-2 py-0.5 text-warm-700">已派发</span> : null}
+          {message.sourceTask ? <span className="rounded-full bg-sage-100 px-2 py-0.5 text-sage-700">已派发</span> : null}
         </header>
 
         <p className="whitespace-pre-wrap break-words text-sm leading-6">{message.content}</p>

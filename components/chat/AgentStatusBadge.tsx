@@ -14,10 +14,10 @@ export function AgentStatusBadge({ isWorking, latestStatus }: { isWorking: boole
     <div
       className={cn(
         "inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium",
-        isWorking ? "border-warm-200 bg-warm-100 text-warm-700" : "border-[#e8e8e8] bg-[#fafbfc] text-[#3a5b22]"
+        isWorking ? "border-sage-300 bg-sage-100 text-sage-700" : "border-[#e8e8e8] bg-[#fafbfc] text-[#3a5b22]"
       )}
     >
-      <span className={cn("h-2 w-2 rounded-full", isWorking ? "animate-pulse bg-warm-500" : "bg-sage-500")} />
+      <span className={cn("h-2 w-2 rounded-full", isWorking ? "animate-pulse bg-sage-500" : "bg-sage-500")} />
       {label}
     </div>
   );

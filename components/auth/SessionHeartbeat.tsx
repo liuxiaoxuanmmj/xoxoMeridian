@@ -39,7 +39,7 @@ export function SessionHeartbeat({ expectedUserId }: { expectedUserId: string })
         retryTimer = null;
       }
 
-      window.location.replace(`/chat?auth=${Date.now()}`);
+      window.location.replace(`/home`);
     };
 
     const reconcileOrKick = async () => {

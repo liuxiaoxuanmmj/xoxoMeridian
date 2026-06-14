@@ -4,7 +4,7 @@
 
 :root {
   color-scheme: light;
-  background: #fff8f3;
+  background: #f3f7f0;
   color: #283034;
 }
 
@@ -19,9 +19,8 @@ body {
 
 body {
   margin: 0;
-  background:
-    linear-gradient(180deg, rgba(255, 248, 243, 0.95), rgba(243, 247, 240, 0.95)),
-    repeating-linear-gradient(90deg, rgba(40, 48, 52, 0.03) 0, rgba(40, 48, 52, 0.03) 1px, transparent 1px, transparent 40px);
+  background: #f3f7f0;
+  font-family: var(--font-inter), system-ui, sans-serif;
 }
 
 button,
@@ -31,5 +30,138 @@ input {
 }
 
 ::selection {
-  background: #ffd2bd;
+  background: rgba(58, 91, 34, 0.12);
+  color: #3a5b22;
+}
+
+/* Terminal / agent log card */
+.terminal-card {
+  @apply bg-[#1E1E1E] text-[#E0E0E0] rounded-lg p-5 font-mono text-sm;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition: transform 250ms ease-out, box-shadow 250ms ease-out;
+}
+.terminal-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.05), 0 0 18px rgba(78, 201, 176, 0.12);
+}
+
+/* Monospace metadata line */
+.metadata-mono {
+  @apply font-mono text-xs text-deep-slate/50 tracking-tight;
+}
+
+/* ── Page transition animations ── */
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.page-enter {
+  animation: page-enter 300ms ease-out both;
+}
+
+/* ── Scroll-driven reveal animations ── */
+
+@keyframes reveal-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes reveal-right {
+  from {
+    opacity: 0;
+    transform: translateX(24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes timeline-dot-appear {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 0) scale(0.3);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0) scale(1);
+  }
+}
+
+.scroll-reveal {
+  opacity: 0;
+}
+
+.scroll-reveal.revealed-left {
+  animation: reveal-left 400ms ease-out both;
+}
+
+.scroll-reveal.revealed-right {
+  animation: reveal-right 400ms ease-out both;
+}
+
+.scroll-reveal.revealed-center {
+  animation: page-enter 350ms ease-out both;
+}
+
+/* ── Timeline visual elements ── */
+
+.timeline-line {
+  @apply absolute left-1/2 top-0 bottom-0 w-px hidden md:block;
+  background: linear-gradient(to bottom, #a7c49b 0%, #a7c49b 70%, #668a5b 100%);
+}
+
+.timeline-dot {
+  @apply absolute left-1/2 w-3 h-3 rounded-full hidden md:block;
+  background: #668a5b;
+  box-shadow: 0 0 0 3px #dfead8;
+  transform: translate(-50%, 0);
+  opacity: 0;
+}
+
+.timeline-dot.revealed {
+  animation: timeline-dot-appear 350ms ease-out both;
+}
+
+/* ── Enhanced card styles ── */
+
+.timeline-card {
+  @apply bg-white border border-[#e8e8e8] rounded-[10px] p-5;
+  transition: transform 250ms ease-out, box-shadow 250ms ease-out, border-color 250ms ease-out;
+}
+
+.timeline-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.06);
+  border-color: #a7c49b;
+}
+
+/* ── Reduced motion ── */
+
+@media (prefers-reduced-motion: reduce) {
+  .page-enter,
+  .scroll-reveal.revealed-left,
+  .scroll-reveal.revealed-right,
+  .scroll-reveal.revealed-center,
+  .timeline-dot.revealed {
+    animation: none;
+    opacity: 1;
+  }
+  .timeline-card:hover {
+    transform: none;
+  }
 }

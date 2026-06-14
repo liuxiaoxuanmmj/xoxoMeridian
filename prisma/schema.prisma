@@ -64,6 +64,7 @@ model User {
   atlasElements       AtlasElement[]
   sessions            Session[]
   passwordResetTokens PasswordResetToken[]
+  posts               Post[]
 }
 
 model Session {
@@ -121,6 +122,7 @@ model Room {
   memories         Memory[]
   eventLogs        EventLog[]
   scheduledJobs    ScheduledJob[]
+  posts            Post[]
 }
 
 model RoomParticipant {
@@ -339,6 +341,11 @@ enum AtlasElementType {
   note
 }
 
+enum PostType {
+  user_post
+  agent_log
+}
+
 model AtlasBoard {
   id          String            @id @default(cuid())
   createdAt   DateTime          @default(now())
@@ -385,4 +392,24 @@ model AtlasConnection {
 
   @@unique([boardId, fromId, toId])
   @@index([boardId])
+}
+
+model Post {
+  id          String    @id @default(cuid())
+  slug        String    @unique
+  title       String
+  content     String    // Markdown
+  type        PostType  @default(user_post)
+  authorId    String?
+  roomId      String?
+  publishedAt DateTime
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  author      User?     @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  room        Room?     @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([type, publishedAt(sort: Desc)])
+  @@index([authorId])
+  @@index([roomId])
 }

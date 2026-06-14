@@ -111,7 +111,7 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
     "--auth-gradient-to": activeVisual.theme.gradientTo,
     "--auth-overlay": activeVisual.theme.overlay,
     background:
-      "linear-gradient(135deg, color-mix(in srgb, var(--auth-gradient-from) 16%, white), white 44%, color-mix(in srgb, var(--auth-gradient-to) 14%, white))",
+      "linear-gradient(135deg, color-mix(in srgb, var(--auth-gradient-from) 16%, #fdfbf7), #fdfbf7 44%, color-mix(in srgb, var(--auth-gradient-to) 14%, #fdfbf7))",
   };
 
   useEffect(() => {
@@ -161,49 +161,66 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
 
       {/* Form */}
       <div className="flex flex-1 items-center justify-center px-6 lg:px-10">
-        <div className="w-full max-w-[404px]">
-          {/* Tab switcher */}
-          <div className="mb-8 flex gap-2">
-            <button
-              type="button"
-              onClick={() => setMode("login")}
-              className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${
-                mode === "login"
-                  ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
-                  : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
-              }`}
-            >
-              登录
-            </button>
-            <button
-              type="button"
-              onClick={() => setMode("register")}
-              className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${
-                mode === "register"
-                  ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
-                  : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
-              }`}
-            >
-              注册
-            </button>
+        <div className="w-full max-w-[460px] relative rounded-[24px] bg-white/75 backdrop-blur-2xl border border-black/5 shadow-xl shadow-black/5">
+          {/* Corner glow — cross-fade layers */}
+          <div
+            aria-hidden="true"
+            className="absolute inset-0 rounded-[24px] overflow-hidden pointer-events-none"
+          >
+            {visualItems.map((visual, index) => (
+              <div
+                key={`glow-${visual.id}-${index}`}
+                className={`absolute inset-0 transition-opacity duration-700 ease-out ${index === boundedActiveIndex ? "opacity-100" : "opacity-0"
+                  } ${prefersReducedMotion ? "transition-none" : ""}`}
+                style={{
+                  background: `radial-gradient(circle at 20% 15%, color-mix(in srgb, ${visual.theme.accent} 18%, transparent) 0%, transparent 55%)`,
+                }}
+              />
+            ))}
           </div>
 
-          {/* Title */}
-          <h1 className="text-[28px] font-semibold leading-tight text-black">
-            {mode === "login" ? "欢迎回来！" : "创建账号"}
-          </h1>
-          <p className="mt-1 text-[15px] leading-relaxed text-black/60">
-            {mode === "login"
-              ? "输入账号信息以继续使用"
-              : "填写以下信息创建你的账号"}
-          </p>
+          <div className="relative p-6 lg:p-8">
+            {/* Tab switcher */}
+            <div className="mb-8 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMode("login")}
+                className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${mode === "login"
+                    ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
+                    : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
+                  }`}
+              >
+                登录
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode("register")}
+                className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${mode === "register"
+                    ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
+                    : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
+                  }`}
+              >
+                注册
+              </button>
+            </div>
 
-          <div className="mt-6">
-            {mode === "login" ? (
-              <LoginForm onSwitchToRegister={() => setMode("register")} />
-            ) : (
-              <RegisterForm onSwitchToLogin={() => setMode("login")} />
-            )}
+            {/* Title */}
+            <h1 className="text-[28px] font-semibold leading-tight text-black">
+              {mode === "login" ? "欢迎回来！" : "创建账号"}
+            </h1>
+            <p className="mt-1 text-[15px] leading-relaxed text-black/60">
+              {mode === "login"
+                ? "输入账号信息以继续使用"
+                : "填写以下信息创建你的账号"}
+            </p>
+
+            <div className="mt-6">
+              {mode === "login" ? (
+                <LoginForm onSwitchToRegister={() => setMode("register")} />
+              ) : (
+                <RegisterForm onSwitchToLogin={() => setMode("login")} />
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -217,9 +234,8 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
               aria-hidden="true"
               data-testid={`auth-visual-layer-${visual.id}`}
               data-active={index === boundedActiveIndex ? "true" : "false"}
-              className={`absolute inset-0 h-full w-full transition-opacity duration-700 ease-out ${
-                index === boundedActiveIndex ? "opacity-100" : "opacity-0"
-              } ${prefersReducedMotion ? "transition-none" : ""}`}
+              className={`absolute inset-0 h-full w-full transition-opacity duration-700 ease-out ${index === boundedActiveIndex ? "opacity-100" : "opacity-0"
+                } ${prefersReducedMotion ? "transition-none" : ""}`}
               style={{
                 backgroundImage: `url(${JSON.stringify(visual.imageUrl)})`,
                 backgroundPosition: "center",
@@ -231,7 +247,7 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
             className="absolute inset-0"
             style={{
               background:
-                "linear-gradient(145deg, color-mix(in srgb, var(--auth-gradient-from) 28%, transparent), color-mix(in srgb, var(--auth-gradient-to) 28%, transparent)), var(--auth-overlay)",
+                "linear-gradient(145deg, color-mix(in srgb, var(--auth-gradient-from) 0%, transparent), color-mix(in srgb, var(--auth-gradient-to) 0%, transparent)), var(--auth-overlay)",
             }}
           />
         </div>

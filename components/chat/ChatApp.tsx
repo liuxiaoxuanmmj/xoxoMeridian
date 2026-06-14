@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -7,6 +8,7 @@ import { AgentStatusBadge } from "@/components/chat/AgentStatusBadge";
 import { LeftRail } from "@/components/chat/LeftRail";
 import { LifePanel } from "@/components/chat/LifePanel";
 import { MessageComposer } from "@/components/chat/MessageComposer";
+import { BrandBadge } from "@/components/layout/BrandBadge";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatMessage, ChatUser, RoomSnapshot } from "@/components/chat/types";
 import { dedupedReplace } from "@/lib/router-dedup";
@@ -291,20 +293,35 @@ export function ChatApp({
 
   return (
     <main className="flex h-screen min-h-[720px] flex-col bg-sage-50 text-ink">
-      <header className="flex h-16 shrink-0 items-center justify-between border-b border-[#e8e8e8] bg-white px-5">
-        <div>
-          <h1 className="text-base font-semibold text-black">{snapshot.room.name}</h1>
-          <p className="text-xs text-black/50">
-            私密双人聊天室 · 本地 Agent Runtime
+      <header className="sticky top-0 z-40 flex h-16 shrink-0 items-center justify-between border-b border-[#e8e8e8] bg-white/95 backdrop-blur-sm px-5">
+        <div className="flex items-center gap-6">
+          <BrandBadge />
+          <Link
+            href="/home"
+            className="text-xs font-medium text-black/50 hover:text-black transition-colors"
+          >
+            Blog
+          </Link>
+          <Link
+            href="/chat"
+            className="text-xs font-medium text-[#3a5b22] transition-colors"
+          >
+            Chat
+          </Link>
+          <span className="text-black/20">|</span>
+          <span className="text-xs font-medium text-black/70">{snapshot.room.name}</span>
+        </div>
+        <div className="flex items-center gap-4">
+          <p className="text-xs text-black/40">
             {connState !== "open" && (
-              <span className="ml-2 inline-flex items-center gap-1 text-amber-600">
-                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-amber-500" />
+              <span className="inline-flex items-center gap-1 text-sage-600">
+                <span className="inline-block h-1.5 w-1.5 animate-pulse rounded-full bg-sage-500" />
                 {connState === "connecting" ? "连接中…" : "重连中…"}
               </span>
             )}
           </p>
+          <AgentStatusBadge isWorking={snapshot.agentStatus.isWorking} latestStatus={latestStatus} />
         </div>
-        <AgentStatusBadge isWorking={snapshot.agentStatus.isWorking} latestStatus={latestStatus} />
       </header>
 
       <div className="flex min-h-0 flex-1">

@@ -55,7 +55,7 @@ export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void 
         return;
       }
 
-      window.location.replace(`/chat?auth=${encodeURIComponent(expectedUserId ?? String(Date.now()))}`);
+      window.location.replace(`/home`);
     } catch {
       setError("注册请求失败，请稍后重试。");
       setSubmitting(false);

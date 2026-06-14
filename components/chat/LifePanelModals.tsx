@@ -205,10 +205,10 @@ export function ScheduledJobModal({
           <button
             type="button"
             onClick={() => handleModeChange("recurring")}
-            className={`flex-1 rounded px-3 py-2 text-sm font-medium ${
+            className={`flex-1 rounded-[10px] px-3 py-2.5 text-sm font-medium transition-colors duration-200 cursor-pointer ${
               mode === "recurring"
                 ? "bg-sage-100 text-sage-700"
-                : "bg-warm-50 text-ink/60 hover:bg-warm-100"
+                : "bg-[#fafbfc] text-black/60 hover:bg-neutral-100"
             }`}
           >
             周期任务

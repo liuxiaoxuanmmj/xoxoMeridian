@@ -1,5 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 
+import { createAgentLogPost, buildAgentLogContent } from "@/lib/agent-posts";
 import { appendChatLog } from "@/lib/chat-log-file";
 
 export class ExecutionTracer {
@@ -43,6 +44,34 @@ export class ExecutionTracer {
       }
     });
     await this.event("agent.task.completed", { finalMessageId });
+
+    // Auto-generate timeline entry for significant agent tasks
+    try {
+      const task = await this.prisma.agentTask.findUnique({
+        where: { id: this.taskId },
+        include: { agent: true, toolCalls: true },
+      });
+      if (task && task.toolCalls.length > 0) {
+        const toolNames = task.toolCalls.map((tc) => tc.toolName).join(", ");
+        await createAgentLogPost({
+          title: `Agent: ${task.agent.displayName} — ${toolNames}`,
+          content: buildAgentLogContent(task, result),
+          roomId: this.roomId,
+          metadata: {
+            taskId: task.id,
+            agentName: task.agent.displayName,
+            status: "completed",
+            toolCalls: task.toolCalls.map((tc) => ({
+              name: tc.toolName,
+              status: tc.status,
+              durationMs: tc.durationMs,
+            })),
+          },
+        });
+      }
+    } catch (e) {
+      console.error("[agent-posts] failed to create timeline entry:", e);
+    }
   }
 
   async markFailed(error: string, finalMessageId?: string) {

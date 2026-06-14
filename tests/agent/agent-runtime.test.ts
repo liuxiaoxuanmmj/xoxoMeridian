@@ -26,6 +26,9 @@ describe("agent dispatch primitives", () => {
     const registry = createToolRegistry();
     expect(registry.list().map((tool) => tool.name).sort()).toEqual([
       "memo.create",
+      "memo.delete",
+      "memo.list",
+      "memo.update",
       "memory.recall",
       "memory.set",
       "schedule.cancel",

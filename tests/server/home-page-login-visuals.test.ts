@@ -70,13 +70,13 @@ describe("HomePage login visuals", () => {
   it("redirects authenticated users without loading login visuals", async () => {
     getCurrentUserMock.mockResolvedValueOnce({ id: "user-1" });
     redirectMock.mockImplementationOnce(() => {
-      throw new Error("redirect:/chat");
+      throw new Error("redirect:/home");
     });
 
     const { default: HomePage } = await import("@/app/page");
 
-    await expect(HomePage()).rejects.toThrow("redirect:/chat");
-    expect(redirectMock).toHaveBeenCalledWith("/chat");
+    await expect(HomePage()).rejects.toThrow("redirect:/home");
+    expect(redirectMock).toHaveBeenCalledWith("/home");
     expect(getLoginVisualsMock).not.toHaveBeenCalled();
     expect(authPanelMock).not.toHaveBeenCalled();
   });

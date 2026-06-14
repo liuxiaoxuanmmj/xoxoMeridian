@@ -26,12 +26,20 @@ export default async function MePage() {
             这里的内容会作为额外背景注入到房间助手的提示里。
           </p>
         </div>
-        <Link
-          href="/chat"
-          className="rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-2.5 text-sm font-medium text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
-        >
-          返回聊天
-        </Link>
+        <div className="flex gap-3">
+          <Link
+            href="/home"
+            className="rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-2.5 text-sm font-medium text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
+          >
+            返回主页
+          </Link>
+          <Link
+            href="/chat"
+            className="rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-2.5 text-sm font-medium text-black/60 transition-colors duration-200 hover:bg-neutral-50 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"
+          >
+            返回聊天
+          </Link>
+        </div>
       </header>
 
       <MeForm

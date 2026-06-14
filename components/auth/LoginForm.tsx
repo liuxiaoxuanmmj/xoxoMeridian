@@ -51,7 +51,7 @@ export function LoginForm({ onSwitchToRegister }: { onSwitchToRegister: () => vo
         return;
       }
 
-      window.location.replace(`/chat?auth=${encodeURIComponent(expectedUserId ?? String(Date.now()))}`);
+      window.location.replace(`/home`);
     } catch {
       setError("登录请求失败，请稍后重试。");
       setSubmitting(false);

@@ -9,9 +9,12 @@ const config: Config = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-poppins)", "system-ui", "sans-serif"],
+        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
+        mono: ["var(--font-fira-code)", "JetBrains Mono", "ui-monospace", "monospace"],
+        poppins: ["var(--font-poppins)", "system-ui", "sans-serif"],
       },
       colors: {
+        // Keep existing colors for chat compatibility
         ink: "#283034",
         warm: {
           50: "#fff8f3",
@@ -32,14 +35,46 @@ const config: Config = {
           50: "#eff7fb",
           100: "#d8edf7",
           500: "#3d87a4"
-        }
+        },
+        // Warm Geek palette
+        linen: "#FCFAF2",
+        cream: "#FBF9F6",
+        "deep-slate": "#2C3E50",
+        "warm-brown": "#332B25",
+        terminal: "#1E1E1E",
+        "terminal-accent": "#4EC9B0",
       },
       boxShadow: {
-        soft: "0 18px 45px rgba(54, 43, 35, 0.10)"
-      }
-    }
+        soft: "0 18px 45px rgba(54, 43, 35, 0.10)",
+        card: "0 1px 3px rgba(0, 0, 0, 0.04)",
+      },
+      typography: {
+        DEFAULT: {
+          css: {
+            maxWidth: "none",
+            "--tw-prose-body": "#332B25",
+            "--tw-prose-headings": "#2C3E50",
+            "--tw-prose-links": "#2C3E50",
+            "--tw-prose-bold": "#2C3E50",
+            "--tw-prose-code": "#1E1E1E",
+            "--tw-prose-pre-bg": "#1E1E1E",
+            "--tw-prose-pre-code": "#E0E0E0",
+            "--tw-prose-quotes": "#2C3E50",
+            "--tw-prose-quote-borders": "#2C3E50",
+            "--tw-prose-hr": "#E0E0E0",
+            code: {
+              fontWeight: "500",
+              fontFamily: "var(--font-fira-code), monospace",
+            },
+            pre: {
+              fontFamily: "var(--font-fira-code), monospace",
+            },
+          },
+        },
+      },
+    },
   },
-  plugins: []
+  plugins: [require("@tailwindcss/typography")],
 };
 
 export default config;

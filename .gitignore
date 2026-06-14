@@ -22,3 +22,7 @@ data/atlas-uploads/
 
 # Study notes and experiments
 study/
+
+images/
+.claude/
+.codex/

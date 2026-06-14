@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { Inter, Fira_Code } from "next/font/google";
 
 import "@/app/globals.css";
 
@@ -14,6 +15,18 @@ const poppins = localFont({
   variable: "--font-poppins",
 });
 
+const inter = Inter({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-inter",
+});
+
+const firaCode = Fira_Code({
+  subsets: ["latin"],
+  display: "swap",
+  variable: "--font-fira-code",
+});
+
 export const metadata: Metadata = {
   title: "XOXO Meridian",
   description: "A private two-person long-distance chat room with a local life assistant."
@@ -21,7 +34,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN" className={poppins.variable}>
+    <html lang="zh-CN" className={`${poppins.variable} ${inter.variable} ${firaCode.variable}`}>
       <body>{children}</body>
     </html>
   );
