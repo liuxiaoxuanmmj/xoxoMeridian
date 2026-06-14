@@ -19,8 +19,28 @@ describe("generateSlug", () => {
     expect(generateSlug(long).length).toBeLessThanOrEqual(80);
   });
 
-  it("handles Chinese characters", () => {
-    expect(generateSlug("你好 世界")).toBe("你好-世界");
+  it("transliterates Chinese titles to pinyin", () => {
+    expect(generateSlug("你好 世界")).toBe("ni-hao-shi-jie");
+  });
+
+  it("transliterates Chinese and preserves English in mixed titles", () => {
+    expect(generateSlug("我的 Hello World 博客")).toBe("wo-de-hello-world-bo-ke");
+  });
+
+  it("does not trigger pinyin for purely ASCII titles", () => {
+    expect(generateSlug("Hello World 2024")).toBe("hello-world-2024");
+  });
+
+  it("handles special characters mixed with Chinese", () => {
+    expect(generateSlug("你好!!! 世界???")).toBe("ni-hao-shi-jie");
+  });
+
+  it("handles single Chinese character", () => {
+    expect(generateSlug("康")).toBe("kang");
+  });
+
+  it("falls back when every title character is removed", () => {
+    expect(generateSlug("!!! 😄 ???")).toBe("post");
   });
 });
 

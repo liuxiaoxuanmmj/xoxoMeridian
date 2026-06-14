@@ -16,6 +16,7 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
           <BrandBadge />
           <Link
             href="/home"
+            scroll={false}
             className={`text-xs font-medium transition-colors ${
               isHome ? "text-[#3a5b22]" : "text-black/50 hover:text-black"
             }`}

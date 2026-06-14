@@ -1,5 +1,6 @@
 import { requirePageUser } from "@/lib/auth";
 import { PostEditor } from "@/components/blog/PostEditor";
+import { BackToBlog } from "@/components/blog/BackToBlog";
 import { SiteNav } from "@/components/blog/SiteNav";
 import { PageTransition } from "@/components/layout/PageTransition";
 
@@ -16,6 +17,7 @@ export default async function NewPostPage() {
           <h1 className="text-2xl font-bold text-black mb-8">New Post</h1>
           <PostEditor currentUser={user} />
         </main>
+        <BackToBlog />
       </PageTransition>
     </div>
   );

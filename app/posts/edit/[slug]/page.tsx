@@ -2,6 +2,7 @@ import { notFound, redirect } from "next/navigation";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostEditor } from "@/components/blog/PostEditor";
+import { BackToBlog } from "@/components/blog/BackToBlog";
 import { SiteNav } from "@/components/blog/SiteNav";
 import { PageTransition } from "@/components/layout/PageTransition";
 
@@ -36,6 +37,7 @@ export default async function EditPostPage({
             }}
           />
         </main>
+        <BackToBlog />
       </PageTransition>
     </div>
   );

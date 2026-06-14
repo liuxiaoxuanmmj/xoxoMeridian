@@ -1,14 +1,24 @@
+import { pinyin } from "pinyin-pro";
 import { prisma } from "@/lib/prisma";
 import { normalizeCityName, normalizeCountryName } from "@/lib/geo-normalize";
 
+const CJK_RE = /[一-鿿㐀-䶿豈-﫿]/;
+
 export function generateSlug(title: string): string {
-  return title
-    .toLowerCase()
-    .replace(/[^\w\s一-鿿-]/g, "")
+  const needsTransliteration = CJK_RE.test(title);
+
+  const transliterated = needsTransliteration
+    ? pinyin(title, { toneType: "none", nonZh: "consecutive" }).toLowerCase()
+    : title.toLowerCase();
+
+  const slug = transliterated
+    .replace(/[^\w\s-]/g, "")
     .replace(/\s+/g, "-")
     .replace(/-+/g, "-")
-    .trim()
+    .replace(/^-+|-+$/g, "")
     .slice(0, 80);
+
+  return slug || "post";
 }
 
 export async function ensureUniqueSlug(

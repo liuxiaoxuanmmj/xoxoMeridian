@@ -33,6 +33,7 @@ vi.mock("next/cache", () => ({
 }));
 
 import { GET, POST } from "@/app/api/posts/route";
+import { GET as GET_POST_DETAIL } from "@/app/api/posts/[slug]/route";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -112,5 +113,19 @@ describe("POST /api/posts", () => {
     expect(response.status).toBe(200);
     const body = await response.json();
     expect(body.post.slug).toBe("my-first-post");
+  });
+});
+
+describe("GET /api/posts/[slug]", () => {
+  it("requires authentication before loading post details", async () => {
+    mockRequireCurrentUser.mockRejectedValue(new Response("Unauthorized", { status: 401 }));
+
+    const response = await GET_POST_DETAIL(
+      new Request("http://localhost/api/posts/private-post"),
+      { params: { slug: "private-post" } }
+    );
+
+    expect(response.status).toBe(401);
+    expect(mockPostFindUnique).not.toHaveBeenCalled();
   });
 });

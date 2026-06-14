@@ -3,6 +3,7 @@ import { revalidatePath } from "next/cache";
 
 import { assertPostOwnership } from "@/lib/api-posts";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
+import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
 
@@ -11,6 +12,8 @@ export async function GET(
   { params }: { params: { slug: string } }
 ) {
   try {
+    await requireCurrentUser();
+
     const post = await prisma.post.findUnique({
       where: { slug: params.slug },
       include: {

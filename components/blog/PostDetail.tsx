@@ -1,3 +1,4 @@
+import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { formatPostTime } from "@/lib/posts";
@@ -28,6 +29,18 @@ export function PostDetail({ post, isOwner }: PostDetailProps) {
 
   return (
     <article className="max-w-2xl mx-auto">
+      {/* Back to blog — always visible, scroll-memory aware */}
+      <Link
+        href="/home"
+        scroll={false}
+        className="inline-flex items-center gap-1.5 text-sm text-black/40 hover:text-[#3a5b22] transition-colors duration-200 mb-6"
+      >
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M19 12H5M12 19l-7-7 7-7" />
+        </svg>
+        Back to Blog
+      </Link>
+
       {/* Metadata line */}
       <div className="metadata-mono flex flex-wrap items-center gap-2 mb-6">
         <span>{post.author?.displayName ?? "System"}</span>

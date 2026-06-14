@@ -3,6 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { Timeline } from "@/components/blog/Timeline";
 import { SiteNav } from "@/components/blog/SiteNav";
 import { PageTransition } from "@/components/layout/PageTransition";
+import { ScrollRestore } from "@/components/layout/ScrollRestore";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,7 @@ export default async function HomePage() {
         aria-hidden="true"
       />
 
+      <ScrollRestore storageKey="home-timeline" />
       <SiteNav currentUser={user} />
       <PageTransition>
         <main className="relative mx-auto max-w-3xl px-6 py-12">

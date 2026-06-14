@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { PostDetail } from "@/components/blog/PostDetail";
+import { BackToBlog } from "@/components/blog/BackToBlog";
 import { SiteNav } from "@/components/blog/SiteNav";
 import { PageTransition } from "@/components/layout/PageTransition";
 
@@ -40,6 +41,7 @@ export default async function PostDetailPage({
             isOwner={post.authorId === user.id}
           />
         </main>
+        <BackToBlog />
       </PageTransition>
     </div>
   );
