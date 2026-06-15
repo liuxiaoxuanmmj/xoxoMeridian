@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { BaseModal, ModalActions } from "@/components/chat/BaseModal";
 import type { HomePhotoElementData } from "@/components/home/types";
+import { fitHomePhotoSizeToBounds } from "@/lib/home-spatial";
 
 export function HomeUploadModal({
   isOpen,
@@ -17,6 +18,7 @@ export function HomeUploadModal({
 }) {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
+  const [photoSize, setPhotoSize] = useState({ width: 240, height: 180 });
   const [caption, setCaption] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -27,9 +29,24 @@ export function HomeUploadModal({
     if (!nextFile) return;
 
     if (preview) URL.revokeObjectURL(preview);
+
+    const objectUrl = URL.createObjectURL(nextFile);
     setFile(nextFile);
-    setPreview(URL.createObjectURL(nextFile));
+    setPreview(objectUrl);
+    setPhotoSize({ width: 240, height: 180 });
     setError("");
+
+    const image = new Image();
+    image.onload = () => {
+      setPhotoSize(fitHomePhotoSizeToBounds({
+        width: image.naturalWidth,
+        height: image.naturalHeight,
+      }));
+    };
+    image.onerror = () => {
+      setPhotoSize({ width: 240, height: 180 });
+    };
+    image.src = objectUrl;
   };
 
   const handleClose = () => {
@@ -37,6 +54,7 @@ export function HomeUploadModal({
     setFile(null);
     setPreview(null);
     setCaption("");
+    setPhotoSize({ width: 240, height: 180 });
     setError("");
     onClose();
   };
@@ -54,8 +72,8 @@ export function HomeUploadModal({
       formData.append("caption", caption);
       formData.append("x", String(position.x));
       formData.append("y", String(position.y));
-      formData.append("width", "240");
-      formData.append("height", "180");
+      formData.append("width", String(photoSize.width));
+      formData.append("height", String(photoSize.height));
 
       const response = await fetch("/api/home-board/uploads", {
         method: "POST",
@@ -93,7 +111,7 @@ export function HomeUploadModal({
             <img
               src={preview}
               alt="Preview"
-              className="w-full rounded-[8px] object-cover"
+              className="w-full rounded-[8px] bg-[#f6f8f4] object-contain"
               style={{ maxHeight: 240 }}
             />
             <button
