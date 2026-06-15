@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampPhotoSize,
+  fitHomePhotoSizeToBounds,
   getRectCenter,
   isConnectablePair,
   isHomeBlankTarget,
@@ -19,6 +20,29 @@ describe("home-spatial helpers", () => {
     expect(clampPhotoSize({ width: 300, aspectRatio: 3 / 2 })).toEqual({
       width: 300,
       height: 200,
+    });
+  });
+
+  it("fits uploaded photo dimensions into the initial home photo bounds without changing aspect ratio", () => {
+    expect(fitHomePhotoSizeToBounds({ width: 4000, height: 3000 })).toEqual({
+      width: 240,
+      height: 180,
+    });
+    expect(fitHomePhotoSizeToBounds({ width: 3000, height: 4000 })).toEqual({
+      width: 180,
+      height: 240,
+    });
+    expect(fitHomePhotoSizeToBounds({ width: 900, height: 900 })).toEqual({
+      width: 240,
+      height: 240,
+    });
+    expect(fitHomePhotoSizeToBounds({ width: 80, height: 60 })).toEqual({
+      width: 120,
+      height: 90,
+    });
+    expect(fitHomePhotoSizeToBounds({ width: Number.NaN, height: 0 })).toEqual({
+      width: 240,
+      height: 180,
     });
   });
 
