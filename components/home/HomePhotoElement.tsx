@@ -151,7 +151,7 @@ export function HomePhotoElement({
         <img
           src={element.imageUrl}
           alt={element.caption ?? ""}
-          className="pointer-events-none h-full w-full rounded-[8px] object-cover"
+          className="pointer-events-none h-full w-full rounded-[8px] bg-[#f6f8f4] object-contain"
           draggable={false}
         />
 
