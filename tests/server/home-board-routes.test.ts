@@ -100,6 +100,39 @@ describe("home-board routes", () => {
     expect(payload.element.width).toBe(280);
   });
 
+  it("preserves submitted portrait display dimensions for uploaded home photos", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+    const formData = new FormData();
+    formData.set("file", new File(["image-body"], "portrait.jpg", { type: "image/jpeg" }));
+    formData.set("x", "40");
+    formData.set("y", "80");
+    formData.set("width", "180");
+    formData.set("height", "240");
+
+    const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(201);
+    expect(mockPrisma.atlasElement.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        boardId: "home-board",
+        type: "photo",
+        x: 40,
+        y: 80,
+        width: 180,
+        height: 240,
+        imageUrl: "/api/atlas/uploads/atlas%2Fhome-photo.jpg",
+        caption: null,
+        createdById: "user-1",
+      }),
+    });
+    expect(payload.element.width).toBe(180);
+    expect(payload.element.height).toBe(240);
+  });
+
   it("patches only elements that belong to home board", async () => {
     mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
       id: "photo-1",
