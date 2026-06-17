@@ -11,19 +11,23 @@ HomePage (server)
  ├─ initialPosts ← prisma.post.findMany({ take: 50 })  // unchanged
  ├─ initialSnapshot ← getHomeBoardSnapshot()            // unchanged
  │
- ├── SiteNav (client)
- │    └── SearchInput          ← only renders when pathname === "/home"
+ ├── <Suspense>                                          // required by useSearchParams
+ │    ├── SiteNav (client)
+ │    │    └── SearchInput          ← only renders when pathname === "/home"
+ │    │         ├─ reads ?q= from useSearchParams
+ │    │         └─ debounce 300ms → router.replace('/home?q=...')
+ │    │
+ │    └── HomeTimelineBoard (client)
+ │         ├─ receives initialPosts as prop (always 50 latest)
  │         ├─ reads ?q= from useSearchParams
- │         └─ debounce 300ms → router.replace('/home?q=...')
- │
- └── HomeTimelineBoard (client)
-      ├─ receives initialPosts as prop (always 50 latest)
-      ├─ reads ?q= from useSearchParams
-      ├─ useEffect when q changes:
-      │    ├─ q non-empty → fetch('/api/posts?q=...&limit=50') → setSearchResults
-      │    └─ q empty → setSearchResults(null)  // fallback to initialPosts, no request
-      └─ displayPosts = q ? searchResults : initialPosts
-           └── Timeline (no changes needed)
+ │         ├─ useEffect when q changes:
+ │         │    ├─ q non-empty → fetch('/api/posts?q=...&limit=50') → setSearchResults
+ │         │    └─ q empty → setSearchResults(null), no request
+ │         ├─ searchLoading: true during fetch — display initialPosts as skeleton
+ │         └─ displayPosts = q ? (searchResults ?? posts) : posts
+ │              ├─ searchResults===null & q → show initialPosts (avoids empty flash)
+ │              └─ searchResults===[]   & q → show empty state via Timeline
+ │              └── Timeline (receives emptyMessage prop)
 ```
 
 **Key principle**: SiteNav writes to URL; HomeTimelineBoard reads from URL. They communicate exclusively through `?q=`, no shared React state.
@@ -59,18 +63,32 @@ if (q) {
 
 ### 2. `components/home/HomeTimelineBoard.tsx` — search state layer
 
-- New state: `const [searchResults, setSearchResults] = useState<TimelinePost[] | null>(null)`.
+- New state:
+  - `const [searchResults, setSearchResults] = useState<TimelinePost[] | null>(null)`.
+  - `const [searchLoading, setSearchLoading] = useState(false)`.
 - Read `searchParams` via `useSearchParams()`.
 - `useEffect`: when `q` changes:
-  - Empty: `setSearchResults(null)`.
-  - Non-empty: `fetch('/api/posts?q=<encoded>&limit=50')` → parse JSON → `setSearchResults(posts)`.
-  - On fetch error: `console.error`, keep previous results (do not crash the board).
-- `displayPosts = searchParams.get("q") ? searchResults ?? [] : posts`.
-- Pass `displayPosts` to `<Timeline>` instead of `posts`.
+  - Empty: `setSearchResults(null)`; `setSearchLoading(false)`.
+  - Non-empty: `setSearchLoading(true)` → `fetch('/api/posts?q=<encoded>&limit=50')` → parse JSON → `setSearchResults(posts)` → `setSearchLoading(false)`.
+  - On fetch error: `console.error`, keep previous results, `setSearchLoading(false)`.
+- `displayPosts`: when `q` is empty → `posts`; when `q` non-empty and `searchResults !== null` → `searchResults`; when `q` non-empty but `searchResults === null` (fetch in progress) → `posts` (show initial list as skeleton, avoid empty flash).
+- Pass `displayPosts` and `emptyMessage` to `<Timeline>`.
 
-### 3. No changes to Timeline, PostCard, PostCardSpatialShell
+### 3. `components/blog/Timeline.tsx` — accept optional emptyMessage prop
 
-Timeline already renders whatever posts array it receives. PostCardSpatialShell already handles `elementId: undefined` gracefully for posts without spatial elements.
+- New optional prop: `emptyMessage?: string`.
+- When `sorted.length === 0`, render `emptyMessage` if provided, otherwise fall back to the existing hardcoded "No moments yet." message.
+- This lets HomeTimelineBoard pass "No posts match your search." without modifying Timeline's default empty state.
+
+### 4. `app/home/page.tsx` — add Suspense boundary
+
+- `useSearchParams()` requires a Suspense boundary in Next.js App Router.
+- Wrap `{/* SiteNav + HomeTimelineBoard area */}` in `<Suspense fallback={...}>` to satisfy this constraint.
+- Alternatively, extract the `useSearchParams` consumer into a separate client component and wrap only that in Suspense.
+
+### 5. No changes to PostCard, PostCardSpatialShell
+
+PostCardSpatialShell already handles `elementId: undefined` gracefully for posts without spatial elements.
 
 ## UI Design
 
@@ -113,6 +131,8 @@ Search input in SiteNav, placed between the nav links ("Blog", "Chat") and the "
 ## Implementation Order
 
 1. API: add `q` parameter to `GET /api/posts`
-2. `SiteNav`: add `SearchInput` for `/home` route
-3. `HomeTimelineBoard`: add search state + fetch + displayPosts logic
-4. Tests: API test + component tests
+2. `Timeline`: accept optional `emptyMessage` prop
+3. `SiteNav`: add `SearchInput` for `/home` route
+4. `HomeTimelineBoard`: add search state (including loading) + fetch + displayPosts logic + emptyMessage
+5. `HomePage`: add Suspense boundary for useSearchParams
+6. Tests: API integration test + component tests
