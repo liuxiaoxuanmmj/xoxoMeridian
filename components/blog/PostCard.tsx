@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { formatPostTime } from "@/lib/post-time";
+import { formatPostTime, resolveAuthorLocation } from "@/lib/post-time";
 import { MarkdownContent } from "@/components/blog/MarkdownContent";
 
 type PostCardProps = {
@@ -9,6 +9,9 @@ type PostCardProps = {
     title: string;
     content: string;
     publishedAt: Date | string;
+    authorCity?: string | null;
+    authorCountry?: string | null;
+    authorTimezone?: string | null;
     author: {
       id: string;
       displayName: string;
@@ -20,13 +23,14 @@ type PostCardProps = {
 };
 
 export function PostCard({ post, isOwner }: PostCardProps) {
+  const date = new Date(post.publishedAt);
   return (
     <article className="timeline-card max-w-sm w-full">
       <div className="metadata-mono flex items-center gap-2 mb-2">
         <span>{post.author?.displayName ?? "System"}</span>
         <span aria-hidden="true">&middot;</span>
-        <time dateTime={new Date(post.publishedAt).toISOString()}>
-          {formatPostTime(new Date(post.publishedAt), post.author?.profile)}
+        <time dateTime={date.toISOString()}>
+          {formatPostTime(date, resolveAuthorLocation(post))}
         </time>
       </div>
 

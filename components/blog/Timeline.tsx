@@ -28,6 +28,9 @@ export type TimelinePost = {
   content: string;
   type: string;
   authorId: string | null;
+  authorCity?: string | null;
+  authorCountry?: string | null;
+  authorTimezone?: string | null;
   publishedAt: Date | string;
   metadata?: Record<string, unknown> | null;
   author: {

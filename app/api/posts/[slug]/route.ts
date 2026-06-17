@@ -22,7 +22,7 @@ export async function GET(
             id: true,
             displayName: true,
             avatarLabel: true,
-            profile: { select: { timezone: true } },
+            profile: { select: { timezone: true, city: true, country: true } },
           },
         },
       },

@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireCurrentUser } from "@/lib/auth";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
 import { prisma } from "@/lib/prisma";
-import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
+import { ensureUniqueSlug, generateSlug, snapshotProfileLocation } from "@/lib/posts";
 
 export async function GET(request: Request) {
   try {
@@ -72,6 +72,7 @@ export async function POST(request: Request) {
         content: content.trim(),
         type: "user_post",
         authorId: user.id,
+        ...snapshotProfileLocation(user.profile),
         publishedAt: new Date(),
       },
     });

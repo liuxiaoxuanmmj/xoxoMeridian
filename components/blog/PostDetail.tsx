@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { MarkdownContent } from "@/components/blog/MarkdownContent";
-import { formatPostTime } from "@/lib/post-time";
+import { formatPostTime, resolveAuthorLocation } from "@/lib/post-time";
 import { AgentTracePanel } from "@/components/blog/AgentTracePanel";
 
 type PostDetailProps = {
@@ -11,6 +11,9 @@ type PostDetailProps = {
     content: string;
     type: string;
     publishedAt: Date;
+    authorCity?: string | null;
+    authorCountry?: string | null;
+    authorTimezone?: string | null;
     metadata?: Record<string, unknown> | null;
     author: {
       id: string;
@@ -23,6 +26,7 @@ type PostDetailProps = {
 };
 
 export function PostDetail({ post, isOwner }: PostDetailProps) {
+  const date = new Date(post.publishedAt);
   const metadata = post.metadata;
   const isAgentLog = post.type === "agent_log";
 
@@ -42,8 +46,8 @@ export function PostDetail({ post, isOwner }: PostDetailProps) {
       <div className="metadata-mono flex flex-wrap items-center gap-2 mb-6">
         <span>{post.author?.displayName ?? "System"}</span>
         <span aria-hidden="true">&middot;</span>
-        <time dateTime={new Date(post.publishedAt).toISOString()}>
-          {formatPostTime(new Date(post.publishedAt), post.author?.profile)}
+        <time dateTime={date.toISOString()}>
+          {formatPostTime(date, resolveAuthorLocation(post))}
         </time>
         {isAgentLog && typeof metadata?.taskId === "string" && (
           <>

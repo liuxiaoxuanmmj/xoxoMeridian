@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatPostTime, generateSlug } from "@/lib/posts";
+import { formatPostTime, generateSlug, resolveAuthorLocation } from "@/lib/posts";
 
 describe("generateSlug", () => {
   it("converts title to lowercase kebab-case", () => {
@@ -64,6 +64,37 @@ describe("formatPostTime", () => {
       const date = new Date("2026-06-13T14:30:00Z");
       const result = formatPostTime(date, null);
       expect(result).toContain("14:30");
+    });
+  });
+
+  describe("resolveAuthorLocation", () => {
+    it("prioritizes Post snapshot fields over profile", () => {
+      const result = resolveAuthorLocation({
+        authorCity: "Tokyo",
+        authorCountry: "Japan",
+        authorTimezone: "Asia/Tokyo",
+        author: { profile: { city: "Beijing", country: "China", timezone: "Asia/Shanghai" } },
+      });
+      expect(result).toEqual({ timezone: "Asia/Tokyo", city: "Tokyo", country: "Japan" });
+    });
+
+    it("falls back to profile when Post fields are null", () => {
+      const result = resolveAuthorLocation({
+        authorCity: null,
+        authorCountry: null,
+        authorTimezone: null,
+        author: { profile: { city: "Beijing", country: "China", timezone: "Asia/Shanghai" } },
+      });
+      expect(result).toEqual({ timezone: "Asia/Shanghai", city: "Beijing", country: "China" });
+    });
+
+    it("returns undefineds when both snapshot and profile are null/absent", () => {
+      const result = resolveAuthorLocation({
+        authorCity: null,
+        authorCountry: null,
+        authorTimezone: null,
+      });
+      expect(result).toEqual({ timezone: undefined, city: undefined, country: undefined });
     });
   });
 

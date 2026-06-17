@@ -1,6 +1,6 @@
 import { pinyin } from "pinyin-pro";
 import { prisma } from "@/lib/prisma";
-export { formatPostTime } from "@/lib/post-time";
+export { formatPostTime, resolveAuthorLocation, snapshotProfileLocation } from "@/lib/post-time";
 
 const CJK_RE = /[一-鿿㐀-䶿豈-﫿]/;
 

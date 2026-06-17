@@ -1,0 +1,4 @@
+-- AlterTable
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "authorCity" TEXT;
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "authorCountry" TEXT;
+ALTER TABLE "Post" ADD COLUMN IF NOT EXISTS "authorTimezone" TEXT;

@@ -405,9 +405,12 @@ model Post {
   title        String
   content      String        // Markdown
   type         PostType      @default(user_post)
-  authorId     String?
-  roomId       String?
-  publishedAt  DateTime
+  authorId       String?
+  roomId         String?
+  authorCity     String?
+  authorCountry  String?
+  authorTimezone String?
+  publishedAt    DateTime
   metadata     Json?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt

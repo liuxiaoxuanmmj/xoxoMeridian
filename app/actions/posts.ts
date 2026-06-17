@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
+import { ensureUniqueSlug, generateSlug, snapshotProfileLocation } from "@/lib/posts";
 
 type PostResult = { id: string; slug: string; title: string };
 type ActionResult<T> = { error: string } | T;
@@ -36,6 +36,7 @@ export async function createPost(
         content: content.trim(),
         type: "user_post",
         authorId: user.id,
+        ...snapshotProfileLocation(user.profile),
         publishedAt: new Date(),
       },
     });

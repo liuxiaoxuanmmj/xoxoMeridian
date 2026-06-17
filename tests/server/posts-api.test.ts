@@ -114,6 +114,72 @@ describe("POST /api/posts", () => {
     const body = await response.json();
     expect(body.post.slug).toBe("my-first-post");
   });
+
+  it("writes authorCity, authorCountry, authorTimezone from user profile on create", async () => {
+    mockRequireCurrentUser.mockResolvedValue({
+      id: "user-1",
+      profile: { city: "Tokyo", country: "Japan", timezone: "Asia/Tokyo" },
+    });
+    mockPostFindUnique.mockResolvedValue(null);
+    mockPostCreate.mockResolvedValue({
+      id: "post-new",
+      slug: "hello",
+      title: "Hello",
+      content: "World",
+      type: "user_post",
+      authorId: "user-1",
+      authorCity: "Tokyo",
+      authorCountry: "Japan",
+      authorTimezone: "Asia/Tokyo",
+    });
+
+    await POST(
+      new Request("http://localhost/api/posts", {
+        method: "POST",
+        body: JSON.stringify({ title: "Hello", content: "World" }),
+      })
+    );
+
+    expect(mockPostCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          authorCity: "Tokyo",
+          authorCountry: "Japan",
+          authorTimezone: "Asia/Tokyo",
+        }),
+      })
+    );
+  });
+
+  it("writes null location fields when user has no profile", async () => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostFindUnique.mockResolvedValue(null);
+    mockPostCreate.mockResolvedValue({
+      id: "post-new",
+      slug: "hello",
+      title: "Hello",
+      content: "World",
+      type: "user_post",
+      authorId: "user-1",
+    });
+
+    await POST(
+      new Request("http://localhost/api/posts", {
+        method: "POST",
+        body: JSON.stringify({ title: "Hello", content: "World" }),
+      })
+    );
+
+    expect(mockPostCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          authorCity: null,
+          authorCountry: null,
+          authorTimezone: null,
+        }),
+      })
+    );
+  });
 });
 
 describe("GET /api/posts?q= search", () => {
