@@ -94,16 +94,19 @@ model PasswordResetToken {
 }
 
 model UserProfile {
-  id          String   @id @default(cuid())
-  userId      String   @unique
-  city        String
-  country     String
-  timezone    String
-  preferences Json?
-  profileNote String?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id           String    @id @default(cuid())
+  userId       String    @unique
+  city         String
+  country      String
+  timezone     String
+  geoSource    String    @default("auto")
+  lastGeoCheck DateTime?
+  lastGeoIp    String?
+  preferences  Json?
+  profileNote  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Room {

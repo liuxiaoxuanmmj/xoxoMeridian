@@ -73,6 +73,7 @@ export async function PATCH(request: Request) {
       city?: string;
       country?: string;
       timezone?: string;
+      geoSource?: string;
     } = {};
     if (body.profileNote !== undefined) {
       // Persist empty strings as null so the agent injection branch can use a
@@ -104,6 +105,11 @@ export async function PATCH(request: Request) {
     }
     if (body.country !== undefined) profileUpdate.country = body.country;
     if (body.timezone !== undefined) profileUpdate.timezone = body.timezone;
+
+    // 用户手动修改 city 或 country 后，后续自动同步不再覆盖
+    if (body.city !== undefined || body.country !== undefined) {
+      profileUpdate.geoSource = "manual";
+    }
 
     await prisma.$transaction(async (tx) => {
       if (Object.keys(userUpdate).length > 0) {

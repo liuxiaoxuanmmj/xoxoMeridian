@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 import { generateSecureToken } from "@/lib/crypto-utils";
+import { getPublicClientIp, shouldSyncGeoProfile, syncGeoProfileInBackground } from "@/lib/geo-ip";
 
 export const USER_COOKIE = "xoxo_session";
 
@@ -306,6 +307,12 @@ export async function getCurrentUser() {
 
   if (!dbSession || dbSession.expiresAt < new Date()) {
     return null;
+  }
+
+  // 自动同步用户地理位置（fire-and-forget，不阻塞认证）
+  const clientIp = getPublicClientIp();
+  if (clientIp && shouldSyncGeoProfile({ profile: dbSession.user.profile, clientIp, now: new Date() })) {
+    syncGeoProfileInBackground(dbSession.user.id, clientIp);
   }
 
   return dbSession.user;
