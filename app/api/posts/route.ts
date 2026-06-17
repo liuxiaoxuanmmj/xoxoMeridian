@@ -14,12 +14,19 @@ export async function GET(request: Request) {
     const authorId = searchParams.get("authorId");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50", 10), 100);
     const cursor = searchParams.get("cursor");
+    const q = searchParams.get("q")?.trim();
 
     const where: Record<string, unknown> = {};
     if (type) where.type = type;
     if (authorId) where.authorId = authorId;
     if (cursor) {
       where.publishedAt = { lt: new Date(cursor) };
+    }
+    if (q) {
+      where.OR = [
+        { title: { contains: q, mode: "insensitive" } },
+        { content: { contains: q, mode: "insensitive" } },
+      ];
     }
 
     const posts = await prisma.post.findMany({

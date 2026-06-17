@@ -115,7 +115,7 @@ describe("atlas upload storage routes", () => {
     expect(response.status).toBe(200);
     expect(mockStorage.read).toHaveBeenCalledWith("atlas/image.webp");
     expect(response.headers.get("Content-Type")).toBe("image/webp");
-    expect(response.headers.get("Cache-Control")).toBe("private, max-age=86400");
+    expect(response.headers.get("Cache-Control")).toBe("private, max-age=31536000, immutable");
     expect(response.headers.get("Content-Length")).toBe("11");
     expect(Buffer.from(await response.arrayBuffer()).toString("utf8")).toBe("image-bytes");
   });

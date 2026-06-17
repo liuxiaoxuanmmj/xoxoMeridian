@@ -1,8 +1,10 @@
 "use client";
 
+import { Suspense } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BrandBadge } from "@/components/layout/BrandBadge";
+import { SearchInput } from "@/components/blog/SearchInput";
 
 export function SiteNav({ currentUser }: { currentUser: { id: string; displayName: string; avatarLabel: string } }) {
   const pathname = usePathname();
@@ -33,6 +35,9 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
           </Link>
         </div>
         <div className="flex items-center gap-3">
+          <Suspense fallback={<div className="w-48 h-[30px]" />}>
+            <SearchInput />
+          </Suspense>
           <Link
             href="/posts/new"
             className="rounded-[10px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs font-medium text-[#3a5b22] hover:bg-[#3a5b22] hover:text-white transition-colors"

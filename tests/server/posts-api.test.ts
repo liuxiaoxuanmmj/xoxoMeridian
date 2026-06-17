@@ -116,7 +116,68 @@ describe("POST /api/posts", () => {
   });
 });
 
-describe("GET /api/posts/[slug]", () => {
+describe("GET /api/posts?q= search", () => {
+    it("adds OR condition for title and content when q is present", async () => {
+      mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+      mockPostFindMany.mockResolvedValue([]);
+
+      await GET(new Request("http://localhost/api/posts?q=docker"));
+
+      expect(mockPostFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            OR: [
+              { title: { contains: "docker", mode: "insensitive" } },
+              { content: { contains: "docker", mode: "insensitive" } },
+            ],
+          },
+        })
+      );
+    });
+
+    it("treats empty q same as no q", async () => {
+      mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+      mockPostFindMany.mockResolvedValue([]);
+
+      await GET(new Request("http://localhost/api/posts?q="));
+
+      expect(mockPostFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} })
+      );
+    });
+
+    it("treats whitespace-only q same as no q", async () => {
+      mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+      mockPostFindMany.mockResolvedValue([]);
+
+      await GET(new Request("http://localhost/api/posts?q=   "));
+
+      expect(mockPostFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: {} })
+      );
+    });
+
+    it("combines q with type filter", async () => {
+      mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+      mockPostFindMany.mockResolvedValue([]);
+
+      await GET(new Request("http://localhost/api/posts?q=docker&type=user_post"));
+
+      expect(mockPostFindMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            type: "user_post",
+            OR: [
+              { title: { contains: "docker", mode: "insensitive" } },
+              { content: { contains: "docker", mode: "insensitive" } },
+            ],
+          },
+        })
+      );
+    });
+  });
+
+  describe("GET /api/posts/[slug]", () => {
   it("requires authentication before loading post details", async () => {
     mockRequireCurrentUser.mockRejectedValue(new Response("Unauthorized", { status: 401 }));
 

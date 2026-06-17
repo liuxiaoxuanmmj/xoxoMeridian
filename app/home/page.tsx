@@ -1,3 +1,4 @@
+import { Suspense } from "react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { SiteNav } from "@/components/blog/SiteNav";
@@ -44,11 +45,13 @@ export default async function HomePage() {
       <ScrollRestore storageKey="home-timeline" />
       <SiteNav currentUser={user} />
       <PageTransition>
-        <HomeTimelineBoard
-          posts={JSON.parse(JSON.stringify(posts))}
-          currentUserId={user.id}
-          initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
-        />
+        <Suspense fallback={null}>
+          <HomeTimelineBoard
+            posts={JSON.parse(JSON.stringify(posts))}
+            currentUserId={user.id}
+            initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
+          />
+        </Suspense>
       </PageTransition>
     </div>
   );

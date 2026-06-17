@@ -35,8 +35,9 @@ export async function GET(
     return new Response(body, {
       headers: {
         "Content-Type": result.contentType,
-        "Cache-Control": "private, max-age=86400",
+        "Cache-Control": "private, max-age=31536000, immutable",
         "Content-Length": String(buffer.length),
+        "Vary": "Cookie",
       },
     });
   } catch (error) {

@@ -284,7 +284,10 @@ export function createAliyunOssAtlasStorage(): AtlasStorage {
       const key = normalizeAtlasStorageKey(resolved.key, env.ALIYUN_OSS_PREFIX);
       await client.put(key, resolved.body, {
         mime: resolved.contentType,
-        headers: { "Content-Type": resolved.contentType },
+        headers: {
+          "Content-Type": resolved.contentType,
+          "Cache-Control": "private, max-age=31536000, immutable",
+        },
       });
 
       return {

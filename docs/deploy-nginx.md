@@ -49,7 +49,7 @@ server {
 
     # Hardening
     add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
-    client_max_body_size 1m;
+    client_max_body_size 5m;
 
     # 关键：把客户端真实 IP 透传给应用，限流和审计依赖这个 header
     proxy_set_header Host              $host;
@@ -103,7 +103,7 @@ server {
     listen 80;
     server_name _;
 
-    client_max_body_size 1m;
+    client_max_body_size 5m;
 
     proxy_set_header Host              $host;
     proxy_set_header X-Real-IP         $remote_addr;
@@ -166,3 +166,186 @@ sudo ufw enable
 
 PostgreSQL 容器 **不向公网暴露**（compose 已经移除 `5432:5432`），
 应用容器同样仅绑定 `127.0.0.1:3000`，外部全部由 Nginx 处理。
+
+## 6. 完整推荐配置
+
+**独立 Nginx 部署**（需在 `nginx.conf` 的 `http {}` 块中预先定义 `upstream` 和 `map`）：
+
+`/etc/nginx/nginx.conf` 的 `http {}` 块中追加：
+
+```nginx
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    ''      close;
+}
+
+upstream xoxo_web {
+    server 127.0.0.1:3000;
+    keepalive 32;
+    keepalive_timeout 60s;
+}
+```
+
+`/etc/nginx/sites-available/xoxo-meridian.conf`（站点配置）：
+
+```nginx
+server {
+    listen 80;
+    listen [::]:80;
+    server_name meridian.example.com;
+
+    location /.well-known/acme-challenge/ {
+        root /var/www/certbot;
+    }
+
+    location / {
+        return 301 https://$host$request_uri;
+    }
+}
+
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name meridian.example.com;
+
+    ssl_certificate     /etc/letsencrypt/live/meridian.example.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/meridian.example.com/privkey.pem;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_prefer_server_ciphers off;
+
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains" always;
+    client_max_body_size 5m;
+
+    # ============================
+    # Next.js 静态资源：长缓存
+    # ============================
+    location ^~ /_next/static/ {
+        proxy_pass http://xoxo_web;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        expires 30d;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+
+    # ============================
+    # SSE 长连接：禁用缓冲和缓存
+    # ============================
+    location ~ ^/api/rooms/[^/]+/stream$ {
+        proxy_pass http://xoxo_web;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Connection "";
+
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 1h;
+        proxy_send_timeout 1h;
+    }
+
+    # ============================
+    # 普通路径：keepalive upstream
+    # ============================
+    location / {
+        proxy_pass http://xoxo_web;
+        proxy_http_version 1.1;
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header REMOTE-HOST $remote_addr;
+        proxy_set_header Connection "";
+
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+    }
+}
+```
+
+**宝塔面板部署**（反代配置文件被 include 到面板生成的 server 块内，只能写 location 和部分指令，不能出现 `server` / `map` / `upstream`）：
+
+宝塔「网站 → 设置 → 反向代理」中直接粘贴以下内容（替换原有的 `#PROXY-START/` … `#PROXY-END/` 区域）：
+
+```nginx
+#PROXY-START/
+
+client_max_body_size 5m;
+
+# ============================
+# Next.js 静态资源：长缓存
+# ============================
+location ^~ /_next/static/ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    expires 30d;
+    add_header Cache-Control "public, max-age=2592000, immutable";
+}
+
+# ============================
+# SSE 长连接：禁用缓冲和缓存
+# ============================
+location ~ ^/api/rooms/[^/]+/stream$ {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header Connection "";
+
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 1h;
+    proxy_send_timeout 1h;
+}
+
+# ============================
+# 普通路径
+# ============================
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header REMOTE-HOST $remote_addr;
+    proxy_set_header Connection "";
+
+    proxy_connect_timeout 60s;
+    proxy_send_timeout 60s;
+    proxy_read_timeout 60s;
+}
+
+#PROXY-END/
+```
+
+## 两种部署模式对比
+
+| 模式 | `map` / `upstream` | `proxy_pass` |
+|------|-------------------|--------------|
+| 独立 Nginx | 在 `nginx.conf` 的 `http {}` 块定义 | `http://xoxo_web` |
+| 宝塔面板 | 不可用（反代文件被 include 到 server 块内） | `http://127.0.0.1:3000` |
+
+关键设计决策：
+
+- **无 `proxy_cache`** — 应用层通过中间件和路由精确控制 Cache-Control，nginx 不越权缓存
+- **无 `proxy_ignore_headers`** — 尊重应用返回的缓存头，避免登录态数据泄露到共享缓存
+- **`/_next/static/` 前缀 location** — 优先级高于 `/`，为指纹化 JS/CSS 提供 30 天强缓存
+- **SSE location 使用正则** — 与 `^~ /_next/static/` 不冲突
+- **主 location 使用 `Connection ""`** — 触发 keepalive 连接复用
+- **`client_max_body_size 5m`** — 与应用的 `ATLAS_MAX_FILE_SIZE` (5MB) 对齐

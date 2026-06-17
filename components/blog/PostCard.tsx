@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { formatPostTime } from "@/lib/post-time";
+import { MarkdownContent } from "@/components/blog/MarkdownContent";
 
 type PostCardProps = {
   post: {
@@ -36,10 +37,7 @@ export function PostCard({ post, isOwner }: PostCardProps) {
       </Link>
 
       {post.content && (
-        <p className="mt-2 text-sm text-black/60 leading-relaxed line-clamp-3">
-          {post.content.slice(0, 150)}
-          {post.content.length > 150 ? "…" : ""}
-        </p>
+        <MarkdownContent content={post.content} variant="preview" />
       )}
 
       {isOwner && (

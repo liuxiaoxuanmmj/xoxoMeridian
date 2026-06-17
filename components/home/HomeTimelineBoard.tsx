@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import type { AtlasConnectionData } from "@/components/atlas/types";
 import { Timeline } from "@/components/blog/Timeline";
 import type { TimelinePost } from "@/components/blog/Timeline";
@@ -27,6 +28,41 @@ export function HomeTimelineBoard({
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [contextMenu, setContextMenu] = useState<HomeContextMenuState | null>(null);
   const [uploadPosition, setUploadPosition] = useState<{ x: number; y: number } | null>(null);
+
+  // Search state
+  const searchParams = useSearchParams();
+  const q = searchParams.get("q")?.trim() ?? "";
+  const [searchResults, setSearchResults] = useState<TimelinePost[] | null>(null);
+
+  useEffect(() => {
+    if (!q) {
+      setSearchResults(null);
+      return;
+    }
+
+    const controller = new AbortController();
+
+    fetch(`/api/posts?q=${encodeURIComponent(q)}&limit=50`, { signal: controller.signal })
+      .then((res) => res.json())
+      .then((data) => {
+        setSearchResults(data.posts ?? []);
+      })
+      .catch((err) => {
+        if (err.name !== "AbortError") {
+          console.error("Search failed:", err);
+          setSearchResults(null);
+        }
+      });
+
+    return () => {
+      controller.abort();
+    };
+  }, [q]);
+
+  const displayPosts = q ? (searchResults ?? posts) : posts;
+  const emptyMessage = q && searchResults !== null && searchResults.length === 0
+    ? "No posts match your search."
+    : undefined;
 
   const photos = useMemo(
     () => elements.filter((element): element is HomePhotoElementData => element.type === "photo" && !!element.imageUrl),
@@ -195,12 +231,13 @@ export function HomeTimelineBoard({
 
       <main className="relative z-20 mx-auto max-w-3xl px-6 py-12">
         <Timeline
-          posts={posts}
+          posts={displayPosts}
           currentUserId={currentUserId}
           postElementByPostId={postElementByPostId}
           connectFromId={connectFromId}
           onSpatialElementClick={selectElement}
           registerSpatialAnchor={registerAnchor}
+          emptyMessage={emptyMessage}
         />
       </main>
 

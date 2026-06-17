@@ -83,9 +83,11 @@ export function Timeline({
   connectFromId = null,
   onSpatialElementClick,
   registerSpatialAnchor,
+  emptyMessage,
 }: {
   posts: TimelinePost[];
   currentUserId: string;
+  emptyMessage?: string;
 } & TimelineSpatialProps) {
   const sorted = useMemo(
     () =>
@@ -113,10 +115,12 @@ export function Timeline({
   if (sorted.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
-        <p className="text-black/40 text-sm">No moments yet.</p>
-        <p className="text-black/30 text-xs mt-1">
-          Write your first post or wait for the agent to log its activities.
-        </p>
+        <p className="text-black/40 text-sm">{emptyMessage ?? "No moments yet."}</p>
+        {!emptyMessage && (
+          <p className="text-black/30 text-xs mt-1">
+            Write your first post or wait for the agent to log its activities.
+          </p>
+        )}
       </div>
     );
   }
@@ -125,7 +129,6 @@ export function Timeline({
 
   return (
     <div className="relative">
-      {/* Center vertical line */}
       <div className="timeline-line" aria-hidden="true" />
 
       <div className="flex flex-col gap-10">

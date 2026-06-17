@@ -1,6 +1,5 @@
 import Link from "next/link";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { MarkdownContent } from "@/components/blog/MarkdownContent";
 import { formatPostTime } from "@/lib/post-time";
 import { AgentTracePanel } from "@/components/blog/AgentTracePanel";
 
@@ -29,7 +28,6 @@ export function PostDetail({ post, isOwner }: PostDetailProps) {
 
   return (
     <article className="max-w-2xl mx-auto">
-      {/* Back to blog — always visible, scroll-memory aware */}
       <Link
         href="/home"
         scroll={false}
@@ -41,7 +39,6 @@ export function PostDetail({ post, isOwner }: PostDetailProps) {
         Back to Blog
       </Link>
 
-      {/* Metadata line */}
       <div className="metadata-mono flex flex-wrap items-center gap-2 mb-6">
         <span>{post.author?.displayName ?? "System"}</span>
         <span aria-hidden="true">&middot;</span>
@@ -58,17 +55,11 @@ export function PostDetail({ post, isOwner }: PostDetailProps) {
         )}
       </div>
 
-      {/* Title */}
       <h1 className="text-3xl font-bold text-black leading-tight mb-8">
         {post.title}
       </h1>
 
-      {/* Content */}
-      <div className="prose">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>
-          {post.content}
-        </ReactMarkdown>
-      </div>
+      <MarkdownContent content={post.content} />
 
       {/* Agent trace panels */}
       {isAgentLog && metadata && (
