@@ -166,7 +166,7 @@ export function MeForm({ initial }: { initial: Initial }) {
           className="min-h-[160px] w-full resize-y rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
           maxLength={NOTE_LIMIT}
           onChange={(event) => update("profileNote", event.target.value)}
-          placeholder="例如：我对花生过敏；我喜欢早睡；遇到我说焦虑时请先共情再给建议。"
+          placeholder="例如：我偏爱吃酸的；我喜欢夏天；遇到事情我不是不愿意承认错误，而是讨厌被冤枉。"
           value={form.profileNote}
         />
         <div className="mt-2 flex flex-wrap items-center gap-2">
