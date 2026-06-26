@@ -111,6 +111,11 @@ function getLoginVisualImageSources() {
 
 export function buildContentSecurityPolicy(): string {
   const loginVisualImageSources = getLoginVisualImageSources();
+  const scriptSrc = ["script-src", "'self'", "'unsafe-inline'"];
+  if (process.env.NODE_ENV === "development") {
+    scriptSrc.push("'unsafe-eval'");
+  }
+
   return [
     "default-src 'self'",
     "base-uri 'self'",
@@ -119,7 +124,7 @@ export function buildContentSecurityPolicy(): string {
     `img-src 'self' data: blob:${loginVisualImageSources.length > 0 ? ` ${loginVisualImageSources.join(" ")}` : ""}`,
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
-    "script-src 'self' 'unsafe-inline'",
+    scriptSrc.join(" "),
     "connect-src 'self'",
     "form-action 'self'",
   ].join("; ");

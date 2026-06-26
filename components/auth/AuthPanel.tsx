@@ -253,37 +253,6 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
           />
         </div>
       </div>
-
-      <style>{`
-        .auth-visual-theme button[type="submit"] {
-          background-color: var(--auth-accent);
-        }
-
-        .auth-visual-theme button[type="submit"]:hover:not(:disabled) {
-          background-color: var(--auth-accent-hover);
-        }
-
-        .auth-visual-theme input:focus {
-          border-color: var(--auth-accent);
-          box-shadow: 0 0 0 2px color-mix(in srgb, var(--auth-accent) 16%, transparent);
-        }
-
-        .auth-visual-theme button:focus-visible,
-        .auth-visual-theme a:focus-visible {
-          outline: 2px solid color-mix(in srgb, var(--auth-accent) 52%, transparent);
-          outline-offset: 2px;
-        }
-
-        @media (prefers-reduced-motion: reduce) {
-          .auth-visual-theme *,
-          .auth-visual-theme *::before,
-          .auth-visual-theme *::after {
-            transition-duration: 0.01ms !important;
-            animation-duration: 0.01ms !important;
-            animation-iteration-count: 1 !important;
-          }
-        }
-      `}</style>
     </div>
   );
 }

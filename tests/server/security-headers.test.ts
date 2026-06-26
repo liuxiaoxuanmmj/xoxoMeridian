@@ -13,6 +13,7 @@ function getDirective(csp: string, name: string) {
 describe("security headers", () => {
   afterEach(() => {
     delete process.env.LOGIN_VISUALS_IMAGE_SRC;
+    process.env.NODE_ENV = "test";
   });
 
   it("keeps external login visual image sources disabled by default", async () => {
@@ -45,5 +46,23 @@ describe("security headers", () => {
     expect(imgSrc).toBe("img-src 'self' data: blob: https://cdn.example.com");
     expect(imgSrc).not.toContain("'unsafe-inline'");
     expect(imgSrc).not.toContain("javascript:");
+  });
+
+  it("allows eval only for Next.js development scripts", async () => {
+    process.env.NODE_ENV = "development";
+
+    const csp = buildContentSecurityPolicy();
+    const scriptSrc = getDirective(csp, "script-src");
+
+    expect(scriptSrc).toContain("'unsafe-eval'");
+  });
+
+  it("keeps eval disabled outside development", async () => {
+    process.env.NODE_ENV = "production";
+
+    const csp = buildContentSecurityPolicy();
+    const scriptSrc = getDirective(csp, "script-src");
+
+    expect(scriptSrc).not.toContain("'unsafe-eval'");
   });
 });

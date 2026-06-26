@@ -28,3 +28,6 @@ images/
 .codex/
 
 docs/
+
+# Dev-only scripts (not for production)
+scripts/dev.sh
