@@ -5,7 +5,14 @@ FROM node:22-alpine AS deps
 RUN apk add --no-cache openssl
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN --mount=type=cache,target=/root/.npm npm ci
+
+# ---- prisma client ----
+FROM deps AS prisma-client
+COPY prisma ./prisma
+RUN DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public" \
+    DIRECT_URL="postgresql://placeholder:placeholder@localhost:5432/placeholder?schema=public" \
+    npx prisma generate
 
 # ---- builder ----
 FROM node:22-alpine AS builder
@@ -21,13 +28,13 @@ ENV DATABASE_URL="postgresql://placeholder:placeholder@localhost:5432/placeholde
     NEXT_PUBLIC_APP_URL="http://localhost:3000" \
     SESSION_SECRET="build-time-placeholder-build-time-placeholder" \
     INVITE_CODE="build-time-placeholder"
-RUN npx prisma generate && npm run build
+RUN npm run build
 
 # ---- web runner (standalone, non-root) ----
 FROM node:22-alpine AS web-runner
 RUN apk add --no-cache openssl tini wget
 WORKDIR /app
-ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0
+ENV NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 PORT=3000 HOSTNAME=0.0.0.0 NODE_OPTIONS="--max-old-space-size=512"
 RUN addgroup -S -g 1001 app && adduser -S -u 1001 -G app app
 COPY --from=builder --chown=app:app /app/.next/standalone ./
 COPY --from=builder --chown=app:app /app/public ./public
@@ -45,10 +52,10 @@ CMD ["node","server.js"]
 FROM node:22-alpine AS worker-runner
 RUN apk add --no-cache openssl tini
 WORKDIR /app
-ENV NODE_ENV=production
+ENV NODE_ENV=production NODE_OPTIONS="--max-old-space-size=512"
 RUN addgroup -S -g 1001 app && adduser -S -u 1001 -G app app
 COPY --from=deps --chown=app:app /app/node_modules ./node_modules
-COPY --from=builder --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=prisma-client --chown=app:app /app/node_modules/.prisma ./node_modules/.prisma
 COPY --chown=app:app package.json package-lock.json tsconfig.json ./
 COPY --chown=app:app prisma ./prisma
 COPY --chown=app:app agent ./agent

@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import Link from "next/link";
 
+import { BrandBadge } from "@/components/layout/BrandBadge";
 import { LoginForm } from "@/components/auth/LoginForm";
 import { RegisterForm } from "@/components/auth/RegisterForm";
 import {
@@ -148,15 +150,14 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
 
   return (
     <div className="auth-visual-theme relative flex min-h-screen w-full" style={rootStyle}>
-      {/* Small brand badge — top-left corner */}
-      <div className="absolute top-6 left-6 z-10 flex items-center gap-2.5">
-        <div className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[var(--auth-accent)] text-sm font-bold text-white">
-          X
-        </div>
-        <div>
-          <p className="text-xs font-semibold leading-tight text-black">XOXO</p>
-          <p className="text-[10px] font-medium leading-tight text-black/40">Meridian</p>
-        </div>
+      <div className="absolute top-6 left-6 z-10 flex flex-col gap-3">
+        <BrandBadge href="/home" accentClass="bg-[var(--auth-accent)]" />
+        <Link
+          href="/about"
+          className="text-[11px] font-medium text-black/35 hover:text-black/60 transition-colors duration-200 ml-1"
+        >
+          About-me
+        </Link>
       </div>
 
       {/* Form */}
@@ -186,8 +187,8 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
                 type="button"
                 onClick={() => setMode("login")}
                 className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${mode === "login"
-                    ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
-                    : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
+                  ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
+                  : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
                   }`}
               >
                 登录
@@ -196,8 +197,8 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
                 type="button"
                 onClick={() => setMode("register")}
                 className={`flex-1 rounded-[10px] py-3 text-sm font-medium transition-colors duration-200 cursor-pointer ${mode === "register"
-                    ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
-                    : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
+                  ? "bg-[var(--auth-accent)] text-white hover:bg-[var(--auth-accent-hover)]"
+                  : "border border-[#d9d9d9] text-black/70 hover:bg-neutral-50 focus:ring-2 focus:ring-[var(--auth-accent)]"
                   }`}
               >
                 注册

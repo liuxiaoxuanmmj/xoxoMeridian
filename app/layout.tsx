@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
-import { Inter, Fira_Code } from "next/font/google";
+import { Inter, Fira_Code, Lora, Caveat } from "next/font/google";
 
 import "@/app/globals.css";
 
@@ -27,6 +27,20 @@ const firaCode = Fira_Code({
   variable: "--font-fira-code",
 });
 
+const lora = Lora({
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  variable: "--font-lora",
+});
+
+const caveat = Caveat({
+  subsets: ["latin"],
+  display: "swap",
+  preload: false,
+  variable: "--font-caveat",
+});
+
 export const metadata: Metadata = {
   title: "XOXO Meridian",
   description: "A private two-person long-distance chat room with a local life assistant."
@@ -34,7 +48,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="zh-CN" className={`${poppins.variable} ${inter.variable} ${firaCode.variable}`}>
+    <html lang="zh-CN" className={`${poppins.variable} ${inter.variable} ${firaCode.variable} ${lora.variable} ${caveat.variable}`}>
       <body>{children}</body>
     </html>
   );

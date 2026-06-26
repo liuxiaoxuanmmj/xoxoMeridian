@@ -12,6 +12,13 @@ const WEATHER_CACHE = new Map<string, CacheEntry<QWeatherSnapshot>>();
 
 const LOCATION_TTL_MS = 24 * 60 * 60 * 1000;
 const WEATHER_TTL_MS = 10 * 60 * 1000;
+const MAX_CACHE_SIZE = 500;
+
+function evictOldest<K, V>(map: Map<K, CacheEntry<V>>, max: number) {
+  if (map.size <= max) return;
+  const oldest = map.keys().next().value;
+  if (oldest !== undefined) map.delete(oldest);
+}
 
 const FETCH_TIMEOUT_MS = 8000;
 
@@ -148,6 +155,7 @@ async function getQWeather(city: string, includeForecast: boolean, apiKey: strin
   const daily = includeForecast ? await fetchWeather3d(location.id, apiKey, apiHost) : undefined;
 
   const snapshot: QWeatherSnapshot = { location, now, daily };
+  evictOldest(WEATHER_CACHE, MAX_CACHE_SIZE);
   WEATHER_CACHE.set(cacheKey, { value: snapshot, expiresAt: Date.now() + WEATHER_TTL_MS });
   return formatSnapshot(snapshot);
 }
@@ -171,6 +179,7 @@ async function resolveLocation(city: string, apiKey: string, geoHost: string): P
     throw new Error(`QWeather city lookup returned no result for "${city}" (code=${data.code})`);
   }
 
+  evictOldest(LOCATION_CACHE, MAX_CACHE_SIZE);
   LOCATION_CACHE.set(cacheKey, { value: first, expiresAt: Date.now() + LOCATION_TTL_MS });
   return first;
 }

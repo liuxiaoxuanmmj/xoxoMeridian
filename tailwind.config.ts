@@ -12,6 +12,8 @@ const config: Config = {
         sans: ["var(--font-inter)", "system-ui", "sans-serif"],
         mono: ["var(--font-fira-code)", "JetBrains Mono", "ui-monospace", "monospace"],
         poppins: ["var(--font-poppins)", "system-ui", "sans-serif"],
+        lora: ["var(--font-lora)", "serif"],
+        caveat: ["var(--font-caveat)", "cursive"],
       },
       colors: {
         // Keep existing colors for chat compatibility
@@ -26,7 +28,9 @@ const config: Config = {
         sage: {
           50: "#f3f7f0",
           100: "#dfead8",
+          200: "#c8ddbf",
           300: "#a7c49b",
+          400: "#7da878",
           500: "#668a5b",
           600: "#527349",
           700: "#3f5d38"

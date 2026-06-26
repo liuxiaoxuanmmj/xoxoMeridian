@@ -67,11 +67,14 @@ x-hardening: &hardening
     - SETUID
     - DAC_OVERRIDE
 
+x-worker-image: &worker-image xoxo-meridian-worker:latest
+
 services:
   postgres:
     image: postgres:16-alpine
     container_name: xoxo-meridian-postgres
     restart: unless-stopped
+    mem_limit: 512m
     environment:
       POSTGRES_USER: xoxo
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
@@ -89,11 +92,10 @@ services:
     <<: *hardening
 
   init:
-    build:
-      context: .
-      target: worker-runner
+    image: *worker-image
     container_name: xoxo-meridian-init
     restart: "no"
+    mem_limit: 512m
     depends_on:
       postgres:
         condition: service_healthy
@@ -120,6 +122,7 @@ services:
       target: web-runner
     container_name: xoxo-meridian-web
     restart: unless-stopped
+    mem_limit: 768m
     depends_on:
       postgres:
         condition: service_healthy
@@ -142,11 +145,13 @@ services:
     <<: *hardening
 
   agent-worker:
+    image: *worker-image
     build:
       context: .
       target: worker-runner
     container_name: xoxo-meridian-agent-worker
     restart: unless-stopped
+    mem_limit: 768m
     depends_on:
       postgres:
         condition: service_healthy
