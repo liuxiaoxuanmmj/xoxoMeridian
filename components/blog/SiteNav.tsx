@@ -10,6 +10,7 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
   const pathname = usePathname();
   const isHome = pathname === "/home";
   const isChat = pathname.startsWith("/chat");
+  const isStudy = pathname.startsWith("/study");
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[#e8e8e8] bg-white/95 backdrop-blur-sm">
@@ -32,6 +33,14 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
             }`}
           >
             Chat
+          </Link>
+          <Link
+            href="/study"
+            className={`text-xs font-medium transition-colors ${
+              isStudy ? "text-[#3a5b22]" : "text-black/50 hover:text-black"
+            }`}
+          >
+            Study
           </Link>
         </div>
         <div className="flex items-center gap-3">
