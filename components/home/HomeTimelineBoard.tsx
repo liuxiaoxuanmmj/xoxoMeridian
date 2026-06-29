@@ -9,15 +9,25 @@ import { HomeSpatialLayer } from "@/components/home/HomeSpatialLayer";
 import { HomeUploadModal } from "@/components/home/HomeUploadModal";
 import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData, HomeSpatialElementData } from "@/components/home/types";
 import { isHomeBlankTarget } from "@/lib/home-spatial";
+import { buildTimelineFocusIntervals } from "@/lib/study";
 
 export function HomeTimelineBoard({
   posts,
   currentUserId,
   initialSnapshot,
+  focusSessions,
 }: {
   posts: TimelinePost[];
   currentUserId: string;
   initialSnapshot: HomeBoardSnapshot;
+  focusSessions?: Array<{
+    id: string;
+    userId: string;
+    startedAt: string;
+    endedAt: string;
+    actualMinutes: number;
+    user?: { displayName: string } | null;
+  }>;
 }) {
   const boardRef = useRef<HTMLDivElement>(null);
   const anchorsRef = useRef(new Map<string, HomeAnchor>());
@@ -63,6 +73,11 @@ export function HomeTimelineBoard({
   const emptyMessage = q && searchResults !== null && searchResults.length === 0
     ? "No posts match your search."
     : undefined;
+
+  const focusIntervals = useMemo(
+    () => focusSessions ? buildTimelineFocusIntervals(focusSessions) : [],
+    [focusSessions]
+  );
 
   const photos = useMemo(
     () => elements.filter((element): element is HomePhotoElementData => element.type === "photo" && !!element.imageUrl),
@@ -233,6 +248,7 @@ export function HomeTimelineBoard({
         <Timeline
           posts={displayPosts}
           currentUserId={currentUserId}
+          focusIntervals={focusIntervals}
           postElementByPostId={postElementByPostId}
           connectFromId={connectFromId}
           onSpatialElementClick={selectElement}

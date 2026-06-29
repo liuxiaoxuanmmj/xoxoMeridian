@@ -1,9 +1,17 @@
 "use client";
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { PostCard } from "@/components/blog/PostCard";
 import { AgentLogCard } from "@/components/blog/AgentLogCard";
 import { PostCardSpatialShell } from "@/components/home/PostCardSpatialShell";
+import {
+  TimelineFocusOverlay,
+  type TimelineFocusSegment,
+} from "@/components/blog/TimelineFocusOverlay";
+import {
+  projectFocusIntervalsToSegments,
+  type TimelineFocusInterval,
+} from "@/lib/study";
 import { useScrollReveal } from "@/lib/useScrollReveal";
 import { cn } from "@/lib/utils";
 
@@ -82,6 +90,7 @@ type TimelineSpatialProps = {
 export function Timeline({
   posts,
   currentUserId,
+  focusIntervals = [],
   postElementByPostId = {},
   connectFromId = null,
   onSpatialElementClick,
@@ -90,8 +99,12 @@ export function Timeline({
 }: {
   posts: TimelinePost[];
   currentUserId: string;
+  focusIntervals?: TimelineFocusInterval[];
   emptyMessage?: string;
 } & TimelineSpatialProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const postRefs = useRef(new Map<string, HTMLDivElement | null>());
+  const [focusSegments, setFocusSegments] = useState<TimelineFocusSegment[]>([]);
   const sorted = useMemo(
     () =>
       [...posts].sort(
@@ -113,7 +126,41 @@ export function Timeline({
   }, [sorted]);
 
   const leftUserId = humanAuthors[0] ?? currentUserId;
-  const rightUserId = humanAuthors[1] ?? "";
+
+  const recalcFocusSegments = useCallback(() => {
+    if (!containerRef.current || focusIntervals.length === 0) {
+      setFocusSegments([]);
+      return;
+    }
+
+    const markers = sorted
+      .filter((post) => post.type !== "agent_log")
+      .map((post) => {
+        const node = postRefs.current.get(post.id);
+        if (!node) return null;
+        return {
+          publishedAt: post.publishedAt,
+          centerY: node.offsetTop + node.offsetHeight / 2,
+        };
+      })
+      .filter((marker): marker is { publishedAt: string | Date; centerY: number } => Boolean(marker));
+
+    if (markers.length === 0) {
+      setFocusSegments([]);
+      return;
+    }
+
+    setFocusSegments(projectFocusIntervalsToSegments(focusIntervals, markers));
+  }, [focusIntervals, sorted]);
+
+  useLayoutEffect(() => {
+    recalcFocusSegments();
+  }, [recalcFocusSegments]);
+
+  useEffect(() => {
+    window.addEventListener("resize", recalcFocusSegments);
+    return () => window.removeEventListener("resize", recalcFocusSegments);
+  }, [recalcFocusSegments]);
 
   if (sorted.length === 0) {
     return (
@@ -131,8 +178,9 @@ export function Timeline({
   let agentSide: "left" | "right" = "left";
 
   return (
-    <div className="relative">
+    <div ref={containerRef} className="relative">
       <div className="timeline-line" aria-hidden="true" />
+      {focusSegments.length > 0 ? <TimelineFocusOverlay segments={focusSegments} /> : null}
 
       <div className="flex flex-col gap-10">
         {sorted.map((post) => {
@@ -151,19 +199,26 @@ export function Timeline({
           const elementId = postElementByPostId[post.id];
 
           return (
-            <TimelineItem key={post.id} side={isLeft ? "left" : "right"}>
-              <PostCardSpatialShell
-                elementId={elementId}
-                isConnectFrom={connectFromId === elementId}
-                onSpatialClick={onSpatialElementClick}
-                registerSpatialAnchor={registerSpatialAnchor}
-              >
-                <PostCard
-                  post={post}
-                  isOwner={post.authorId === currentUserId}
-                />
-              </PostCardSpatialShell>
-            </TimelineItem>
+            <div
+              key={post.id}
+              ref={(node) => {
+                postRefs.current.set(post.id, node);
+              }}
+            >
+              <TimelineItem side={isLeft ? "left" : "right"}>
+                <PostCardSpatialShell
+                  elementId={elementId}
+                  isConnectFrom={connectFromId === elementId}
+                  onSpatialClick={onSpatialElementClick}
+                  registerSpatialAnchor={registerSpatialAnchor}
+                >
+                  <PostCard
+                    post={post}
+                    isOwner={post.authorId === currentUserId}
+                  />
+                </PostCardSpatialShell>
+              </TimelineItem>
+            </div>
           );
         })}
       </div>
