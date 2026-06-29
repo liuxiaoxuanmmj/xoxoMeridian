@@ -179,6 +179,10 @@ export const atlasDragSchema = z.object({
   y: z.number().finite(),
 });
 
+export const studyStartSchema = z.object({
+  plannedMinutes: z.number().int().min(1).max(180).optional(),
+});
+
 export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const result = schema.safeParse(body);
   if (!result.success) {
