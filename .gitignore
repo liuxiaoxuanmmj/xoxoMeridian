@@ -20,6 +20,9 @@ data/atlas-uploads/
 .worktrees
 .worktrees/
 
+# Study notes and experiments (use study-notes/ instead of study/ to avoid blocking app/study and components/study)
+study-notes/
+
 images/
 .claude/
 .codex/
