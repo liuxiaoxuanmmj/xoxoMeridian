@@ -1,3 +1,8 @@
+export type ChatStudyStatus = {
+  state: "idle" | "focusing";
+  expectedEndAt?: string | null;
+};
+
 export type ChatUser = {
   id: string;
   displayName: string;
@@ -8,6 +13,7 @@ export type ChatUser = {
     timezone: string;
     preferences?: unknown;
   } | null;
+  studyStatus?: ChatStudyStatus | null;
 };
 
 export type ChatMessage = {

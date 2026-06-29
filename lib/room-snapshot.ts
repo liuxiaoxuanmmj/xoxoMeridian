@@ -64,8 +64,44 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     userIdForRoomList ? listRoomsForUser(userIdForRoomList) : Promise.resolve(undefined)
   ]);
 
+  const focusStates = room
+    ? await prisma.focusState.findMany({
+        where: {
+          userId: {
+            in: room.participants.map((participant) => participant.userId),
+          },
+        },
+        select: {
+          userId: true,
+          status: true,
+          expectedEndAt: true,
+        },
+      })
+    : [];
+
+  const studyStatusByUserId = new Map(
+    focusStates.map((state) => [
+      state.userId,
+      {
+        state: state.status,
+        expectedEndAt: state.expectedEndAt?.toISOString() ?? null,
+      },
+    ])
+  );
+
   return {
-    room,
+    room: room
+      ? {
+          ...room,
+          participants: room.participants.map((participant) => ({
+            ...participant,
+            user: {
+              ...participant.user,
+              studyStatus: studyStatusByUserId.get(participant.userId) ?? null,
+            },
+          })),
+        }
+      : room,
     messages,
     memos,
     scheduledJobs,
