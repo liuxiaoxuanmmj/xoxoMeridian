@@ -1,3 +1,5 @@
+import { prisma } from "@/lib/prisma";
+
 type StudySessionLike = {
   id: string;
   userId: string;
@@ -145,4 +147,56 @@ export function projectFocusIntervalsToSegments(
       heightPx: Math.max(8, Math.abs(endY - startY)),
     };
   });
+}
+
+export async function getStudyPageData(userId: string, timeZone: string) {
+  const statsWindowStart = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+
+  const [state, recentSessions, statsSessions] = await Promise.all([
+    prisma.focusState.findUnique({
+      where: { userId },
+      select: {
+        status: true,
+        plannedMinutes: true,
+        startedAt: true,
+        expectedEndAt: true,
+      },
+    }),
+    prisma.focusSession.findMany({
+      where: { userId, status: "completed" },
+      orderBy: { startedAt: "desc" },
+      take: 10,
+    }),
+    prisma.focusSession.findMany({
+      where: {
+        userId,
+        status: "completed",
+        startedAt: { gte: statsWindowStart },
+      },
+      orderBy: { startedAt: "desc" },
+    }),
+  ]);
+
+  return {
+    currentState: state
+      ? {
+          ...state,
+          startedAt: state.startedAt?.toISOString() ?? null,
+          expectedEndAt: state.expectedEndAt?.toISOString() ?? null,
+        }
+      : {
+          status: "idle" as const,
+          plannedMinutes: 25,
+          startedAt: null,
+          expectedEndAt: null,
+        },
+    recentSessions: recentSessions.map((session) => ({
+      id: session.id,
+      userId: session.userId,
+      startedAt: session.startedAt.toISOString(),
+      endedAt: session.endedAt.toISOString(),
+      actualMinutes: session.actualMinutes,
+    })),
+    stats: buildStudyStats(statsSessions, new Date(), timeZone),
+  };
 }
