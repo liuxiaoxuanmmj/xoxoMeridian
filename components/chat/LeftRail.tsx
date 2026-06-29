@@ -154,24 +154,6 @@ export function LeftRail({
             ))}
           </div>
         </section>
-
-        <section>
-          <h2 className="text-sm font-semibold text-black">空间</h2>
-          <div className="mt-3">
-            <Link
-              href={`/chat/${currentRoomId}/atlas`}
-              className="flex w-full items-center gap-3 rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] px-3 py-2.5 text-left text-sm font-medium text-[#3a5b22] transition-colors duration-200 hover:bg-[#3a5b22]/10 focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
-            >
-              <span className="flex h-8 w-8 items-center justify-center rounded-[8px] bg-[#3a5b22]/10 text-base">
-                🗺
-              </span>
-              <div>
-                <p className="leading-tight">Atlas</p>
-                <p className="text-[11px] font-normal text-black/40">记忆画板</p>
-              </div>
-            </Link>
-          </div>
-        </section>
       </div>
     </aside>
   );

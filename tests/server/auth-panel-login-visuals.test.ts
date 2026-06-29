@@ -65,6 +65,7 @@ function installDom({ reducedMotion = false }: { reducedMotion?: boolean } = {})
   vi.stubGlobal("window", dom.window);
   vi.stubGlobal("document", dom.window.document);
   vi.stubGlobal("navigator", dom.window.navigator);
+  vi.stubGlobal("self", dom.window);
   vi.stubGlobal("HTMLElement", dom.window.HTMLElement);
   vi.stubGlobal("MediaQueryListEvent", dom.window.Event);
 
