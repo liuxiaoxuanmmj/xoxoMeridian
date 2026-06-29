@@ -108,6 +108,10 @@ export const agentDispatchSchema = z
     message: "Either content or sourceMessageId is required",
   });
 
+export const studyStartSchema = z.object({
+  plannedMinutes: z.number().int().min(1).max(180).optional(),
+});
+
 export class ValidationError extends Error {
   readonly issues: ReadonlyArray<{ path: string; message: string }>;
   constructor(issues: z.ZodIssue[]) {
@@ -177,10 +181,6 @@ export const atlasDragSchema = z.object({
   elementId: z.string().min(1),
   x: z.number().finite(),
   y: z.number().finite(),
-});
-
-export const studyStartSchema = z.object({
-  plannedMinutes: z.number().int().min(1).max(180).optional(),
 });
 
 export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
