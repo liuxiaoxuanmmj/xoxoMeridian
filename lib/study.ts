@@ -1,5 +1,17 @@
 import { prisma } from "@/lib/prisma";
 
+export async function getStudyRoomForUser(userId: string) {
+  const participant = await prisma.roomParticipant.findFirst({
+    where: { userId },
+    include: { room: true },
+    orderBy: { joinedAt: "asc" },
+  });
+  if (!participant) {
+    throw new Response("The current user does not belong to a room.", { status: 404 });
+  }
+  return participant.room;
+}
+
 type StudySessionLike = {
   id: string;
   userId: string;
