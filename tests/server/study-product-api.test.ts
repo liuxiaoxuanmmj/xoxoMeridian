@@ -103,7 +103,7 @@ describe("productized study timer API", () => {
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("paused");
     expect(mockFocusStateUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: "paused", expectedEndAt: null }),
+      data: expect.objectContaining({ status: "paused", expectedEndAt: null, remainingSeconds: 900 }),
     }));
   });
 
@@ -132,6 +132,7 @@ describe("productized study timer API", () => {
 
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("running");
+    expect(data.state.startedAt).toBe("2026-06-30T01:00:00.000Z");
   });
 
   it("stops a paused short break and writes a short session", async () => {
@@ -160,6 +161,36 @@ describe("productized study timer API", () => {
     expect(data.session.mode).toBe("short");
     expect(mockFocusSessionCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ mode: "short", roomId: "room-1" }),
+    }));
+  });
+
+  it("stops a running focus timer and writes a session with correct actual minutes", async () => {
+    mockFocusStateFindUnique.mockResolvedValue({
+      userId: "user-1",
+      status: "running",
+      mode: "focus",
+      plannedMinutes: 25,
+      startedAt: new Date("2026-06-30T01:00:00.000Z"),
+      expectedEndAt: new Date("2026-06-30T01:25:00.000Z"),
+      roomId: "room-1",
+    });
+    mockFocusSessionCreate.mockResolvedValue({
+      id: "session-2",
+      mode: "focus",
+      startedAt: new Date("2026-06-30T01:00:00.000Z"),
+      endedAt: new Date("2026-06-30T01:10:00.000Z"),
+      actualMinutes: 10,
+    });
+    mockFocusStateUpdate.mockResolvedValue({ status: "idle" });
+
+    const response = await STOP(new Request("http://localhost/api/study/stop", { method: "POST" }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.session.mode).toBe("focus");
+    expect(data.session.actualMinutes).toBe(10);
+    expect(mockFocusSessionCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ mode: "focus", roomId: "room-1" }),
     }));
   });
 });
