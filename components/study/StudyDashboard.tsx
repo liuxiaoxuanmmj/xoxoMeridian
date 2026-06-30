@@ -169,11 +169,8 @@ function ModeTabs({
             disabled={disabled}
             className={`px-4 py-1.5 rounded-[8px] text-xs font-medium transition-colors ${active
                 ? "bg-white text-[#3a5b22] shadow-sm"
-                : isPlaceholder
-                  ? "text-black/25"
-                  : "text-black/40 hover:text-black/60"
-              }`}
-            title={isPlaceholder ? "即将推出" : undefined}
+                : "text-black/40 hover:text-black/60"
+            }`}
           >
             {MODE_LABELS[m]}
           </button>
