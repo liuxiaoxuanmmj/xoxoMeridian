@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getRoomSnapshot } from "@/lib/room-snapshot";
 
 export async function getStudyRoomForUser(userId: string) {
   const participant = await prisma.roomParticipant.findFirst({
@@ -237,18 +238,34 @@ export function projectFocusIntervalsToSegments(
   });
 }
 
-export async function getStudyPageData(userId: string, timeZone: string) {
-  const statsWindowStart = new Date(Date.now() - 8 * 24 * 60 * 60 * 1000);
+export async function getStudyPageData(
+  user: { id: string; displayName: string; avatarLabel: string },
+  timeZone: string
+) {
+  const room = await getStudyRoomForUser(user.id);
+  const userId = user.id;
+  const now = new Date();
+  const statsWindowStart = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+  const todayKey = getLocalDateKey(now, timeZone);
+  const localDateParts = getLocalDateParts(now, timeZone);
+  const todayStartUtc = new Date(Date.UTC(localDateParts.year, localDateParts.month - 1, localDateParts.day));
 
-  const [state, recentSessions, statsSessions] = await Promise.all([
+  const [state, goals, recentSessions, statsSessions, participants, memberStates] = await Promise.all([
     prisma.focusState.findUnique({
       where: { userId },
       select: {
         status: true,
+        mode: true,
         plannedMinutes: true,
+        remainingSeconds: true,
         startedAt: true,
         expectedEndAt: true,
+        pausedAt: true,
       },
+    }),
+    prisma.studyGoal.findMany({
+      where: { userId, roomId: room.id, localDate: todayKey },
+      orderBy: { sortOrder: "asc" },
     }),
     prisma.focusSession.findMany({
       where: { userId, status: "completed" },
@@ -263,21 +280,101 @@ export async function getStudyPageData(userId: string, timeZone: string) {
       },
       orderBy: { startedAt: "desc" },
     }),
+    prisma.roomParticipant.findMany({
+      where: { roomId: room.id },
+      include: {
+        user: {
+          select: { id: true, displayName: true, avatarLabel: true },
+        },
+      },
+      orderBy: { joinedAt: "asc" },
+    }),
+    prisma.focusState.findMany({
+      where: { roomId: room.id },
+      select: {
+        userId: true,
+        status: true,
+        mode: true,
+        expectedEndAt: true,
+        lastStudySeenAt: true,
+      },
+    }),
   ]);
 
+  const memberStateMap = new Map(
+    memberStates.map((fs) => [fs.userId, fs])
+  );
+
+  const isOnline = (lastStudySeenAt: Date | null) => {
+    if (!lastStudySeenAt) return false;
+    return now.getTime() - new Date(lastStudySeenAt).getTime() <= 45_000;
+  };
+
+  const memberIds = participants.map((p) => p.userId);
+
+  const todayMemberSessions = await prisma.focusSession.findMany({
+    where: {
+      userId: { in: memberIds },
+      status: "completed",
+      mode: "focus",
+      startedAt: { gte: todayStartUtc },
+    },
+  });
+
+  const todayMinutesMap = new Map<string, number>();
+  for (const session of todayMemberSessions) {
+    todayMinutesMap.set(
+      session.userId,
+      (todayMinutesMap.get(session.userId) ?? 0) + session.actualMinutes
+    );
+  }
+
+  const members = participants.map((p) => {
+    const fs = memberStateMap.get(p.userId);
+    const focusStatus = fs ? normalizeFocusStatus(fs.status) : "idle";
+    return {
+      userId: p.userId,
+      displayName: p.user.displayName,
+      avatarLabel: p.user.avatarLabel,
+      online: isOnline(fs?.lastStudySeenAt ?? null),
+      studyStatus: fs
+        ? {
+            state: focusStatus,
+            mode: fs.mode ?? "focus",
+            expectedEndAt: fs.expectedEndAt?.toISOString() ?? null,
+            lastStudySeenAt: fs.lastStudySeenAt?.toISOString() ?? null,
+          }
+        : null,
+      todayFocusMinutes: todayMinutesMap.get(p.userId) ?? 0,
+    };
+  });
+
+  const chatSnapshot = await getRoomSnapshot(room.id, user.id);
+
   return {
+    room: { id: room.id, slug: room.slug, name: room.name },
+    currentUser: { id: user.id, displayName: user.displayName, avatarLabel: user.avatarLabel },
     currentState: state
       ? {
-          ...state,
+          status: normalizeFocusStatus(state.status),
+          mode: state.mode ?? "focus",
+          plannedMinutes: state.plannedMinutes,
+          remainingSeconds: state.remainingSeconds ?? null,
           startedAt: state.startedAt?.toISOString() ?? null,
           expectedEndAt: state.expectedEndAt?.toISOString() ?? null,
+          pausedAt: state.pausedAt?.toISOString() ?? null,
         }
       : {
           status: "idle" as const,
+          mode: "focus" as const,
           plannedMinutes: 25,
+          remainingSeconds: null,
           startedAt: null,
           expectedEndAt: null,
+          pausedAt: null,
         },
+    goals,
+    members,
     recentSessions: recentSessions.map((session) => ({
       id: session.id,
       userId: session.userId,
@@ -285,6 +382,7 @@ export async function getStudyPageData(userId: string, timeZone: string) {
       endedAt: session.endedAt.toISOString(),
       actualMinutes: session.actualMinutes,
     })),
-    stats: buildStudyStats(statsSessions, new Date(), timeZone),
+    stats: buildStudyStats(statsSessions, now, timeZone),
+    chatSnapshot,
   };
 }

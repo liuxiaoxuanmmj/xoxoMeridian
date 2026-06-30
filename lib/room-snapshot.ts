@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { listRoomsForUser } from "@/lib/room-list";
+import { normalizeFocusStatus } from "@/lib/study";
 
 export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string) {
   const [
@@ -74,7 +75,9 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
         select: {
           userId: true,
           status: true,
+          mode: true,
           expectedEndAt: true,
+          lastStudySeenAt: true,
         },
       })
     : [];
@@ -83,8 +86,10 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     focusStates.map((state) => [
       state.userId,
       {
-        state: state.status,
+        state: normalizeFocusStatus(state.status),
+        mode: state.mode,
         expectedEndAt: state.expectedEndAt?.toISOString() ?? null,
+        lastStudySeenAt: state.lastStudySeenAt?.toISOString() ?? null,
       },
     ])
   );

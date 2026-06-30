@@ -212,6 +212,7 @@ describe("productized study timer API", () => {
 
 import { POST as CREATE_GOAL } from "@/app/api/study/goals/route";
 import { PATCH as PATCH_GOAL } from "@/app/api/study/goals/[goalId]/route";
+import { POST as PRESENCE } from "@/app/api/study/presence/route";
 
 describe("study goals API", () => {
   it("creates a goal for today's local date in the study room", async () => {
@@ -259,5 +260,36 @@ describe("study goals API", () => {
 
     expect(response.status).toBe(200);
     expect(data.goal.done).toBe(true);
+  });
+});
+
+describe("study presence API", () => {
+  it("records that the current user is viewing the study room without changing timer state", async () => {
+    mockFocusStateUpsert.mockResolvedValue({
+      status: "idle",
+      mode: "focus",
+      plannedMinutes: 25,
+      remainingSeconds: null,
+      startedAt: null,
+      expectedEndAt: null,
+      pausedAt: null,
+      lastStudySeenAt: new Date("2026-06-30T01:10:00.000Z"),
+    });
+
+    const response = await PRESENCE(new Request("http://localhost/api/study/presence", { method: "POST" }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockFocusStateUpsert).toHaveBeenCalledWith(expect.objectContaining({
+      update: expect.objectContaining({ lastStudySeenAt: expect.any(Date) }),
+      create: expect.objectContaining({
+        userId: "user-1",
+        roomId: "room-1",
+        status: "idle",
+        mode: "focus",
+        plannedMinutes: 25,
+      }),
+    }));
   });
 });

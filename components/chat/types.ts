@@ -1,6 +1,8 @@
 export type ChatStudyStatus = {
-  state: "idle" | "focusing";
-  expectedEndAt?: string | null;
+  state: "idle" | "running" | "paused";
+  mode?: "focus" | "short" | "long" | null;
+  expectedEndAt: string | null;
+  lastStudySeenAt?: string | null;
 };
 
 export type ChatUser = {
