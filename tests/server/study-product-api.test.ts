@@ -1,20 +1,29 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-const { mockRequireCurrentUser } = vi.hoisted(() => ({ mockRequireCurrentUser: vi.fn() }));
 const {
+  mockRequireCurrentUser,
   mockFocusStateFindUnique,
   mockFocusStateUpsert,
   mockFocusStateUpdate,
   mockFocusSessionCreate,
   mockRoomParticipantFindFirst,
   mockRevalidatePath,
+  mockStudyGoalCreate,
+  mockStudyGoalUpdate,
+  mockStudyGoalFindFirst,
+  mockStudyGoalCount,
 } = vi.hoisted(() => ({
+  mockRequireCurrentUser: vi.fn(),
   mockFocusStateFindUnique: vi.fn(),
   mockFocusStateUpsert: vi.fn(),
   mockFocusStateUpdate: vi.fn(),
   mockFocusSessionCreate: vi.fn(),
   mockRoomParticipantFindFirst: vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockStudyGoalCreate: vi.fn(),
+  mockStudyGoalUpdate: vi.fn(),
+  mockStudyGoalFindFirst: vi.fn(),
+  mockStudyGoalCount: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mockRequireCurrentUser }));
@@ -28,6 +37,12 @@ vi.mock("@/lib/prisma", () => ({
     },
     focusSession: { create: mockFocusSessionCreate },
     roomParticipant: { findFirst: mockRoomParticipantFindFirst },
+    studyGoal: {
+      create: mockStudyGoalCreate,
+      update: mockStudyGoalUpdate,
+      findFirst: mockStudyGoalFindFirst,
+      count: mockStudyGoalCount,
+    },
   },
 }));
 
@@ -192,5 +207,57 @@ describe("productized study timer API", () => {
     expect(mockFocusSessionCreate).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ mode: "focus", roomId: "room-1" }),
     }));
+  });
+});
+
+import { POST as CREATE_GOAL } from "@/app/api/study/goals/route";
+import { PATCH as PATCH_GOAL } from "@/app/api/study/goals/[goalId]/route";
+
+describe("study goals API", () => {
+  it("creates a goal for today's local date in the study room", async () => {
+    mockStudyGoalCount.mockResolvedValue(2);
+    mockStudyGoalCreate.mockResolvedValue({
+      id: "goal-1",
+      text: "整理课堂笔记",
+      done: false,
+      sortOrder: 2,
+      localDate: "2026-06-30",
+    });
+
+    const response = await CREATE_GOAL(new Request("http://localhost/api/study/goals", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: " 整理课堂笔记 " }),
+    }));
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.goal.text).toBe("整理课堂笔记");
+    expect(mockStudyGoalCreate).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ userId: "user-1", roomId: "room-1", sortOrder: 2 }),
+    }));
+  });
+
+  it("patches only a goal owned by the current user", async () => {
+    mockStudyGoalFindFirst.mockResolvedValue({ id: "goal-1", userId: "user-1" });
+    mockStudyGoalUpdate.mockResolvedValue({
+      id: "goal-1",
+      text: "整理课堂笔记",
+      done: true,
+      sortOrder: 0,
+    });
+
+    const response = await PATCH_GOAL(
+      new Request("http://localhost/api/study/goals/goal-1", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ done: true }),
+      }),
+      { params: { goalId: "goal-1" } }
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.goal.done).toBe(true);
   });
 });
