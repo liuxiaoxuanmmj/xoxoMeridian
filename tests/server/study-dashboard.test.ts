@@ -151,7 +151,7 @@ describe("StudyDashboard", () => {
         }),
       })
     );
-    expect(html).toContain("互相加油");
+    expect(html).toContain("悄悄话");
     expect(html).toContain("一起加油");
   });
 
@@ -165,7 +165,17 @@ describe("StudyDashboard", () => {
     expect(html).toContain("今日清单");
     expect(html).toContain("学习伙伴");
     expect(html).toContain("氛围音效");
-    expect(html).toContain("互相加油");
+    expect(html).toContain("悄悄话");
+  });
+
+  it("uses sage-aligned surfaces for the study dashboard theme", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StudyDashboard, { initialData: makeStudyData() })
+    );
+
+    expect(html).toContain("border-sage-100 bg-white/90");
+    expect(html).toContain("bg-sage-100/70");
+    expect(html).toContain("from-sage-100/80 to-skysoft-50");
   });
 
   it("renders real room members in study buddies", () => {

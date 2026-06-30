@@ -37,8 +37,8 @@ function StudyMemberRow({ member }: { member: StudyMember }) {
         <div
           className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-semibold ${
             isFocusing
-              ? "bg-[#3a5b22]/10 text-[#3a5b22]"
-              : "bg-[#e8e8e8] text-black/50"
+              ? "bg-sage-100 text-[#3a5b22]"
+              : "bg-sage-100/70 text-sage-700/60"
           }`}
         >
           {member.avatarLabel}
@@ -84,7 +84,7 @@ export function StudyRoomMembers({
   const onlineCount = members.filter((m) => m.online).length;
 
   return (
-    <section className="rounded-[10px] border border-[#e8e8e8] bg-white p-5">
+    <section className="rounded-[10px] border border-sage-100 bg-white/90 p-5">
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider">
           学习伙伴
@@ -95,7 +95,7 @@ export function StudyRoomMembers({
         </span>
       </div>
 
-      <div className="divide-y divide-[#f0f0f0]">
+      <div className="divide-y divide-sage-100">
         {members.length === 0 ? (
           <p className="text-xs text-black/30 py-4 text-center">
             暂无学习伙伴

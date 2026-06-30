@@ -53,8 +53,8 @@ export function MiniRoomChat({
   return (
     <div className="flex flex-col h-[360px]">
       {/* Header */}
-      <div className="shrink-0 border-b border-[#e8e8e8] px-4 py-3">
-        <h3 className="text-sm font-semibold text-[#3a5b22]">互相加油</h3>
+      <div className="shrink-0 border-b border-sage-100 bg-sage-50/60 px-4 py-3">
+        <h3 className="text-sm font-semibold text-[#3a5b22]">悄悄话</h3>
       </div>
 
       {/* Messages */}
@@ -93,11 +93,11 @@ export function MiniRoomChat({
       </div>
 
       {/* Input */}
-      <div className="shrink-0 border-t border-[#e8e8e8] px-4 py-3">
+      <div className="shrink-0 border-t border-sage-100 bg-sage-50/60 px-4 py-3">
         <div className="flex gap-2">
           <input
             type="text"
-            className="flex-1 min-w-0 h-9 rounded-[8px] border border-[#d9d9d9] bg-white px-3 text-sm outline-none transition-colors placeholder:text-[#b0b0b0] focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
+            className="flex-1 min-w-0 h-9 rounded-[8px] border border-sage-200 bg-white px-3 text-sm outline-none transition-colors placeholder:text-black/30 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
             placeholder="说点什么..."
             value={draft}
             onChange={(e) => setDraft(e.target.value)}
