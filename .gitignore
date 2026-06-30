@@ -31,3 +31,4 @@ docs/
 
 # Dev-only scripts (not for production)
 scripts/dev.sh
+package-lock.json
