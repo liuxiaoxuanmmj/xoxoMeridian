@@ -11,7 +11,7 @@ export async function POST(_request: Request) {
 
     const state = await prisma.focusState.upsert({
       where: { userId: user.id },
-      update: { lastStudySeenAt: now },
+      update: { lastStudySeenAt: now, roomId: room.id },
       create: {
         userId: user.id,
         roomId: room.id,

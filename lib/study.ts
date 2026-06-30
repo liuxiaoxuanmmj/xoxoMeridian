@@ -355,15 +355,7 @@ export async function getStudyPageData(
     room: { id: room.id, slug: room.slug, name: room.name },
     currentUser: { id: user.id, displayName: user.displayName, avatarLabel: user.avatarLabel },
     currentState: state
-      ? {
-          status: normalizeFocusStatus(state.status),
-          mode: state.mode ?? "focus",
-          plannedMinutes: state.plannedMinutes,
-          remainingSeconds: state.remainingSeconds ?? null,
-          startedAt: state.startedAt?.toISOString() ?? null,
-          expectedEndAt: state.expectedEndAt?.toISOString() ?? null,
-          pausedAt: state.pausedAt?.toISOString() ?? null,
-        }
+      ? serializeFocusState(state)
       : {
           status: "idle" as const,
           mode: "focus" as const,
