@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 
+import type { ChatUser, RoomSnapshot } from "@/components/chat/types";
+import { MiniRoomChat } from "@/components/study/MiniRoomChat";
+
 type StudyPageData = {
   currentState: {
     status: "idle" | "focusing";
@@ -23,6 +26,8 @@ type StudyPageData = {
     weekCount: number;
     weekMinutes: number;
   };
+  currentUser?: ChatUser;
+  chatSnapshot?: RoomSnapshot | null;
 };
 
 type TimerMode = "focus" | "short" | "long";
@@ -533,6 +538,21 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           )}
         </div>
       </motion.section>
+
+      {/* ── Mini Room Chat ── */}
+      {data.chatSnapshot && data.currentUser && (
+        <motion.section
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2 }}
+          className="rounded-[10px] border border-[#e8e8e8] bg-white shadow-sm overflow-hidden"
+        >
+          <MiniRoomChat
+            currentUser={data.currentUser}
+            initialSnapshot={data.chatSnapshot}
+          />
+        </motion.section>
+      )}
     </div>
   );
 }
