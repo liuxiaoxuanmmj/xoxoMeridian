@@ -70,6 +70,16 @@ export function getLocalDateKey(date: Date, timeZone: string): string {
   return getDayKey(date, timeZone);
 }
 
+function getTimezoneOffset(date: Date, timeZone: string): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone,
+    timeZoneName: "longOffset",
+  }).formatToParts(date);
+  const offset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT";
+  if (offset === "GMT") return "Z";
+  return offset.replace("GMT", "");
+}
+
 function getWeekKey(date: Date, timeZone: string) {
   const { year, month, day } = getLocalDateParts(date, timeZone);
   const utcDate = new Date(Date.UTC(year, month - 1, day));
@@ -249,7 +259,8 @@ export async function getStudyPageData(
   const statsWindowStart = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
   const todayKey = getLocalDateKey(now, timeZone);
   const localDateParts = getLocalDateParts(now, timeZone);
-  const todayStartUtc = new Date(Date.UTC(localDateParts.year, localDateParts.month - 1, localDateParts.day));
+  const localDateStr = `${localDateParts.year}-${String(localDateParts.month).padStart(2, "0")}-${String(localDateParts.day).padStart(2, "0")}`;
+  const todayStartUtc = new Date(`${localDateStr}T00:00:00${getTimezoneOffset(now, timeZone)}`);
 
   const [state, goals, recentSessions, statsSessions, participants, memberStates] = await Promise.all([
     prisma.focusState.findUnique({
