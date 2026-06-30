@@ -4,8 +4,17 @@ EXCEPTION
   WHEN duplicate_object THEN null;
 END $$;
 
-ALTER TYPE "FocusStatus" ADD VALUE IF NOT EXISTS 'running';
-ALTER TYPE "FocusStatus" ADD VALUE IF NOT EXISTS 'paused';
+DO $$ BEGIN
+  ALTER TYPE "FocusStatus" ADD VALUE 'running';
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
+
+DO $$ BEGIN
+  ALTER TYPE "FocusStatus" ADD VALUE 'paused';
+EXCEPTION
+  WHEN duplicate_object THEN null;
+END $$;
 
 ALTER TABLE "FocusState"
   ADD COLUMN IF NOT EXISTS "mode" "StudyTimerMode" NOT NULL DEFAULT 'focus',

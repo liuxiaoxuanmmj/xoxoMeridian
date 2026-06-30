@@ -144,7 +144,7 @@ export function LeftRail({
                     {user.id === currentUser.id ? " · 当前" : ""}
                   </p>
                   <p className="truncate text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
-                  {user.studyStatus?.state === "focusing" ? (
+                  {user.studyStatus?.state === "running" ? (
                     <p className="mt-1 inline-flex rounded-full bg-[#059669]/10 px-2 py-0.5 text-[11px] font-medium text-[#047857]">
                       专注中
                     </p>

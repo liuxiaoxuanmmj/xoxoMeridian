@@ -1,15 +1,54 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  BookOpen,
+  Flame,
+  Clock,
+  Target,
+  Sparkles,
+  Play,
+  Pause,
+  Square,
+  RotateCcw,
+  Wifi,
+} from "lucide-react";
+
+import type { ChatUser, RoomSnapshot } from "@/components/chat/types";
+import { MiniRoomChat } from "@/components/study/MiniRoomChat";
+import { StudyRoomMembers } from "@/components/study/StudyRoomMembers";
+import type { StudyMember } from "@/components/study/StudyRoomMembers";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type TimerMode = "focus" | "short" | "long";
+type TimerState = "idle" | "running" | "paused";
+
+type FocusState = {
+  status: TimerState;
+  mode: TimerMode;
+  plannedMinutes: number;
+  remainingSeconds: number | null;
+  startedAt: string | null;
+  expectedEndAt: string | null;
+  pausedAt: string | null;
+};
+
+type StudyGoal = {
+  id: string;
+  text: string;
+  done: boolean;
+  sortOrder: number;
+  localDate: string;
+};
 
 type StudyPageData = {
-  currentState: {
-    status: "idle" | "focusing";
-    plannedMinutes: number;
-    startedAt: string | null;
-    expectedEndAt: string | null;
-  };
+  room: { id: string; slug: string; name: string };
+  currentUser: ChatUser;
+  currentState: FocusState;
+  goals: StudyGoal[];
+  members: StudyMember[];
   recentSessions: Array<{
     id: string;
     userId: string;
@@ -22,20 +61,24 @@ type StudyPageData = {
     todayMinutes: number;
     weekCount: number;
     weekMinutes: number;
+    streakDays: number;
   };
+  chatSnapshot: RoomSnapshot | null;
 };
 
-type TimerMode = "focus" | "short" | "long";
 const TIMER_DURATIONS: Record<TimerMode, number> = {
   focus: 25,
   short: 5,
   long: 15,
 };
+
 const MODE_LABELS: Record<TimerMode, string> = {
   focus: "专注",
   short: "短休",
   long: "长休",
 };
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 function formatCountdown(totalSeconds: number) {
   const minutes = Math.floor(totalSeconds / 60);
@@ -43,7 +86,14 @@ function formatCountdown(totalSeconds: number) {
   return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
 }
 
-// ── Circular Timer Ring ──────────────────────────────────────────────────────
+function formatMinutes(minutes: number): string {
+  if (minutes < 60) return `${minutes}m`;
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+// ── Timer Ring ─────────────────────────────────────────────────────────────────
 
 function TimerRing({
   progress,
@@ -70,11 +120,7 @@ function TimerRing({
           transition={{ duration: 2.4, repeat: Infinity, ease: "easeInOut" }}
         />
       )}
-      <svg
-        width={190}
-        height={190}
-        style={{ transform: "rotate(-90deg)" }}
-      >
+      <svg width={190} height={190} style={{ transform: "rotate(-90deg)" }}>
         <circle
           cx={95}
           cy={95}
@@ -115,7 +161,6 @@ function ModeTabs({
     <div className="flex rounded-[10px] bg-[#f1f5f0] p-1 gap-1">
       {(Object.keys(MODE_LABELS) as TimerMode[]).map((m) => {
         const active = mode === m;
-        const isPlaceholder = m !== "focus";
         return (
           <button
             key={m}
@@ -125,18 +170,10 @@ function ModeTabs({
             className={`px-4 py-1.5 rounded-[8px] text-xs font-medium transition-colors ${
               active
                 ? "bg-white text-[#3a5b22] shadow-sm"
-                : isPlaceholder
-                  ? "text-black/25"
-                  : "text-black/40 hover:text-black/60"
+                : "text-black/40 hover:text-black/60"
             }`}
-            title={isPlaceholder ? "即将推出" : undefined}
           >
             {MODE_LABELS[m]}
-            {isPlaceholder && (
-              <span className="ml-1 text-[9px] align-super opacity-50">
-                soon
-              </span>
-            )}
           </button>
         );
       })}
@@ -144,185 +181,380 @@ function ModeTabs({
   );
 }
 
-// ── Stat Card ─────────────────────────────────────────────────────────────────
-
-function StatCard({
-  label,
-  value,
-  sub,
-}: {
-  label: string;
-  value: string | number;
-  sub?: string;
-}) {
-  return (
-    <div className="rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] p-4">
-      <p className="text-[11px] text-black/40">{label}</p>
-      <p className="mt-1 text-xl font-semibold text-[#3a5b22]">{value}</p>
-      {sub && <p className="mt-0.5 text-[10px] text-black/30">{sub}</p>}
-    </div>
-  );
-}
-
-// ── Main Dashboard ────────────────────────────────────────────────────────────
+// ── Main Dashboard ─────────────────────────────────────────────────────────────
 
 export function StudyDashboard({ initialData }: { initialData: StudyPageData }) {
   const [data, setData] = useState(initialData);
-  const [busy, setBusy] = useState<null | "start" | "stop">(null);
-  const [mode, setMode] = useState<TimerMode>("focus");
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [mode, setMode] = useState<TimerMode>(initialData.currentState.mode);
+  const busyRef = useRef(false);
+  const [, forceTick] = useState(0);
+  const [goalDraft, setGoalDraft] = useState("");
+  const [goals, setGoals] = useState<StudyGoal[]>(initialData.goals);
+  const autoStoppedRef = useRef(false);
+
+  const state = data.currentState;
+  const isRunning = state.status === "running";
+  const isPaused = state.status === "paused";
+  const isActive = isRunning || isPaused;
 
   const plannedSeconds = (TIMER_DURATIONS[mode] ?? 25) * 60;
-  const remainingSeconds = Math.max(0, plannedSeconds - elapsedSeconds);
-  const progress = plannedSeconds > 0 ? elapsedSeconds / plannedSeconds : 0;
-  const isRunning = data.currentState.status === "focusing";
 
-  // Tick every second while focusing
-  useEffect(() => {
-    if (!isRunning) {
-      setElapsedSeconds(0);
-      return;
+  // Compute on every render — Date.now() is cheap, no memoization needed
+  const remainingSeconds = (() => {
+    if (isRunning) {
+      if (state.remainingSeconds !== null && state.remainingSeconds !== undefined) {
+        const pausedAt = state.pausedAt ? new Date(state.pausedAt).getTime() : null;
+        if (pausedAt) {
+          return Math.max(0, state.remainingSeconds - Math.floor((Date.now() - pausedAt) / 1000));
+        }
+      }
+      if (state.expectedEndAt) {
+        return Math.max(0, Math.ceil((new Date(state.expectedEndAt).getTime() - Date.now()) / 1000));
+      }
+      const startedAt = state.startedAt ? new Date(state.startedAt).getTime() : Date.now();
+      const elapsed = Math.floor((Date.now() - startedAt) / 1000);
+      return Math.max(0, plannedSeconds - elapsed);
     }
-    const startedAt = data.currentState.startedAt
-      ? new Date(data.currentState.startedAt).getTime()
-      : Date.now();
-    setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+    if (isPaused && state.remainingSeconds !== null) {
+      return state.remainingSeconds;
+    }
+    return plannedSeconds;
+  })();
+
+  const progress = plannedSeconds > 0 ? 1 - remainingSeconds / plannedSeconds : 0;
+  const displayTime = formatCountdown(isActive ? remainingSeconds : plannedSeconds);
+
+  // ── Tick ───────────────────────────────────────────────────────────────────
+
+  // Tick to trigger re-renders every second while running
+  useEffect(() => {
+    if (!isRunning) return;
     const timer = window.setInterval(() => {
-      setElapsedSeconds(Math.floor((Date.now() - startedAt) / 1000));
+      forceTick((n) => n + 1);
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [isRunning, data.currentState.startedAt]);
+  }, [isRunning, state.expectedEndAt]);
 
-  const displayTime = useMemo(() => {
-    if (isRunning) return formatCountdown(remainingSeconds);
-    return formatCountdown(plannedSeconds);
-  }, [isRunning, remainingSeconds, plannedSeconds]);
+  // ── API handlers used by effects ────────────────────────────────────────────
 
-  const startFocus = useCallback(async () => {
-    if (busy) return;
-    setBusy("start");
+  const refreshData = useCallback(async () => {
+    const response = await fetch("/api/study", { cache: "no-store" });
+    if (response.ok) {
+      const result = await response.json();
+      setData(result);
+      setGoals(result.goals);
+      if (result.currentState?.mode) {
+        setMode(result.currentState.mode);
+      }
+    }
+  }, []);
+
+  const stopTimer = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
-      const response = await fetch("/api/study/start", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plannedMinutes: TIMER_DURATIONS[mode] }),
-      });
+      const response = await fetch("/api/study/stop", { method: "POST" });
+      if (response.ok) {
+        await refreshData();
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [refreshData]);
+
+  // ── Auto-stop when timer reaches 0 ────────────────────────────────────────
+
+  useEffect(() => {
+    if (isRunning && remainingSeconds <= 0 && !autoStoppedRef.current) {
+      autoStoppedRef.current = true;
+      stopTimer();
+    }
+    if (!isRunning) {
+      autoStoppedRef.current = false;
+    }
+  }, [isRunning, remainingSeconds, stopTimer]);
+
+  // ── Presence heartbeat ─────────────────────────────────────────────────────
+
+  useEffect(() => {
+    // Post immediately and every 15 seconds
+    const postPresence = () => {
+      fetch("/api/study/presence", { method: "POST" }).catch(() => {});
+    };
+    postPresence();
+    const interval = window.setInterval(postPresence, 15_000);
+    return () => window.clearInterval(interval);
+  }, []);
+
+  // ── API handlers ───────────────────────────────────────────────────────────
+
+  // Note: refreshData and stopTimer are defined above (before effects that reference them)
+
+  const startTimer = useCallback(
+    async (selectedMode: TimerMode) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      try {
+        const response = await fetch("/api/study/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ mode: selectedMode }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          setData((prev) => ({ ...prev, currentState: result.state }));
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [],
+  );
+
+  const pauseTimer = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const response = await fetch("/api/study/pause", { method: "POST" });
       if (response.ok) {
         const result = await response.json();
         setData((prev) => ({ ...prev, currentState: result.state }));
       }
     } finally {
-      setBusy(null);
+      busyRef.current = false;
     }
-  }, [busy, mode]);
+  }, []);
 
-  const stopFocus = useCallback(async () => {
-    if (busy) return;
-    setBusy("stop");
+  const resumeTimer = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
-      const response = await fetch("/api/study/stop", { method: "POST" });
+      const response = await fetch("/api/study/resume", { method: "POST" });
       if (response.ok) {
         const result = await response.json();
-        setData((prev) => ({
-          ...prev,
-          currentState: { ...result.state, plannedMinutes: prev.currentState.plannedMinutes },
-        }));
-        // Refresh full data to get updated stats
-        const refreshResponse = await fetch("/api/study", { cache: "no-store" });
-        if (refreshResponse.ok) {
-          setData(await refreshResponse.json());
-        }
+        setData((prev) => ({ ...prev, currentState: result.state }));
       }
     } finally {
-      setBusy(null);
+      busyRef.current = false;
     }
-  }, [busy]);
+  }, []);
 
-  const todayHours = Math.floor(data.stats.todayMinutes / 60);
-  const todayMins = data.stats.todayMinutes % 60;
-  const todayFocusStr = data.stats.todayMinutes > 0
-    ? `${todayHours}h ${todayMins}m`
-    : "0m";
+  const createGoal = useCallback(async () => {
+    const text = goalDraft.trim();
+    if (!text || busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const response = await fetch("/api/study/goals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      if (response.ok) {
+        const result = await response.json();
+        setGoals((prev) => [...prev, result.goal]);
+        setGoalDraft("");
+        await refreshData();
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [goalDraft, refreshData]);
+
+  const toggleGoal = useCallback(
+    async (goal: StudyGoal) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      try {
+        const response = await fetch(`/api/study/goals/${goal.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ done: !goal.done }),
+        });
+        if (response.ok) {
+          const result = await response.json();
+          setGoals((prev) =>
+            prev.map((g) => (g.id === goal.id ? result.goal : g)),
+          );
+          await refreshData();
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [refreshData],
+  );
+
+  // ── Derived display values ─────────────────────────────────────────────────
+
+  const todayFocusStr =
+    data.stats.todayMinutes > 0
+      ? formatMinutes(data.stats.todayMinutes)
+      : "0m";
+
+  const onlineCount = data.members.filter((m) => m.online).length;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="space-y-5">
-      {/* ── Main Grid: Sidebar + Timer ── */}
-      <div className="grid gap-5 lg:grid-cols-[240px_1fr]">
-        {/* ── Left Sidebar ── */}
+      {/* ── Header ── */}
+      <motion.header
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-[10px] border border-[#e8e8e8] bg-white px-6 py-4 flex items-center justify-between shadow-sm"
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-full bg-[#3a5b22]/10 flex items-center justify-center">
+            <BookOpen className="w-5 h-5 text-[#3a5b22]" />
+          </div>
+          <div>
+            <h1 className="text-lg font-semibold text-black">
+              午后自习室
+            </h1>
+            <p className="text-[11px] text-black/40">
+              {data.room.name} · {onlineCount} 人在线
+            </p>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 text-[11px] text-black/30">
+          <Wifi className="w-3.5 h-3.5" />
+          <span>环境静谧</span>
+        </div>
+      </motion.header>
+
+      {/* ── Main Grid: Left | Center | Right ── */}
+      <div className="grid gap-5 lg:grid-cols-[240px_1fr_280px]">
+        {/* ── Left Column ── */}
         <motion.div
           initial={{ opacity: 0, x: -16 }}
           animate={{ opacity: 1, x: 0 }}
           transition={{ delay: 0.08 }}
           className="flex flex-col gap-4"
         >
-          {/* Stats */}
+          {/* Stats Card */}
           <section className="rounded-[10px] border border-[#e8e8e8] bg-white p-5">
             <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-4">
               今日概览
             </h2>
             <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-black/60">专注番茄</span>
+              <div className="flex items-center gap-2.5">
+                <Flame className="w-4 h-4 text-orange-400 shrink-0" />
+                <span className="text-xs text-black/60 flex-1">专注番茄</span>
                 <span className="text-sm font-semibold text-[#3a5b22]">
                   {data.stats.todayCount} 个
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-black/60">累计专注</span>
+              <div className="flex items-center gap-2.5">
+                <Clock className="w-4 h-4 text-[#3a5b22] shrink-0" />
+                <span className="text-xs text-black/60 flex-1">累计专注</span>
                 <span className="text-sm font-semibold text-black">
                   {todayFocusStr}
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-black/60">本周番茄</span>
+              <div className="flex items-center gap-2.5">
+                <Target className="w-4 h-4 text-red-400 shrink-0" />
+                <span className="text-xs text-black/60 flex-1">本周番茄</span>
                 <span className="text-sm font-semibold text-[#3a5b22]">
                   {data.stats.weekCount} 个
                 </span>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-xs text-black/60">本周分钟</span>
+              <div className="flex items-center gap-2.5">
+                <Sparkles className="w-4 h-4 text-amber-400 shrink-0" />
+                <span className="text-xs text-black/60 flex-1">连续天数</span>
                 <span className="text-sm font-semibold text-black">
-                  {data.stats.weekMinutes} min
+                  {data.stats.streakDays} 天
                 </span>
               </div>
             </div>
           </section>
 
-          {/* Placeholder: Goals */}
+          {/* Goals Card */}
           <section className="rounded-[10px] border border-[#e8e8e8] bg-white p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider">
-                今日清单
-              </h2>
-              <span className="text-[10px] text-black/25 bg-[#f1f5f0] px-1.5 py-0.5 rounded-full">
-                soon
-              </span>
+            <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-4">
+              今日清单
+            </h2>
+            {goals.length === 0 && goalDraft.length === 0 ? (
+              <p className="text-xs text-black/30 leading-relaxed">
+                专注时记录待办事项。
+                <br />
+                完成一项勾选一项。
+              </p>
+            ) : (
+              <div className="space-y-2 mb-3">
+                {goals.map((goal) => (
+                  <button
+                    key={goal.id}
+                    type="button"
+                    onClick={() => toggleGoal(goal)}
+                    disabled={busyRef.current}
+                    className="flex items-center gap-2 w-full text-left rounded-[8px] px-2 py-1.5 hover:bg-[#f8faf8] transition-colors disabled:opacity-50"
+                  >
+                    <div
+                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
+                        goal.done
+                          ? "bg-[#3a5b22] border-[#3a5b22]"
+                          : "border-[#d9d9d9]"
+                      }`}
+                    >
+                      {goal.done && (
+                        <svg
+                          width="10"
+                          height="8"
+                          viewBox="0 0 10 8"
+                          fill="none"
+                        >
+                          <path
+                            d="M1 4l2.5 2.5L9 1"
+                            stroke="white"
+                            strokeWidth="1.5"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                          />
+                        </svg>
+                      )}
+                    </div>
+                    <span
+                      className={`text-xs ${
+                        goal.done
+                          ? "text-black/30 line-through"
+                          : "text-black/70"
+                      }`}
+                    >
+                      {goal.text}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+            {/* Add goal input */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                className="flex-1 min-w-0 h-8 rounded-[8px] border border-[#d9d9d9] bg-white px-2.5 text-xs outline-none transition-colors placeholder:text-[#b0b0b0] focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
+                placeholder="添加待办…"
+                value={goalDraft}
+                onChange={(e) => setGoalDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    createGoal();
+                  }
+                }}
+                disabled={busyRef.current}
+              />
+              <button
+                type="button"
+                className="shrink-0 h-8 rounded-[8px] bg-[#3a5b22] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#2e4a1a] disabled:opacity-50"
+                disabled={busyRef.current || !goalDraft.trim()}
+                onClick={createGoal}
+              >
+                添加
+              </button>
             </div>
-            <p className="text-xs text-black/30 leading-relaxed">
-              专注时记录待办事项。
-              <br />
-              完成一项勾选一项。
-            </p>
           </section>
-
-          {/* Placeholder: Quote */}
-          <div className="rounded-[10px] border border-[#e8e8e8] bg-[#2a2420] p-4">
-            <div className="flex items-center gap-1.5 mb-2">
-              <div className="w-2 h-2 rounded-full bg-red-400/70" />
-              <div className="w-2 h-2 rounded-full bg-yellow-400/70" />
-              <div className="w-2 h-2 rounded-full bg-green-400/70" />
-            </div>
-            <p className="text-xs leading-relaxed text-[#7da878] font-mono">
-              <span className="text-black/40">$ </span>
-              学如逆水行舟，
-              <br />
-              <span className="text-black/40">  </span>
-              不进则退。
-            </p>
-          </div>
         </motion.div>
 
-        {/* ── Center: Timer ── */}
+        {/* ── Center Column ── */}
         <motion.div
           initial={{ opacity: 0, y: 16 }}
           animate={{ opacity: 1, y: 0 }}
@@ -335,7 +567,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
             <ModeTabs
               mode={mode}
               onModeChange={setMode}
-              disabled={isRunning}
+              disabled={isActive}
             />
 
             {/* Ring + Time display */}
@@ -351,7 +583,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                   {MODE_LABELS[mode]}
                 </motion.div>
                 <motion.div
-                  key={displayTime}
+                  key={`${displayTime}-${isRunning}`}
                   className="text-5xl font-bold tabular-nums text-black"
                   animate={isRunning ? { opacity: [1, 0.85, 1] } : {}}
                   transition={{ duration: 2.4, repeat: Infinity }}
@@ -379,37 +611,98 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
             {/* Controls */}
             <div className="flex items-center gap-3">
               <AnimatePresence mode="wait">
-                {isRunning ? (
-                  <motion.button
-                    key="stop"
-                    type="button"
-                    onClick={stopFocus}
+                {isRunning && (
+                  <motion.div
+                    key="running-controls"
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.9, opacity: 0 }}
-                    whileTap={{ scale: 0.94 }}
-                    className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50"
-                    disabled={busy !== null}
+                    className="flex items-center gap-2"
                   >
-                    {busy === "stop" ? "结束中…" : "结束专注"}
-                  </motion.button>
-                ) : (
+                    <motion.button
+                      type="button"
+                      onClick={pauseTimer}
+                      whileTap={{ scale: 0.94 }}
+                      className="rounded-[10px] border border-[#3a5b22] px-4 py-2 text-sm font-medium text-[#3a5b22] transition-colors hover:bg-[#3a5b22]/5 disabled:opacity-50 flex items-center gap-1.5"
+                      disabled={busyRef.current}
+                    >
+                      <Pause className="w-4 h-4" />
+                      暂停
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={stopTimer}
+                      whileTap={{ scale: 0.94 }}
+                      className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
+                      disabled={busyRef.current}
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      停止
+                    </motion.button>
+                  </motion.div>
+                )}
+
+                {isPaused && (
+                  <motion.div
+                    key="paused-controls"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    exit={{ scale: 0.9, opacity: 0 }}
+                    className="flex items-center gap-2"
+                  >
+                    <motion.button
+                      type="button"
+                      onClick={resumeTimer}
+                      whileTap={{ scale: 0.94 }}
+                      className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
+                      disabled={busyRef.current}
+                    >
+                      <Play className="w-4 h-4" />
+                      继续
+                    </motion.button>
+                    <motion.button
+                      type="button"
+                      onClick={stopTimer}
+                      whileTap={{ scale: 0.94 }}
+                      className="rounded-[10px] border border-[#e8e8e8] px-4 py-2 text-sm font-medium text-black/50 transition-colors hover:bg-black/5 disabled:opacity-50 flex items-center gap-1.5"
+                      disabled={busyRef.current}
+                    >
+                      <Square className="w-3.5 h-3.5" />
+                      停止
+                    </motion.button>
+                  </motion.div>
+                )}
+
+                {!isActive && (
                   <motion.button
                     key="start"
                     type="button"
-                    onClick={startFocus}
+                    onClick={() => startTimer(mode)}
                     initial={{ scale: 0.9, opacity: 0 }}
                     animate={{ scale: 1, opacity: 1 }}
                     exit={{ scale: 0.9, opacity: 0 }}
                     whileTap={{ scale: 0.94 }}
-                    className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50"
-                    disabled={busy !== null}
+                    className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
+                    disabled={busyRef.current}
                   >
-                    {busy === "start" ? "开始中…" : "开始专注"}
+                    <Play className="w-4 h-4" />
+                    开始专注
                   </motion.button>
                 )}
               </AnimatePresence>
             </div>
+
+            {/* Reset button (idle only) */}
+            {!isActive && (
+              <button
+                type="button"
+                onClick={() => setMode("focus")}
+                className="mt-3 flex items-center gap-1 text-[11px] text-black/25 hover:text-black/40 transition-colors"
+              >
+                <RotateCcw className="w-3 h-3" />
+                重置
+              </button>
+            )}
 
             {/* Status text */}
             <AnimatePresence>
@@ -423,16 +716,20 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                   专注中 · 保持专注，你做得很好 ✨
                 </motion.p>
               )}
+              {isPaused && (
+                <motion.p
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  className="text-xs text-black/40 mt-4"
+                >
+                  已暂停 · 随时可以继续 ⏸
+                </motion.p>
+              )}
             </AnimatePresence>
-
-            {/* Placeholder hints */}
-            <div className="mt-4 flex gap-3 text-xs text-black/25">
-              <span>自定义时长 · 待实现</span>
-              <span>短休/长休 · 待实现</span>
-            </div>
           </section>
 
-          {/* Ambient Sounds Placeholder */}
+          {/* Ambient Sounds Card */}
           <section className="rounded-[10px] border border-[#e8e8e8] bg-white p-5">
             <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-4">
               氛围音效
@@ -450,7 +747,9 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                   title="即将推出"
                 >
                   <span className="text-lg">{sound.icon}</span>
-                  <span className="text-[10px] text-black/40">{sound.label}</span>
+                  <span className="text-[10px] text-black/40">
+                    {sound.label}
+                  </span>
                 </div>
               ))}
             </div>
@@ -483,6 +782,36 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                 />
               ))}
             </div>
+          </div>
+        </motion.div>
+
+        {/* ── Right Column ── */}
+        <motion.div
+          initial={{ opacity: 0, x: 16 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.08 }}
+          className="flex flex-col gap-4"
+        >
+          {/* Study Members */}
+          <StudyRoomMembers members={data.members} />
+
+          {/* Mini Room Chat */}
+          <div className="rounded-[10px] border border-[#e8e8e8] bg-white shadow-sm overflow-hidden">
+            {data.chatSnapshot && data.currentUser ? (
+              <MiniRoomChat
+                currentUser={data.currentUser}
+                initialSnapshot={data.chatSnapshot}
+              />
+            ) : (
+              <div className="flex flex-col h-[360px]">
+                <div className="shrink-0 border-b border-[#e8e8e8] px-4 py-3">
+                  <h3 className="text-sm font-semibold text-[#3a5b22]">互相加油</h3>
+                </div>
+                <div className="flex-1 flex items-center justify-center">
+                  <p className="text-xs text-black/30">加载中…</p>
+                </div>
+              </div>
+            )}
           </div>
         </motion.div>
       </div>
@@ -527,7 +856,9 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     })}
                   </p>
                 </div>
-                <span className="text-[10px] text-[#3a5b22]/60">已写入时间轴</span>
+                <span className="text-[10px] text-[#3a5b22]/60">
+                  已写入时间轴
+                </span>
               </div>
             ))
           )}
@@ -536,3 +867,6 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
     </div>
   );
 }
+
+// Re-export StudyPageData type for tests
+export type { StudyPageData };

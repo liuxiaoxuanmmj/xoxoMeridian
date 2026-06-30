@@ -2,23 +2,17 @@
 
 import { useEffect, useRef, useState } from "react";
 
-import type { ChatMessage, ChatUser } from "@/components/chat/types";
+import type { ChatUser } from "@/components/chat/types";
 import { MENTION_AGENT } from "@/lib/identity";
 
 export function MessageComposer({
-  currentUser,
+  currentUser: _currentUser,
   externalDraft,
-  onSendComplete,
-  onSendFailed,
-  onSent,
-  roomId
+  onSubmitMessage,
 }: {
   currentUser: ChatUser;
   externalDraft?: string;
-  onSendComplete: (tempId: string, real: ChatMessage) => void;
-  onSendFailed: (tempId: string) => void;
-  onSent: (message: ChatMessage) => void;
-  roomId: string;
+  onSubmitMessage: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
 }) {
   const [content, setContent] = useState("");
   const [sending, setSending] = useState(false);
@@ -44,67 +38,26 @@ export function MessageComposer({
       return;
     }
 
-    const tempId = `temp-${
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2)}`
-    }`;
-    const tempMessage: ChatMessage = {
-      id: tempId,
-      roomId,
-      senderId: currentUser.id,
-      senderAgentId: null,
-      senderType: "human",
-      content: text,
-      targetType: "all",
-      status: "processing",
-      metadata: null,
-      createdAt: new Date().toISOString()
-    };
-
     setSending(true);
     setError("");
-    setContent("");
-    onSent(tempMessage);
 
-    const fail = (msg: string) => {
-      onSendFailed(tempId);
-      setContent(text);
-      setError(msg);
+    const result = await onSubmitMessage(text);
+
+    if (result.ok) {
+      setContent("");
       setSending(false);
-    };
-
-    let response: Response;
-    try {
-      response = await fetch(`/api/rooms/${roomId}/messages`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ content: text })
-      });
-    } catch {
-      fail("发送失败");
-      return;
-    }
-
-    if (!response.ok) {
-      const payload = await response.json().catch(() => ({}));
-      fail(payload.error ?? "发送失败");
-      return;
-    }
-
-    const payload = (await response.json().catch(() => null)) as { message?: ChatMessage } | null;
-    setSending(false);
-    if (payload?.message) {
-      onSendComplete(tempId, payload.message);
+      textareaRef.current?.focus();
     } else {
-      onSendFailed(tempId);
+      setContent(text);
+      setError(result.error);
+      setSending(false);
     }
-    textareaRef.current?.focus();
   }
 
   function insertAssistantMention() {
     setContent((value) => {
-      const prefix = value.trim().length > 0 ? `${value} ${MENTION_AGENT} ` : `${MENTION_AGENT} `;
+      const prefix =
+        value.trim().length > 0 ? `${value} ${MENTION_AGENT} ` : `${MENTION_AGENT} `;
       return prefix;
     });
     requestAnimationFrame(() => {
@@ -153,7 +106,13 @@ export function MessageComposer({
         </div>
 
         <div className="mt-2 flex flex-wrap items-center justify-end gap-2">
-          {error ? <p className="text-xs text-red-700">{error}</p> : <p className="text-xs text-black/40">Enter 发送，Shift + Enter 换行</p>}
+          {error ? (
+            <p className="text-xs text-red-700">{error}</p>
+          ) : (
+            <p className="text-xs text-black/40">
+              Enter 发送，Shift + Enter 换行
+            </p>
+          )}
         </div>
       </div>
     </div>
