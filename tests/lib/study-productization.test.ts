@@ -6,6 +6,12 @@ import {
   serializeFocusState,
   getLocalDateKey,
 } from "@/lib/study";
+import {
+  parseBody,
+  studyGoalPatchSchema,
+  studyGoalPostSchema,
+  studyStartSchema,
+} from "@/lib/validation";
 
 describe("study room Prisma contract", () => {
   it("declares the productized timer states, modes, presence, and goals", () => {
@@ -70,5 +76,24 @@ describe("productized study helpers", () => {
 
   it("computes the local date key in the user's timezone", () => {
     expect(getLocalDateKey(new Date("2026-06-29T16:30:00.000Z"), "Asia/Shanghai")).toBe("2026-06-30");
+  });
+});
+
+describe("study validation schemas", () => {
+  it("accepts timer mode and planned minutes on start", () => {
+    expect(parseBody(studyStartSchema, { mode: "short", plannedMinutes: 5 })).toEqual({
+      mode: "short",
+      plannedMinutes: 5,
+    });
+  });
+
+  it("trims new study goals", () => {
+    expect(parseBody(studyGoalPostSchema, { text: "  整理笔记  " })).toEqual({
+      text: "整理笔记",
+    });
+  });
+
+  it("requires at least one field when patching a study goal", () => {
+    expect(() => parseBody(studyGoalPatchSchema, {})).toThrow("Validation failed");
   });
 });

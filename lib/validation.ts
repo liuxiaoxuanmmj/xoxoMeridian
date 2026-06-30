@@ -108,9 +108,26 @@ export const agentDispatchSchema = z
     message: "Either content or sourceMessageId is required",
   });
 
+export const studyModeSchema = z.enum(["focus", "short", "long"]);
+
 export const studyStartSchema = z.object({
+  mode: studyModeSchema.optional().default("focus"),
   plannedMinutes: z.number().int().min(1).max(180).optional(),
 });
+
+export const studyGoalPostSchema = z.object({
+  text: z.preprocess(trim, z.string().min(1).max(200)),
+});
+
+export const studyGoalPatchSchema = z
+  .object({
+    text: z.preprocess(trim, z.string().min(1).max(200)).optional(),
+    done: z.boolean().optional(),
+    sortOrder: z.number().int().min(0).max(10_000).optional(),
+  })
+  .refine((v) => Object.values(v).some((x) => x !== undefined), {
+    message: "At least one field is required",
+  });
 
 export class ValidationError extends Error {
   readonly issues: ReadonlyArray<{ path: string; message: string }>;
