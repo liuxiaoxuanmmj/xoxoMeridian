@@ -10,7 +10,8 @@ export async function POST(request: Request) {
     const body = await readJsonBody(request, studyGoalPostSchema);
     const room = await getStudyRoomForUser(user.id);
     const now = new Date();
-    const localDate = getLocalDateKey(now, user.profile.timezone);
+    const timeZone = user.profile?.timezone ?? "UTC";
+    const localDate = getLocalDateKey(now, timeZone);
 
     const count = await prisma.studyGoal.count({
       where: { userId: user.id, localDate },

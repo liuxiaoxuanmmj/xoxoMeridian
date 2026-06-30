@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
+import type { RoomSnapshot } from "@/components/chat/types";
 
 export async function getStudyRoomForUser(userId: string) {
   const participant = await prisma.roomParticipant.findFirst({
@@ -349,7 +350,7 @@ export async function getStudyPageData(
     };
   });
 
-  const chatSnapshot = await getRoomSnapshot(room.id, user.id);
+  const chatSnapshot = await getRoomSnapshot(room.id, user.id) as unknown as RoomSnapshot;
 
   return {
     room: { id: room.id, slug: room.slug, name: room.name },
