@@ -14,8 +14,8 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
 
   return (
     <nav className="sticky top-0 z-40 border-b border-[#e8e8e8] bg-white/95 backdrop-blur-sm">
-      <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-3">
-        <div className="flex items-center gap-6">
+      <div className="flex h-16 items-center justify-between px-5">
+        <div className="flex min-w-0 items-center gap-6">
           <BrandBadge />
           <Link
             href="/home"
@@ -43,16 +43,18 @@ export function SiteNav({ currentUser }: { currentUser: { id: string; displayNam
             Study
           </Link>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex shrink-0 items-center gap-3">
           <Suspense fallback={<div className="w-48 h-[30px]" />}>
             <SearchInput />
           </Suspense>
-          <Link
-            href="/posts/new"
-            className="rounded-[10px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs font-medium text-[#3a5b22] hover:bg-[#3a5b22] hover:text-white transition-colors"
-          >
-            New Post
-          </Link>
+          {!isStudy && (
+            <Link
+              href="/posts/new"
+              className="rounded-[10px] border border-[#d9d9d9] bg-white px-3 py-1.5 text-xs font-medium text-[#3a5b22] hover:bg-[#3a5b22] hover:text-white transition-colors"
+            >
+              New Post
+            </Link>
+          )}
           <Link
             href="/me"
             className="text-xs text-black/40 hover:text-black transition-colors"

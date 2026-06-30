@@ -160,7 +160,7 @@ describe("StudyDashboard", () => {
       React.createElement(StudyDashboard, { initialData: makeStudyData() })
     );
 
-    expect(html).toContain("午后自习室");
+    expect(html).toContain("心流屋");
     expect(html).toContain("今日概览");
     expect(html).toContain("今日清单");
     expect(html).toContain("学习伙伴");

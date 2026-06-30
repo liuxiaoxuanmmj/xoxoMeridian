@@ -86,6 +86,12 @@ export function ChatApp({
           >
             Chat
           </Link>
+          <Link
+            href="/study"
+            className="text-xs font-medium text-black/50 hover:text-black transition-colors"
+          >
+            Study
+          </Link>
           <span className="text-black/20">|</span>
           <span className="text-xs font-medium text-black/70">
             {snapshot.room.name}

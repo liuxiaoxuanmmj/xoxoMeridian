@@ -168,9 +168,9 @@ function ModeTabs({
             onClick={() => onModeChange(m)}
             disabled={disabled}
             className={`px-4 py-1.5 rounded-[8px] text-xs font-medium transition-colors ${active
-                ? "bg-white text-[#3a5b22] shadow-sm"
-                : "text-black/40 hover:text-black/60"
-            }`}
+              ? "bg-white text-[#3a5b22] shadow-sm"
+              : "text-black/40 hover:text-black/60"
+              }`}
           >
             {MODE_LABELS[m]}
           </button>
@@ -278,7 +278,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
   useEffect(() => {
     // Post immediately and every 15 seconds
     const postPresence = () => {
-      fetch("/api/study/presence", { method: "POST" }).catch(() => {});
+      fetch("/api/study/presence", { method: "POST" }).catch(() => { });
     };
     postPresence();
     const interval = window.setInterval(postPresence, 15_000);
@@ -408,7 +408,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           </div>
           <div>
             <h1 className="text-lg font-semibold text-black">
-              午后自习室
+              心流屋
             </h1>
             <p className="text-[11px] text-black/40">
               {data.room.name} · {onlineCount} 人在线
@@ -489,11 +489,10 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     className="flex items-center gap-2 w-full text-left rounded-[8px] px-2 py-1.5 hover:bg-[#f8faf8] transition-colors disabled:opacity-50"
                   >
                     <div
-                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${
-                        goal.done
+                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${goal.done
                           ? "bg-[#3a5b22] border-[#3a5b22]"
                           : "border-[#d9d9d9]"
-                      }`}
+                        }`}
                     >
                       {goal.done && (
                         <svg
@@ -513,11 +512,10 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                       )}
                     </div>
                     <span
-                      className={`text-xs ${
-                        goal.done
+                      className={`text-xs ${goal.done
                           ? "text-black/30 line-through"
                           : "text-black/70"
-                      }`}
+                        }`}
                     >
                       {goal.text}
                     </span>
