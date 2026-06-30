@@ -6,6 +6,8 @@ type StudySessionLike = {
   startedAt: string | Date;
   endedAt: string | Date;
   actualMinutes: number;
+  mode?: string | null;
+  status?: string | null;
   user?: { displayName: string } | null;
 };
 
@@ -50,12 +52,75 @@ function getDayKey(date: Date, timeZone: string) {
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
+export function getLocalDateKey(date: Date, timeZone: string): string {
+  return getDayKey(date, timeZone);
+}
+
 function getWeekKey(date: Date, timeZone: string) {
   const { year, month, day } = getLocalDateParts(date, timeZone);
   const utcDate = new Date(Date.UTC(year, month - 1, day));
   const weekday = utcDate.getUTCDay(); // 0 = Sunday
   utcDate.setUTCDate(utcDate.getUTCDate() - weekday);
   return utcDate.toISOString().slice(0, 10);
+}
+
+type StudyMode = "focus" | "short" | "long";
+type StudyStatus = "idle" | "running" | "paused";
+type DbStudyStatus = StudyStatus | "focusing";
+
+export function normalizeFocusStatus(status: DbStudyStatus): StudyStatus {
+  return status === "focusing" ? "running" : status;
+}
+
+export function serializeFocusState(state: {
+  status: DbStudyStatus;
+  mode?: StudyMode | null;
+  plannedMinutes: number;
+  remainingSeconds?: number | null;
+  startedAt?: Date | string | null;
+  expectedEndAt?: Date | string | null;
+  pausedAt?: Date | string | null;
+}) {
+  const iso = (value: Date | string | null | undefined) =>
+    value ? new Date(value).toISOString() : null;
+
+  return {
+    status: normalizeFocusStatus(state.status),
+    mode: state.mode ?? "focus",
+    plannedMinutes: state.plannedMinutes,
+    remainingSeconds: state.remainingSeconds ?? null,
+    startedAt: iso(state.startedAt),
+    expectedEndAt: iso(state.expectedEndAt),
+    pausedAt: iso(state.pausedAt),
+  };
+}
+
+function extractStreakDays(
+  sessions: StudySessionLike[],
+  now: Date,
+  timeZone: string
+): number {
+  const dateSet = new Set<string>();
+  for (const s of sessions) {
+    dateSet.add(getDayKey(new Date(s.startedAt), timeZone));
+  }
+
+  const todayKey = getDayKey(now, timeZone);
+  if (!dateSet.has(todayKey)) return 0;
+
+  let streak = 0;
+  const cursor = new Date(now);
+  while (true) {
+    const key = getDayKey(cursor, timeZone);
+    if (dateSet.has(key)) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    } else {
+      break;
+    }
+  }
+
+  return streak;
 }
 
 export function buildStudyStats(
@@ -66,7 +131,13 @@ export function buildStudyStats(
   const todayKey = getDayKey(now, timeZone);
   const weekKey = getWeekKey(now, timeZone);
 
-  return sessions.reduce(
+  const filteredSessions = sessions.filter(
+    (s) =>
+      (s.mode === undefined || s.mode === null || s.mode === "focus") &&
+      (s.status === undefined || s.status === null || s.status === "completed")
+  );
+
+  const stats = filteredSessions.reduce(
     (acc, session) => {
       const startedAt = new Date(session.startedAt);
       if (getDayKey(startedAt, timeZone) === todayKey) {
@@ -81,6 +152,11 @@ export function buildStudyStats(
     },
     { todayCount: 0, todayMinutes: 0, weekCount: 0, weekMinutes: 0 }
   );
+
+  return {
+    ...stats,
+    streakDays: extractStreakDays(filteredSessions, now, timeZone),
+  };
 }
 
 export function buildTimelineFocusIntervals(

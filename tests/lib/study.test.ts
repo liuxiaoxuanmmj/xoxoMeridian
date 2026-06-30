@@ -39,6 +39,7 @@ describe("buildStudyStats", () => {
       todayMinutes: 25,
       weekCount: 2,
       weekMinutes: 75,
+      streakDays: 2,
     });
   });
 });
