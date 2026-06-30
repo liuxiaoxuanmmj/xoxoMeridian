@@ -11,6 +11,11 @@ const {
   mockFocusStateUpdate,
   mockFocusSessionCreate,
   mockRevalidatePath,
+  mockRoomParticipantFindFirst,
+  mockRoomParticipantFindMany,
+  mockStudyGoalFindMany,
+  mockFocusStateFindMany,
+  mockGetRoomSnapshot,
 } = vi.hoisted(() => ({
   mockFocusStateFindUnique: vi.fn(),
   mockFocusSessionFindMany: vi.fn(),
@@ -18,10 +23,19 @@ const {
   mockFocusStateUpdate: vi.fn(),
   mockFocusSessionCreate: vi.fn(),
   mockRevalidatePath: vi.fn(),
+  mockRoomParticipantFindFirst: vi.fn(),
+  mockRoomParticipantFindMany: vi.fn(),
+  mockStudyGoalFindMany: vi.fn(),
+  mockFocusStateFindMany: vi.fn(),
+  mockGetRoomSnapshot: vi.fn(),
 }));
 
 vi.mock("@/lib/auth", () => ({
   requireCurrentUser: mockRequireCurrentUser,
+}));
+
+vi.mock("@/lib/room-snapshot", () => ({
+  getRoomSnapshot: mockGetRoomSnapshot,
 }));
 
 vi.mock("next/cache", () => ({
@@ -32,12 +46,20 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     focusState: {
       findUnique: mockFocusStateFindUnique,
+      findMany: mockFocusStateFindMany,
       upsert: mockFocusStateUpsert,
       update: mockFocusStateUpdate,
     },
     focusSession: {
       findMany: mockFocusSessionFindMany,
       create: mockFocusSessionCreate,
+    },
+    roomParticipant: {
+      findFirst: mockRoomParticipantFindFirst,
+      findMany: mockRoomParticipantFindMany,
+    },
+    studyGoal: {
+      findMany: mockStudyGoalFindMany,
     },
   },
 }));
@@ -51,6 +73,21 @@ beforeEach(() => {
   mockRequireCurrentUser.mockResolvedValue({
     id: "user-1",
     profile: { timezone: "Asia/Shanghai" },
+  });
+  mockRoomParticipantFindFirst.mockResolvedValue({
+    roomId: "room-1",
+    room: { id: "room-1", slug: "room-1", name: "Room 1" },
+  });
+  mockRoomParticipantFindMany.mockResolvedValue([]);
+  mockStudyGoalFindMany.mockResolvedValue([]);
+  mockFocusStateFindMany.mockResolvedValue([]);
+  mockGetRoomSnapshot.mockResolvedValue({
+    room: null,
+    messages: [],
+    memos: [],
+    scheduledJobs: [],
+    agentStatus: { isWorking: false, runningTasks: 0, recentTasks: [] },
+    rooms: [],
   });
 });
 
@@ -89,7 +126,8 @@ describe("POST /api/study/start", () => {
   it("starts focus with a 25 minute default", async () => {
     mockFocusStateFindUnique.mockResolvedValue(null);
     mockFocusStateUpsert.mockResolvedValue({
-      status: "focusing",
+      status: "running",
+      mode: "focus",
       plannedMinutes: 25,
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
@@ -105,13 +143,14 @@ describe("POST /api/study/start", () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data.state.status).toBe("focusing");
+    expect(data.state.status).toBe("running");
     expect(data.state.plannedMinutes).toBe(25);
   });
 
   it("returns the existing state when focus is already running", async () => {
     mockFocusStateFindUnique.mockResolvedValue({
-      status: "focusing",
+      status: "running",
+      mode: "focus",
       plannedMinutes: 25,
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
@@ -127,7 +166,7 @@ describe("POST /api/study/start", () => {
     const data = await response.json();
 
     expect(response.status).toBe(200);
-    expect(data.state.status).toBe("focusing");
+    expect(data.state.status).toBe("running");
     expect(mockFocusStateUpsert).not.toHaveBeenCalled();
   });
 });
@@ -136,12 +175,16 @@ describe("POST /api/study/stop", () => {
   it("stops focus and writes a completed session", async () => {
     mockFocusStateFindUnique.mockResolvedValue({
       userId: "user-1",
-      status: "focusing",
+      status: "running",
+      mode: "focus",
       plannedMinutes: 25,
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
+      expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
+      roomId: "room-1",
     });
     mockFocusSessionCreate.mockResolvedValue({
       id: "session-1",
+      mode: "focus",
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
       endedAt: new Date("2026-06-29T01:25:00.000Z"),
       actualMinutes: 25,
