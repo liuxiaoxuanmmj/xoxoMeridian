@@ -28,7 +28,7 @@ describe("LeftRail study status", () => {
             displayName: "Alice",
             avatarLabel: "A",
             profile: { city: "Shanghai", country: "CN", timezone: "Asia/Shanghai" },
-            studyStatus: { state: "focusing", expectedEndAt: "2026-06-29T01:25:00.000Z" },
+            studyStatus: { state: "running", expectedEndAt: "2026-06-29T01:25:00.000Z" },
           },
         ],
         currentRoomId: "room-1",
