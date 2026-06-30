@@ -67,6 +67,7 @@ model User {
   posts               Post[]
   focusState          FocusState?
   focusSessions       FocusSession[]
+  studyGoals          StudyGoal[]
 }
 
 model Session {
@@ -130,6 +131,7 @@ model Room {
   posts            Post[]
   focusStates      FocusState[]
   focusSessions    FocusSession[]
+  studyGoals       StudyGoal[]
 }
 
 model RoomParticipant {
@@ -430,6 +432,14 @@ model Post {
 enum FocusStatus {
   idle
   focusing
+  running
+  paused
+}
+
+enum StudyTimerMode {
+  focus
+  short
+  long
 }
 
 enum FocusSessionStatus {
@@ -438,21 +448,26 @@ enum FocusSessionStatus {
 }
 
 model FocusState {
-  id                String      @id @default(cuid())
-  userId            String      @unique
-  status            FocusStatus @default(idle)
+  id                String          @id @default(cuid())
+  userId            String          @unique
+  status            FocusStatus     @default(idle)
+  mode              StudyTimerMode  @default(focus)
   plannedMinutes    Int
+  remainingSeconds  Int?
   startedAt         DateTime?
   expectedEndAt     DateTime?
+  pausedAt          DateTime?
+  lastStudySeenAt   DateTime?
   currentSessionKey String?
   roomId            String?
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
-  user              User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  room              Room?       @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room              Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([roomId])
+  @@index([lastStudySeenAt])
 }
 
 model FocusSession {
@@ -460,6 +475,7 @@ model FocusSession {
   userId         String
   roomId         String?
   status         FocusSessionStatus @default(completed)
+  mode           StudyTimerMode     @default(focus)
   plannedMinutes Int
   actualMinutes  Int
   startedAt      DateTime
@@ -473,4 +489,22 @@ model FocusSession {
   @@index([startedAt(sort: Desc)])
   @@index([roomId])
   @@index([status, startedAt(sort: Desc)])
+  @@index([mode, status, startedAt(sort: Desc)])
+}
+
+model StudyGoal {
+  id        String       @id @default(cuid())
+  userId    String
+  roomId    String?
+  localDate String
+  text      String
+  done      Boolean      @default(false)
+  sortOrder Int          @default(0)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+
+  @@index([userId, localDate, sortOrder])
+  @@index([roomId, localDate])
 }
