@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   BookOpen,
@@ -186,8 +186,8 @@ function ModeTabs({
 export function StudyDashboard({ initialData }: { initialData: StudyPageData }) {
   const [data, setData] = useState(initialData);
   const [mode, setMode] = useState<TimerMode>(initialData.currentState.mode);
-  const [busy, setBusy] = useState<string | null>(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const busyRef = useRef(false);
+  const [, forceTick] = useState(0);
   const [goalDraft, setGoalDraft] = useState("");
   const [goals, setGoals] = useState<StudyGoal[]>(initialData.goals);
   const autoStoppedRef = useRef(false);
@@ -199,22 +199,18 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
 
   const plannedSeconds = (TIMER_DURATIONS[mode] ?? 25) * 60;
 
-  // Compute remaining seconds based on server state + local tick
-  const remainingSeconds = useMemo(() => {
+  // Compute on every render — Date.now() is cheap, no memoization needed
+  const remainingSeconds = (() => {
     if (isRunning) {
       if (state.remainingSeconds !== null && state.remainingSeconds !== undefined) {
-        // Paused-then-resumed: server gave us exact remaining at resume time
         const pausedAt = state.pausedAt ? new Date(state.pausedAt).getTime() : null;
-        // Use elapsed since pausedAt or startedAt
         if (pausedAt) {
           return Math.max(0, state.remainingSeconds - Math.floor((Date.now() - pausedAt) / 1000));
         }
       }
-      // Fresh start: compute from expectedEndAt
       if (state.expectedEndAt) {
         return Math.max(0, Math.ceil((new Date(state.expectedEndAt).getTime() - Date.now()) / 1000));
       }
-      // Fallback: use elapsed from startedAt
       const startedAt = state.startedAt ? new Date(state.startedAt).getTime() : Date.now();
       const elapsed = Math.floor((Date.now() - startedAt) / 1000);
       return Math.max(0, plannedSeconds - elapsed);
@@ -223,25 +219,48 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
       return state.remainingSeconds;
     }
     return plannedSeconds;
-  }, [isRunning, isPaused, state.remainingSeconds, state.expectedEndAt, state.startedAt, state.pausedAt, plannedSeconds]);
+  })();
 
   const progress = plannedSeconds > 0 ? 1 - remainingSeconds / plannedSeconds : 0;
   const displayTime = formatCountdown(isActive ? remainingSeconds : plannedSeconds);
 
   // ── Tick ───────────────────────────────────────────────────────────────────
 
+  // Tick to trigger re-renders every second while running
   useEffect(() => {
     if (!isRunning) return;
     const timer = window.setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
+      forceTick((n) => n + 1);
     }, 1000);
     return () => window.clearInterval(timer);
   }, [isRunning, state.expectedEndAt]);
 
-  // Reset elapsed when state changes
-  useEffect(() => {
-    if (!isRunning) setElapsedSeconds(0);
-  }, [isRunning]);
+  // ── API handlers used by effects ────────────────────────────────────────────
+
+  const refreshData = useCallback(async () => {
+    const response = await fetch("/api/study", { cache: "no-store" });
+    if (response.ok) {
+      const result = await response.json();
+      setData(result);
+      setGoals(result.goals);
+      if (result.currentState?.mode) {
+        setMode(result.currentState.mode);
+      }
+    }
+  }, []);
+
+  const stopTimer = useCallback(async () => {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    try {
+      const response = await fetch("/api/study/stop", { method: "POST" });
+      if (response.ok) {
+        await refreshData();
+      }
+    } finally {
+      busyRef.current = false;
+    }
+  }, [refreshData]);
 
   // ── Auto-stop when timer reaches 0 ────────────────────────────────────────
 
@@ -253,7 +272,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
     if (!isRunning) {
       autoStoppedRef.current = false;
     }
-  }, [isRunning, remainingSeconds]);
+  }, [isRunning, remainingSeconds, stopTimer]);
 
   // ── Presence heartbeat ─────────────────────────────────────────────────────
 
@@ -269,22 +288,12 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
 
   // ── API handlers ───────────────────────────────────────────────────────────
 
-  const refreshData = useCallback(async () => {
-    const response = await fetch("/api/study", { cache: "no-store" });
-    if (response.ok) {
-      const result = await response.json();
-      setData(result);
-      setGoals(result.goals);
-      if (result.currentState?.mode) {
-        setMode(result.currentState.mode);
-      }
-    }
-  }, []);
+  // Note: refreshData and stopTimer are defined above (before effects that reference them)
 
   const startTimer = useCallback(
     async (selectedMode: TimerMode) => {
-      if (busy) return;
-      setBusy("start");
+      if (busyRef.current) return;
+      busyRef.current = true;
       try {
         const response = await fetch("/api/study/start", {
           method: "POST",
@@ -296,15 +305,15 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           setData((prev) => ({ ...prev, currentState: result.state }));
         }
       } finally {
-        setBusy(null);
+        busyRef.current = false;
       }
     },
-    [busy],
+    [],
   );
 
   const pauseTimer = useCallback(async () => {
-    if (busy) return;
-    setBusy("pause");
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       const response = await fetch("/api/study/pause", { method: "POST" });
       if (response.ok) {
@@ -312,13 +321,13 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
         setData((prev) => ({ ...prev, currentState: result.state }));
       }
     } finally {
-      setBusy(null);
+      busyRef.current = false;
     }
-  }, [busy]);
+  }, []);
 
   const resumeTimer = useCallback(async () => {
-    if (busy) return;
-    setBusy("resume");
+    if (busyRef.current) return;
+    busyRef.current = true;
     try {
       const response = await fetch("/api/study/resume", { method: "POST" });
       if (response.ok) {
@@ -326,27 +335,14 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
         setData((prev) => ({ ...prev, currentState: result.state }));
       }
     } finally {
-      setBusy(null);
+      busyRef.current = false;
     }
-  }, [busy]);
-
-  const stopTimer = useCallback(async () => {
-    if (busy) return;
-    setBusy("stop");
-    try {
-      const response = await fetch("/api/study/stop", { method: "POST" });
-      if (response.ok) {
-        await refreshData();
-      }
-    } finally {
-      setBusy(null);
-    }
-  }, [busy, refreshData]);
+  }, []);
 
   const createGoal = useCallback(async () => {
     const text = goalDraft.trim();
-    if (!text || busy) return;
-    setBusy("goal-create");
+    if (!text || busyRef.current) return;
+    busyRef.current = true;
     try {
       const response = await fetch("/api/study/goals", {
         method: "POST",
@@ -360,14 +356,14 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
         await refreshData();
       }
     } finally {
-      setBusy(null);
+      busyRef.current = false;
     }
-  }, [goalDraft, busy, refreshData]);
+  }, [goalDraft, refreshData]);
 
   const toggleGoal = useCallback(
     async (goal: StudyGoal) => {
-      if (busy) return;
-      setBusy(`goal-${goal.id}`);
+      if (busyRef.current) return;
+      busyRef.current = true;
       try {
         const response = await fetch(`/api/study/goals/${goal.id}`, {
           method: "PATCH",
@@ -382,10 +378,10 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           await refreshData();
         }
       } finally {
-        setBusy(null);
+        busyRef.current = false;
       }
     },
-    [busy, refreshData],
+    [refreshData],
   );
 
   // ── Derived display values ─────────────────────────────────────────────────
@@ -490,7 +486,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     key={goal.id}
                     type="button"
                     onClick={() => toggleGoal(goal)}
-                    disabled={busy !== null}
+                    disabled={busyRef.current}
                     className="flex items-center gap-2 w-full text-left rounded-[8px] px-2 py-1.5 hover:bg-[#f8faf8] transition-colors disabled:opacity-50"
                   >
                     <div
@@ -544,12 +540,12 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     createGoal();
                   }
                 }}
-                disabled={busy !== null}
+                disabled={busyRef.current}
               />
               <button
                 type="button"
                 className="shrink-0 h-8 rounded-[8px] bg-[#3a5b22] px-3 text-xs font-semibold text-white transition-colors hover:bg-[#2e4a1a] disabled:opacity-50"
-                disabled={busy !== null || !goalDraft.trim()}
+                disabled={busyRef.current || !goalDraft.trim()}
                 onClick={createGoal}
               >
                 添加
@@ -628,7 +624,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                       onClick={pauseTimer}
                       whileTap={{ scale: 0.94 }}
                       className="rounded-[10px] border border-[#3a5b22] px-4 py-2 text-sm font-medium text-[#3a5b22] transition-colors hover:bg-[#3a5b22]/5 disabled:opacity-50 flex items-center gap-1.5"
-                      disabled={busy !== null}
+                      disabled={busyRef.current}
                     >
                       <Pause className="w-4 h-4" />
                       暂停
@@ -638,7 +634,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                       onClick={stopTimer}
                       whileTap={{ scale: 0.94 }}
                       className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
-                      disabled={busy !== null}
+                      disabled={busyRef.current}
                     >
                       <Square className="w-3.5 h-3.5" />
                       停止
@@ -659,7 +655,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                       onClick={resumeTimer}
                       whileTap={{ scale: 0.94 }}
                       className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
-                      disabled={busy !== null}
+                      disabled={busyRef.current}
                     >
                       <Play className="w-4 h-4" />
                       继续
@@ -669,7 +665,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                       onClick={stopTimer}
                       whileTap={{ scale: 0.94 }}
                       className="rounded-[10px] border border-[#e8e8e8] px-4 py-2 text-sm font-medium text-black/50 transition-colors hover:bg-black/5 disabled:opacity-50 flex items-center gap-1.5"
-                      disabled={busy !== null}
+                      disabled={busyRef.current}
                     >
                       <Square className="w-3.5 h-3.5" />
                       停止
@@ -687,7 +683,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     exit={{ scale: 0.9, opacity: 0 }}
                     whileTap={{ scale: 0.94 }}
                     className="rounded-[10px] bg-[#3a5b22] px-5 py-2 text-sm font-medium text-white shadow-sm transition-colors hover:bg-[#2f4d1c] disabled:opacity-50 flex items-center gap-1.5"
-                    disabled={busy !== null}
+                    disabled={busyRef.current}
                   >
                     <Play className="w-4 h-4" />
                     开始专注
