@@ -1,5 +1,3 @@
-import { revalidatePath } from "next/cache";
-
 import { applyNoStoreHeaders, errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -63,8 +61,6 @@ export async function POST(_request: Request) {
         lastStudySeenAt: new Date(),
       },
     });
-
-    revalidatePath("/home");
 
     const response = jsonOk({
       session: {

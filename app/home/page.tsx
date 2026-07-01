@@ -27,17 +27,6 @@ export default async function HomePage() {
   });
   const initialSnapshot = await getHomeBoardSnapshot(board.id);
 
-  const focusSessions = await prisma.focusSession.findMany({
-    where: {
-      status: "completed",
-    },
-    orderBy: { startedAt: "desc" },
-    take: 100,
-    include: {
-      user: { select: { displayName: true } },
-    },
-  });
-
   return (
     <div className="home-linen-page min-h-screen relative overflow-hidden">
       <div
@@ -61,7 +50,6 @@ export default async function HomePage() {
             posts={JSON.parse(JSON.stringify(posts))}
             currentUserId={user.id}
             initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
-            focusSessions={JSON.parse(JSON.stringify(focusSessions))}
           />
         </Suspense>
       </PageTransition>

@@ -869,7 +869,6 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider">
             最近记录
           </h2>
-          <span className="text-[10px] text-black/25">与时间轴联动</span>
         </div>
         <div className="mt-4 space-y-2">
           {data.recentSessions.length === 0 ? (
@@ -894,9 +893,6 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     {formatSessionTime(session.endedAt)}
                   </p>
                 </div>
-                <span className="text-[10px] text-[#3a5b22]/60">
-                  已写入时间轴
-                </span>
               </div>
             ))
           )}

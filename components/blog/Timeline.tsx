@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { PostCard } from "@/components/blog/PostCard";
 import { AgentLogCard } from "@/components/blog/AgentLogCard";
 import { PostCardSpatialShell } from "@/components/home/PostCardSpatialShell";
-import type { TimelineFocusInterval } from "@/lib/study";
 import { useScrollReveal } from "@/lib/useScrollReveal";
 import { cn } from "@/lib/utils";
 
@@ -43,37 +42,7 @@ export type TimelinePost = {
 };
 
 type TimelineEntry =
-  | { kind: "post"; id: string; sortAt: number; post: TimelinePost }
-  | { kind: "focus"; id: string; sortAt: number; interval: TimelineFocusInterval };
-
-function formatFocusTime(value: string) {
-  return new Date(value).toLocaleTimeString("zh-CN", {
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-  });
-}
-
-function TimelineFocusMarker({ interval }: { interval: TimelineFocusInterval }) {
-  const timeRange = `${formatFocusTime(interval.startedAt)} - ${formatFocusTime(interval.endedAt)}`;
-  const detail = `${timeRange} · ${interval.userDisplayName} 在认真自习`;
-
-  return (
-    <div className="relative min-h-8">
-      <button
-        type="button"
-        data-testid="timeline-focus-marker"
-        data-focus-user={interval.userId}
-        aria-label={detail}
-        className="group absolute left-1/2 top-1/2 z-30 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-[#3a8067] shadow-[0_0_0_3px_rgba(167,196,155,0.35)] outline-none transition focus-visible:ring-2 focus-visible:ring-[#3a8067]/30"
-      >
-        <span className="pointer-events-none absolute left-1/2 top-6 z-40 -translate-x-1/2 whitespace-nowrap rounded-md border border-sage-100 bg-white px-3 py-2 text-xs font-medium text-black/70 opacity-0 shadow-sm transition group-hover:opacity-100 group-focus:opacity-100 group-focus-visible:opacity-100">
-          {detail}
-        </span>
-      </button>
-    </div>
-  );
-}
+  | { kind: "post"; id: string; sortAt: number; post: TimelinePost };
 
 function TimelineItem({
   children,
@@ -116,7 +85,6 @@ type TimelineSpatialProps = {
 export function Timeline({
   posts,
   currentUserId,
-  focusIntervals = [],
   postElementByPostId = {},
   connectFromId = null,
   onSpatialElementClick,
@@ -125,7 +93,6 @@ export function Timeline({
 }: {
   posts: TimelinePost[];
   currentUserId: string;
-  focusIntervals?: TimelineFocusInterval[];
   emptyMessage?: string;
 } & TimelineSpatialProps) {
   const sorted = useMemo(
@@ -137,21 +104,13 @@ export function Timeline({
   );
   const entries = useMemo<TimelineEntry[]>(
     () =>
-      [
-        ...sorted.map((post) => ({
-          kind: "post" as const,
-          id: post.id,
-          sortAt: new Date(post.publishedAt).getTime(),
-          post,
-        })),
-        ...focusIntervals.map((interval) => ({
-          kind: "focus" as const,
-          id: interval.id,
-          sortAt: new Date(interval.startedAt).getTime(),
-          interval,
-        })),
-      ].sort((a, b) => a.sortAt - b.sortAt),
-    [focusIntervals, sorted]
+      sorted.map((post) => ({
+        kind: "post" as const,
+        id: post.id,
+        sortAt: new Date(post.publishedAt).getTime(),
+        post,
+      })),
+    [sorted]
   );
 
   const humanAuthors = useMemo(() => {
@@ -189,10 +148,6 @@ export function Timeline({
 
       <div className="flex flex-col gap-10">
         {entries.map((entry) => {
-          if (entry.kind === "focus") {
-            return <TimelineFocusMarker key={entry.id} interval={entry.interval} />;
-          }
-
           const post = entry.post;
 
           if (post.type === "agent_log") {
