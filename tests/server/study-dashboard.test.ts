@@ -101,6 +101,28 @@ describe("StudyDashboard", () => {
     expect(html).toContain("25:00");
   });
 
+  it("renders a rest CTA when the selected idle mode is a break", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StudyDashboard, {
+        initialData: makeStudyData({
+          currentState: {
+            status: "idle",
+            mode: "short",
+            plannedMinutes: 5,
+            remainingSeconds: null,
+            startedAt: null,
+            expectedEndAt: null,
+            pausedAt: null,
+          },
+        }),
+      })
+    );
+
+    expect(html).toContain("开始休息");
+    expect(html).not.toContain("开始专注");
+    expect(html).toContain("05:00");
+  });
+
   it("renders the running state CTA", () => {
     const html = renderToStaticMarkup(
       React.createElement(StudyDashboard, {
@@ -161,7 +183,7 @@ describe("StudyDashboard", () => {
     );
 
     expect(html).toContain("心流屋");
-    expect(html).toContain("今日概览");
+    expect(html).toContain("概览");
     expect(html).toContain("今日清单");
     expect(html).toContain("学习伙伴");
     expect(html).toContain("氛围音效");
@@ -193,5 +215,48 @@ describe("StudyDashboard", () => {
     expect(html).toContain("Alice");
     expect(html).toContain("Bob");
     expect(html).toContain("专注中");
+  });
+
+  it("renders a delete control on the right side of each study goal", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StudyDashboard, {
+        initialData: makeStudyData({
+          goals: [
+            {
+              id: "goal-1",
+              text: "整理课堂笔记",
+              done: false,
+              sortOrder: 0,
+              localDate: "2026-06-30",
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(html).toContain("整理课堂笔记");
+    expect(html).toContain('aria-label="删除清单项：整理课堂笔记"');
+    expect(html).toContain(">×</button>");
+  });
+
+  it("renders the date for recent study sessions", () => {
+    const html = renderToStaticMarkup(
+      React.createElement(StudyDashboard, {
+        initialData: makeStudyData({
+          recentSessions: [
+            {
+              id: "session-1",
+              userId: "user-1",
+              startedAt: "2026-06-30T12:08:00.000Z",
+              endedAt: "2026-06-30T12:17:00.000Z",
+              actualMinutes: 9,
+            },
+          ],
+        }),
+      })
+    );
+
+    expect(html).toContain("6月30日");
+    expect(html).toContain("9 分钟");
   });
 });

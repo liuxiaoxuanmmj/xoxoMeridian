@@ -10,6 +10,7 @@ const {
   mockRevalidatePath,
   mockStudyGoalCreate,
   mockStudyGoalUpdate,
+  mockStudyGoalDelete,
   mockStudyGoalFindFirst,
   mockStudyGoalCount,
 } = vi.hoisted(() => ({
@@ -22,6 +23,7 @@ const {
   mockRevalidatePath: vi.fn(),
   mockStudyGoalCreate: vi.fn(),
   mockStudyGoalUpdate: vi.fn(),
+  mockStudyGoalDelete: vi.fn(),
   mockStudyGoalFindFirst: vi.fn(),
   mockStudyGoalCount: vi.fn(),
 }));
@@ -40,6 +42,7 @@ vi.mock("@/lib/prisma", () => ({
     studyGoal: {
       create: mockStudyGoalCreate,
       update: mockStudyGoalUpdate,
+      delete: mockStudyGoalDelete,
       findFirst: mockStudyGoalFindFirst,
       count: mockStudyGoalCount,
     },
@@ -211,7 +214,7 @@ describe("productized study timer API", () => {
 });
 
 import { POST as CREATE_GOAL } from "@/app/api/study/goals/route";
-import { PATCH as PATCH_GOAL } from "@/app/api/study/goals/[goalId]/route";
+import { DELETE as DELETE_GOAL, PATCH as PATCH_GOAL } from "@/app/api/study/goals/[goalId]/route";
 import { POST as PRESENCE } from "@/app/api/study/presence/route";
 
 describe("study goals API", () => {
@@ -260,6 +263,24 @@ describe("study goals API", () => {
 
     expect(response.status).toBe(200);
     expect(data.goal.done).toBe(true);
+  });
+
+  it("deletes only a goal owned by the current user", async () => {
+    mockStudyGoalFindFirst.mockResolvedValue({ id: "goal-1", userId: "user-1" });
+    mockStudyGoalDelete.mockResolvedValue({ id: "goal-1" });
+
+    const response = await DELETE_GOAL(
+      new Request("http://localhost/api/study/goals/goal-1", { method: "DELETE" }),
+      { params: { goalId: "goal-1" } }
+    );
+    const data = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(data.ok).toBe(true);
+    expect(mockStudyGoalFindFirst).toHaveBeenCalledWith({
+      where: { id: "goal-1", userId: "user-1" },
+    });
+    expect(mockStudyGoalDelete).toHaveBeenCalledWith({ where: { id: "goal-1" } });
   });
 });
 

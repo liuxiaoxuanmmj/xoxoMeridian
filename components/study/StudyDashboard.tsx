@@ -93,6 +93,18 @@ function formatMinutes(minutes: number): string {
   return m > 0 ? `${h}h ${m}m` : `${h}h`;
 }
 
+function formatSessionDate(iso: string): string {
+  const date = new Date(iso);
+  return `${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
+function formatSessionTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+}
+
 // ── Timer Ring ─────────────────────────────────────────────────────────────────
 
 function TimerRing({
@@ -383,6 +395,25 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
     [refreshData],
   );
 
+  const deleteGoal = useCallback(
+    async (goal: StudyGoal) => {
+      if (busyRef.current) return;
+      busyRef.current = true;
+      try {
+        const response = await fetch(`/api/study/goals/${goal.id}`, {
+          method: "DELETE",
+        });
+        if (response.ok) {
+          setGoals((prev) => prev.filter((g) => g.id !== goal.id));
+          await refreshData();
+        }
+      } finally {
+        busyRef.current = false;
+      }
+    },
+    [refreshData],
+  );
+
   // ── Derived display values ─────────────────────────────────────────────────
 
   const todayFocusStr =
@@ -391,6 +422,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
       : "0m";
 
   const onlineCount = data.members.filter((m) => m.online).length;
+  const startButtonLabel = mode === "focus" ? "开始专注" : "开始休息";
 
   // ── Render ─────────────────────────────────────────────────────────────────
 
@@ -433,7 +465,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
           {/* Stats Card */}
           <section className="rounded-[10px] border border-sage-100 bg-white/90 p-5">
             <h2 className="text-xs font-semibold text-black/50 uppercase tracking-wider mb-4">
-              今日概览
+              概览
             </h2>
             <div className="space-y-3">
               <div className="flex items-center gap-2.5">
@@ -481,45 +513,58 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
             ) : (
               <div className="space-y-2 mb-3">
                 {goals.map((goal) => (
-                  <button
+                  <div
                     key={goal.id}
-                    type="button"
-                    onClick={() => toggleGoal(goal)}
-                    disabled={busyRef.current}
                     className="flex items-center gap-2 w-full text-left rounded-[8px] px-2 py-1.5 hover:bg-sage-50 transition-colors disabled:opacity-50"
                   >
-                    <div
-                      className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${goal.done
-                        ? "bg-[#3a5b22] border-[#3a5b22]"
-                        : "border-sage-200"
-                        }`}
+                    <button
+                      type="button"
+                      onClick={() => toggleGoal(goal)}
+                      disabled={busyRef.current}
+                      className="flex min-w-0 flex-1 items-center gap-2 text-left disabled:opacity-50"
                     >
-                      {goal.done && (
-                        <svg
-                          width="10"
-                          height="8"
-                          viewBox="0 0 10 8"
-                          fill="none"
-                        >
-                          <path
-                            d="M1 4l2.5 2.5L9 1"
-                            stroke="white"
-                            strokeWidth="1.5"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                          />
-                        </svg>
-                      )}
-                    </div>
-                    <span
-                      className={`text-xs ${goal.done
-                        ? "text-black/30 line-through"
-                        : "text-black/70"
-                        }`}
+                      <div
+                        className={`w-4 h-4 rounded border-2 shrink-0 flex items-center justify-center transition-colors ${goal.done
+                          ? "bg-[#3a5b22] border-[#3a5b22]"
+                          : "border-sage-200"
+                          }`}
+                      >
+                        {goal.done && (
+                          <svg
+                            width="10"
+                            height="8"
+                            viewBox="0 0 10 8"
+                            fill="none"
+                          >
+                            <path
+                              d="M1 4l2.5 2.5L9 1"
+                              stroke="white"
+                              strokeWidth="1.5"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            />
+                          </svg>
+                        )}
+                      </div>
+                      <span
+                        className={`min-w-0 flex-1 truncate text-xs ${goal.done
+                          ? "text-black/30 line-through"
+                          : "text-black/70"
+                          }`}
+                      >
+                        {goal.text}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => deleteGoal(goal)}
+                      disabled={busyRef.current}
+                      aria-label={`删除清单项：${goal.text}`}
+                      className="ml-auto flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-black/25 transition-colors hover:bg-red-50 hover:text-red-500 disabled:opacity-50"
                     >
-                      {goal.text}
-                    </span>
-                  </button>
+                      ×
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
@@ -683,7 +728,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     disabled={busyRef.current}
                   >
                     <Play className="w-4 h-4" />
-                    开始专注
+                    {startButtonLabel}
                   </motion.button>
                 )}
               </AnimatePresence>
@@ -842,15 +887,11 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
                     {session.actualMinutes} 分钟
                   </p>
                   <p className="text-xs text-black/40">
-                    {new Date(session.startedAt).toLocaleTimeString("zh-CN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatSessionDate(session.startedAt)}
+                    {" · "}
+                    {formatSessionTime(session.startedAt)}
                     {" — "}
-                    {new Date(session.endedAt).toLocaleTimeString("zh-CN", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
+                    {formatSessionTime(session.endedAt)}
                   </p>
                 </div>
                 <span className="text-[10px] text-[#3a5b22]/60">

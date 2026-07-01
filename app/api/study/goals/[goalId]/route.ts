@@ -43,3 +43,35 @@ export async function PATCH(
     return response;
   }
 }
+
+export async function DELETE(
+  _request: Request,
+  { params }: { params: { goalId: string } }
+) {
+  try {
+    const user = await requireCurrentUser();
+    const { goalId } = params;
+
+    const goal = await prisma.studyGoal.findFirst({
+      where: { id: goalId, userId: user.id },
+    });
+
+    if (!goal) {
+      const response = jsonError("Goal not found", 404);
+      applyNoStoreHeaders(response.headers);
+      return response;
+    }
+
+    await prisma.studyGoal.delete({
+      where: { id: goalId },
+    });
+
+    const response = jsonOk({ ok: true });
+    applyNoStoreHeaders(response.headers);
+    return response;
+  } catch (error) {
+    const response = errorToResponse(error);
+    applyNoStoreHeaders(response.headers);
+    return response;
+  }
+}
