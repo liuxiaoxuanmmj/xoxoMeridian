@@ -3,11 +3,12 @@ import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function GET(_request: Request, { params }: { params: { taskId: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ taskId: string }> }) {
   try {
     const user = await requireCurrentUser();
+    const { taskId } = await params;
     const task = await prisma.agentTask.findUnique({
-      where: { id: params.taskId },
+      where: { id: taskId },
       include: {
         sourceMessage: true,
         finalMessage: true,

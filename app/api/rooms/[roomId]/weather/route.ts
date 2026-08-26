@@ -11,10 +11,11 @@ export const dynamic = "force-dynamic";
 // Returns current weather for the requested participant(s), using the partner
 // by default. The underlying fetch has its own 10-min cache, so polling this
 // endpoint from the UI does not hit QWeather on every call.
-export async function GET(request: Request, { params }: { params: { roomId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `weather:${user.id}`, 30, 60_000);
     if (limited) return limited;
@@ -23,7 +24,7 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
     const who = (searchParams.get("who") ?? "partner").toLowerCase();
 
     const participants = await prisma.roomParticipant.findMany({
-      where: { roomId: params.roomId },
+      where: { roomId },
       orderBy: { joinedAt: "asc" },
       include: { user: { include: { profile: true } } }
     });

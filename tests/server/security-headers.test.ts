@@ -1,6 +1,6 @@
-import { describe, expect, it, afterEach } from "vitest";
+import { describe, expect, it, afterEach, vi } from "vitest";
 
-import { buildContentSecurityPolicy } from "@/middleware";
+import { buildContentSecurityPolicy } from "@/proxy";
 
 function getDirective(csp: string, name: string) {
   const directive = csp.split("; ").find((part) => part.startsWith(`${name} `));
@@ -12,8 +12,7 @@ function getDirective(csp: string, name: string) {
 
 describe("security headers", () => {
   afterEach(() => {
-    delete process.env.LOGIN_VISUALS_IMAGE_SRC;
-    process.env.NODE_ENV = "test";
+    vi.unstubAllEnvs();
   });
 
   it("keeps external login visual image sources disabled by default", async () => {
@@ -49,7 +48,7 @@ describe("security headers", () => {
   });
 
   it("allows eval only for Next.js development scripts", async () => {
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
 
     const csp = buildContentSecurityPolicy();
     const scriptSrc = getDirective(csp, "script-src");
@@ -58,7 +57,7 @@ describe("security headers", () => {
   });
 
   it("keeps eval disabled outside development", async () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
 
     const csp = buildContentSecurityPolicy();
     const scriptSrc = getDirective(csp, "script-src");

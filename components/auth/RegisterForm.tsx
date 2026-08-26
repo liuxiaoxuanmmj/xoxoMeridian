@@ -65,8 +65,9 @@ export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void 
   return (
     <form onSubmit={submit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">邮箱</label>
+        <label htmlFor="register-email" className="text-[15px] font-medium leading-none text-black">邮箱</label>
         <input
+          id="register-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -79,8 +80,9 @@ export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void 
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">昵称</label>
+        <label htmlFor="register-display-name" className="text-[15px] font-medium leading-none text-black">昵称</label>
         <input
+          id="register-display-name"
           type="text"
           value={displayName}
           onChange={(e) => setDisplayName(e.target.value)}
@@ -93,8 +95,9 @@ export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void 
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">密码</label>
+        <label htmlFor="register-password" className="text-[15px] font-medium leading-none text-black">密码</label>
         <PasswordInput
+          id="register-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="至少 8 位"
@@ -106,8 +109,9 @@ export function RegisterForm({ onSwitchToLogin }: { onSwitchToLogin: () => void 
       </div>
 
       <div className="flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">邀请码</label>
+        <label htmlFor="register-invite-code" className="text-[15px] font-medium leading-none text-black">邀请码</label>
         <input
+          id="register-invite-code"
           type="text"
           value={inviteCode}
           onChange={(e) => setInviteCode(e.target.value)}

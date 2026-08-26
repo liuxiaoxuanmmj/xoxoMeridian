@@ -14,7 +14,8 @@ export const runtime = "nodejs";
 const HEARTBEAT_MS = 10_000;
 
 export async function GET(request: Request) {
-  const token = cookies().get(USER_COOKIE)?.value;
+  const jar = await cookies();
+  const token = jar.get(USER_COOKIE)?.value;
   const session = verifySession(token);
   if (!session) {
     return new Response("Unauthorized", { status: 401 });

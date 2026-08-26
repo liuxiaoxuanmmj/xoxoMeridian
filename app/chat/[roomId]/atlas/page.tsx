@@ -7,8 +7,9 @@ import { getOrCreateBoard } from "@/lib/atlas-board";
 
 export const dynamic = "force-dynamic";
 
-export default async function AtlasPage({ params }: { params: { roomId: string } }) {
+export default async function AtlasPage({ params }: { params: Promise<{ roomId: string }> }) {
   const user = await requirePageUser();
+  const { roomId } = await params;
 
   const board = await getOrCreateBoard();
 
@@ -30,8 +31,8 @@ export default async function AtlasPage({ params }: { params: { roomId: string }
 
   return (
     <AtlasApp
-      key={`${user.id}:${params.roomId}`}
-      roomId={params.roomId}
+      key={`${user.id}:${roomId}`}
+      roomId={roomId}
       currentUser={JSON.parse(JSON.stringify(user))}
       initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
     />

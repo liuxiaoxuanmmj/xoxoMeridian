@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { ResetPasswordForm } from "@/components/auth/ResetPasswordForm";
@@ -24,9 +25,9 @@ export default async function ResetPasswordPage() {
           <ResetPasswordForm />
         </div>
         <div className="text-center">
-          <a href="/" className="text-sm text-ink/60 hover:text-ink transition">
+          <Link href="/" className="text-sm text-ink/60 hover:text-ink transition">
             返回登录
-          </a>
+          </Link>
         </div>
       </main>
     </div>

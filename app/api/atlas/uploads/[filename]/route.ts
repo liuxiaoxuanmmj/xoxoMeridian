@@ -7,14 +7,15 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { filename: string } }
+  { params }: { params: Promise<{ filename: string }> }
 ) {
   try {
     await requireCurrentUser();
+    const { filename } = await params;
 
     let key: string;
     try {
-      key = decodeURIComponent(params.filename);
+      key = decodeURIComponent(filename);
     } catch {
       return new Response("Not found", { status: 404 });
     }

@@ -25,6 +25,8 @@ export function PolaroidCard({
   return (
     <div className="relative rounded-[6px] bg-white p-2 pb-10 shadow-md" style={{ minWidth: 160 }}>
       {element.imageUrl ? (
+        // Private storage URLs require the browser session cookie and cannot use the image optimizer.
+        // eslint-disable-next-line @next/next/no-img-element
         <img
           src={element.imageUrl}
           alt={element.caption ?? ""}

@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 //   - Delete the session from the database
 //   - Clear the cookie from the browser
 export async function POST() {
-  const jar = cookies();
+  const jar = await cookies();
   const token = jar.get(USER_COOKIE)?.value;
   const session = verifySession(token);
 
@@ -30,7 +30,7 @@ export async function POST() {
 
   const response = jsonOk({ ok: true });
   applyNoStoreHeaders(response.headers);
-  appendClearSessionCookieHeaders(response.headers);
+  await appendClearSessionCookieHeaders(response.headers);
 
   console.log("[Logout API] logout complete");
   return response;

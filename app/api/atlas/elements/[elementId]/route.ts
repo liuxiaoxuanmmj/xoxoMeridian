@@ -6,13 +6,14 @@ import { extractAtlasStorageKey, getAtlasStorage } from "@/lib/storage/atlas-sto
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { elementId: string } }
+  { params }: { params: Promise<{ elementId: string }> }
 ) {
   try {
     await requireCurrentUser();
+    const { elementId } = await params;
 
     const element = await prisma.atlasElement.findUnique({
-      where: { id: params.elementId },
+      where: { id: elementId },
     });
 
     if (!element) {
@@ -22,7 +23,7 @@ export async function PATCH(
     const body = await readJsonBody(request, atlasElementPatchSchema);
 
     const updated = await prisma.atlasElement.update({
-      where: { id: params.elementId },
+      where: { id: elementId },
       data: body,
     });
 
@@ -34,20 +35,21 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { elementId: string } }
+  { params }: { params: Promise<{ elementId: string }> }
 ) {
   try {
     await requireCurrentUser();
+    const { elementId } = await params;
 
     const element = await prisma.atlasElement.findUnique({
-      where: { id: params.elementId },
+      where: { id: elementId },
     });
 
     if (!element) {
       return jsonError("Element not found", 404);
     }
 
-    await prisma.atlasElement.delete({ where: { id: params.elementId } });
+    await prisma.atlasElement.delete({ where: { id: elementId } });
 
     if (element.type === "photo" && element.imageUrl) {
       const key = extractAtlasStorageKey(element.imageUrl);

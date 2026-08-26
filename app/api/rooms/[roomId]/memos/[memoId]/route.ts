@@ -7,17 +7,18 @@ import { memoPatchSchema, readJsonBody } from "@/lib/validation";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { roomId: string; memoId: string } }
+  { params }: { params: Promise<{ roomId: string; memoId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { memoId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const memo = await prisma.memo.findUnique({
-      where: { id: params.memoId },
+      where: { id: memoId },
     });
 
-    if (!memo || memo.roomId !== params.roomId) {
+    if (!memo || memo.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
@@ -29,20 +30,21 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { roomId: string; memoId: string } }
+  { params }: { params: Promise<{ roomId: string; memoId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { memoId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `memos-patch:${user.id}`, 20, 60_000);
     if (limited) return limited;
 
     const memo = await prisma.memo.findUnique({
-      where: { id: params.memoId },
+      where: { id: memoId },
     });
 
-    if (!memo || memo.roomId !== params.roomId) {
+    if (!memo || memo.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
@@ -55,7 +57,7 @@ export async function PATCH(
     if (parsed.metadata !== undefined) data.metadata = parsed.metadata;
 
     const updated = await prisma.memo.update({
-      where: { id: params.memoId },
+      where: { id: memoId },
       data,
     });
 
@@ -67,24 +69,25 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { roomId: string; memoId: string } }
+  { params }: { params: Promise<{ roomId: string; memoId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { memoId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `memos-delete:${user.id}`, 20, 60_000);
     if (limited) return limited;
 
     const memo = await prisma.memo.findUnique({
-      where: { id: params.memoId },
+      where: { id: memoId },
     });
 
-    if (!memo || memo.roomId !== params.roomId) {
+    if (!memo || memo.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
-    await prisma.memo.delete({ where: { id: params.memoId } });
+    await prisma.memo.delete({ where: { id: memoId } });
 
     return jsonOk({ ok: true });
   } catch (error) {

@@ -257,7 +257,7 @@ describe("study goals API", () => {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ done: true }),
       }),
-      { params: { goalId: "goal-1" } }
+      { params: Promise.resolve({ goalId: "goal-1" }) }
     );
     const data = await response.json();
 
@@ -271,7 +271,7 @@ describe("study goals API", () => {
 
     const response = await DELETE_GOAL(
       new Request("http://localhost/api/study/goals/goal-1", { method: "DELETE" }),
-      { params: { goalId: "goal-1" } }
+      { params: Promise.resolve({ goalId: "goal-1" }) }
     );
     const data = await response.json();
 

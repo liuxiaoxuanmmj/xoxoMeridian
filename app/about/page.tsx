@@ -494,7 +494,7 @@ export default function AboutPage() {
     };
     window.addEventListener("mousemove", move);
     return () => window.removeEventListener("mousemove", move);
-  }, []);
+  }, [cursorX, cursorY]);
 
   return (
     <div

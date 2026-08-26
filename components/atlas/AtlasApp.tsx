@@ -119,13 +119,14 @@ export function AtlasApp({
   useEffect(() => {
     let cancelled = false;
     let source: EventSource | null = null;
+    const reconnect = reconnectRef.current;
 
     const connect = () => {
       if (cancelled) return;
       source = new EventSource(`/api/atlas/stream`);
 
       source.addEventListener("open", () => {
-        reconnectRef.current.attempt = 0;
+        reconnect.attempt = 0;
       });
 
       source.addEventListener("snapshot", (event) => {
@@ -139,10 +140,10 @@ export function AtlasApp({
         if (cancelled) return;
         source?.close();
         source = null;
-        const attempt = Math.min(reconnectRef.current.attempt + 1, 6);
-        reconnectRef.current.attempt = attempt;
+        const attempt = Math.min(reconnect.attempt + 1, 6);
+        reconnect.attempt = attempt;
         const delay = Math.min(1000 * 2 ** (attempt - 1), 30_000);
-        reconnectRef.current.timer = window.setTimeout(connect, delay);
+        reconnect.timer = window.setTimeout(connect, delay);
       });
     };
 
@@ -150,11 +151,11 @@ export function AtlasApp({
 
     return () => {
       cancelled = true;
-      if (reconnectRef.current.timer !== null) {
-        window.clearTimeout(reconnectRef.current.timer);
-        reconnectRef.current.timer = null;
+      if (reconnect.timer !== null) {
+        window.clearTimeout(reconnect.timer);
+        reconnect.timer = null;
       }
-      reconnectRef.current.attempt = 0;
+      reconnect.attempt = 0;
       source?.close();
     };
   }, []);

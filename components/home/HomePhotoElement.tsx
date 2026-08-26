@@ -148,6 +148,8 @@ export function HomePhotoElement({
       onPointerUp={onPointerUp}
     >
       <div className="home-photo-card">
+        {/* Private storage URLs require the browser session cookie and cannot use the image optimizer. */}
+        {/* eslint-disable-next-line @next/next/no-img-element */}
         <img
           src={element.imageUrl}
           alt={element.caption ?? ""}

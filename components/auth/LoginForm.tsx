@@ -61,8 +61,9 @@ export function LoginForm({ onSwitchToRegister }: { onSwitchToRegister: () => vo
   return (
     <form onSubmit={submit} className="flex flex-col gap-5">
       <div className="flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">邮箱</label>
+        <label htmlFor="login-email" className="text-[15px] font-medium leading-none text-black">邮箱</label>
         <input
+          id="login-email"
           type="email"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
@@ -75,8 +76,9 @@ export function LoginForm({ onSwitchToRegister }: { onSwitchToRegister: () => vo
       </div>
 
       <div className="relative flex flex-col gap-1.5">
-        <label className="text-[15px] font-medium leading-none text-black">密码</label>
+        <label htmlFor="login-password" className="text-[15px] font-medium leading-none text-black">密码</label>
         <PasswordInput
+          id="login-password"
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           placeholder="输入密码"

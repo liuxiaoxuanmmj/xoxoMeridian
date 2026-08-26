@@ -8,7 +8,7 @@ import {
 } from "@/lib/auth";
 import { chatRoomRedirectPath } from "@/lib/chat-redirect";
 import { applyNoStoreHeaders } from "@/lib/api";
-import { isNoStorePath } from "@/middleware";
+import { isNoStorePath } from "@/proxy";
 
 describe("session signing", () => {
   it("round-trips sessionId and userId through sign and verify", () => {

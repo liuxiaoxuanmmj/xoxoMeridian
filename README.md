@@ -305,7 +305,7 @@ curl -fsS https://your-domain/api/health
 
 - 共享密码 + HMAC 签名 cookie + 7 天过期
 - 全部 POST 路由 zod 输入校验 + IP 维度滑动窗口限流
-- `middleware.ts` 强制 `Origin === APP_BASE_URL`（CSRF 二次防御）
+- `proxy.ts` 强制 `Origin === APP_BASE_URL`（CSRF 二次防御）
 - HSTS / CSP / X-Frame-Options / Referrer-Policy / Permissions-Policy
 - 多阶段 Dockerfile，运行时镜像非 root、`cap_drop: ALL`、`no-new-privileges`
 - PostgreSQL 端口不对外，密码不进镜像层

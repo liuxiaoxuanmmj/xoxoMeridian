@@ -39,17 +39,18 @@ function formatJob(j: {
 
 export async function GET(
   _request: Request,
-  { params }: { params: { roomId: string; jobId: string } }
+  { params }: { params: Promise<{ roomId: string; jobId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { jobId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const job = await prisma.scheduledJob.findUnique({
-      where: { id: params.jobId },
+      where: { id: jobId },
     });
 
-    if (!job || job.roomId !== params.roomId) {
+    if (!job || job.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
@@ -61,20 +62,21 @@ export async function GET(
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { roomId: string; jobId: string } }
+  { params }: { params: Promise<{ roomId: string; jobId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { jobId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs-patch:${user.id}`, 10, 60_000);
     if (limited) return limited;
 
     const existing = await prisma.scheduledJob.findUnique({
-      where: { id: params.jobId },
+      where: { id: jobId },
     });
 
-    if (!existing || existing.roomId !== params.roomId) {
+    if (!existing || existing.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
@@ -82,7 +84,7 @@ export async function PATCH(
 
     if (parsed.enabled === true && !existing.enabled) {
       const activeCount = await prisma.scheduledJob.count({
-        where: { roomId: params.roomId, enabled: true },
+        where: { roomId, enabled: true },
       });
       if (activeCount >= MAX_JOBS_PER_ROOM) {
         return jsonError(`Room already has ${activeCount} active jobs (max ${MAX_JOBS_PER_ROOM})`, 409);
@@ -133,7 +135,7 @@ export async function PATCH(
     }
 
     const updated = await prisma.scheduledJob.update({
-      where: { id: params.jobId },
+      where: { id: jobId },
       data,
     });
 
@@ -145,25 +147,26 @@ export async function PATCH(
 
 export async function DELETE(
   request: Request,
-  { params }: { params: { roomId: string; jobId: string } }
+  { params }: { params: Promise<{ roomId: string; jobId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { jobId, roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs-delete:${user.id}`, 10, 60_000);
     if (limited) return limited;
 
     const job = await prisma.scheduledJob.findUnique({
-      where: { id: params.jobId },
+      where: { id: jobId },
     });
 
-    if (!job || job.roomId !== params.roomId) {
+    if (!job || job.roomId !== roomId) {
       return jsonError("Not found", 404);
     }
 
     const updated = await prisma.scheduledJob.update({
-      where: { id: params.jobId },
+      where: { id: jobId },
       data: { enabled: false },
     });
 

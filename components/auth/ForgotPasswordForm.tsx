@@ -60,7 +60,9 @@ export function ForgotPasswordForm() {
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      <label htmlFor="forgot-password-email" className="sr-only">邮箱</label>
       <input
+        id="forgot-password-email"
         type="email"
         value={email}
         onChange={(event) => setEmail(event.target.value)}

@@ -44,8 +44,8 @@ function isPublicIp(ip: string): boolean {
   return isPublicIPv6(ip);
 }
 
-export function getPublicClientIp(): string | null {
-  const headersList = headers();
+export async function getPublicClientIp(): Promise<string | null> {
+  const headersList = await headers();
   const forwarded = headersList.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0].trim();

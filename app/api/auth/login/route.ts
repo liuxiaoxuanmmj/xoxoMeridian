@@ -41,7 +41,7 @@ export async function POST(request: Request) {
       room: { id: room.id, slug: room.slug, name: room.name },
     });
     applyNoStoreHeaders(response.headers);
-    appendSessionCookieHeaders(response.headers, sessionCookie.cookie);
+    await appendSessionCookieHeaders(response.headers, sessionCookie.cookie);
     return response;
   } catch (error) {
     return errorToResponse(error);

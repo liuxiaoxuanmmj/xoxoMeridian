@@ -249,7 +249,7 @@ describe("GET /api/posts?q= search", () => {
 
     const response = await GET_POST_DETAIL(
       new Request("http://localhost/api/posts/private-post"),
-      { params: { slug: "private-post" } }
+      { params: Promise.resolve({ slug: "private-post" }) }
     );
 
     expect(response.status).toBe(401);

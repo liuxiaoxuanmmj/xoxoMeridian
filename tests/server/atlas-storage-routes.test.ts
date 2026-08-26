@@ -109,7 +109,7 @@ describe("atlas upload storage routes", () => {
     const { GET } = await import("@/app/api/atlas/uploads/[filename]/route");
 
     const response = await GET(new Request("http://localhost/api/atlas/uploads/atlas%2Fimage.webp"), {
-      params: { filename: "atlas%2Fimage.webp" },
+      params: Promise.resolve({ filename: "atlas%2Fimage.webp" }),
     });
 
     expect(response.status).toBe(200);
@@ -125,7 +125,7 @@ describe("atlas upload storage routes", () => {
     const { GET } = await import("@/app/api/atlas/uploads/[filename]/route");
 
     const response = await GET(new Request("http://localhost/api/atlas/uploads/atlas%2Fmissing.jpg"), {
-      params: { filename: "atlas%2Fmissing.jpg" },
+      params: Promise.resolve({ filename: "atlas%2Fmissing.jpg" }),
     });
 
     expect(response.status).toBe(404);
@@ -136,7 +136,7 @@ describe("atlas upload storage routes", () => {
     const { GET } = await import("@/app/api/atlas/uploads/[filename]/route");
 
     const response = await GET(new Request("http://localhost/api/atlas/uploads/other%2Ffile.jpg"), {
-      params: { filename: "other%2Ffile.jpg" },
+      params: Promise.resolve({ filename: "other%2Ffile.jpg" }),
     });
 
     expect(response.status).toBe(404);
@@ -175,7 +175,7 @@ describe("atlas upload storage routes", () => {
 
     const response = await DELETE(
       new Request("http://localhost/api/atlas/elements/element-1", { method: "DELETE" }),
-      { params: { elementId: "element-1" } }
+      { params: Promise.resolve({ elementId: "element-1" }) }
     );
 
     expect(response.status).toBe(200);

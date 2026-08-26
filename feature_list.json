@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "updatedAt": "2026-08-26",
+  "features": [
+    {
+      "id": "feat-001",
+      "name": "恢复旧测试基线并消除导入副作用",
+      "description": "消除可选对象存储 SDK 的模块导入副作用，并把旧测试恢复到稳定基线。",
+      "status": "done",
+      "dependencies": [],
+      "acceptanceCriteria": [
+        "本地对象存储不加载可选 ali-oss SDK",
+        "旧 Node 测试全量通过",
+        "过时的源码/实现细节断言改为可观察行为"
+      ],
+      "evidence": "tests/lib/atlas-storage-import.test.ts；npm test 45 files / 307 tests passed"
+    },
+    {
+      "id": "feat-002",
+      "name": "建立 Vitest Node 与组件测试分层",
+      "description": "用独立 Node/jsdom 项目、Testing Library、MSW 和覆盖率门槛重构快速测试层。",
+      "status": "done",
+      "dependencies": ["feat-001"],
+      "acceptanceCriteria": [
+        "Node 与 jsdom 项目可独立运行",
+        "组件使用 Testing Library、user-event 与 MSW",
+        "V8 覆盖率设有非回退门槛"
+      ],
+      "evidence": "npm run test:unit、npm run test:component、npm run test:coverage 均通过"
+    },
+    {
+      "id": "feat-003",
+      "name": "建立真实 PostgreSQL 集成测试",
+      "description": "用 Testcontainers 和 Prisma 迁移验证真实 PostgreSQL 的约束、权限与级联语义。",
+      "status": "done",
+      "dependencies": ["feat-002"],
+      "acceptanceCriteria": [
+        "Testcontainer 自动执行 Prisma migrate deploy",
+        "唯一约束、访问控制和级联删除测试通过",
+        "缺少 Docker 时明确失败且不静默跳过"
+      ],
+      "evidence": "sudo -n -g docker -u dadalv npm run test:integration：1 个文件、3 项测试通过；Testcontainer 启动 postgres:16-alpine 并自动执行 prisma migrate deploy，验证唯一约束、持久化成员访问控制与级联删除"
+    },
+    {
+      "id": "feat-004",
+      "name": "建立 Playwright 核心用户旅程",
+      "description": "在隔离数据库和浏览器认证状态上验证公共及已认证的关键用户路径。",
+      "status": "done",
+      "dependencies": ["feat-003"],
+      "acceptanceCriteria": [
+        "认证 setup 可生成隔离 storage state",
+        "8 条公共/已认证核心旅程通过 Chromium",
+        "失败保留 trace、截图或视频"
+      ],
+      "evidence": "sudo -n -g docker -u dadalv npm run test:e2e：1 条认证 setup + 8 条公共/认证旅程全部通过；生成 user-one/user-two storage state；失败调试阶段确认截图、视频和 error context 产物可用"
+    },
+    {
+      "id": "feat-005",
+      "name": "建立测试与会话 Harness",
+      "description": "提供可路由的仓库约束、状态跟踪、验证入口和跨会话交接。",
+      "status": "done",
+      "dependencies": ["feat-002"],
+      "acceptanceCriteria": [
+        "AGENTS.md 保持 50-200 行且硬约束不超过 15 条",
+        "测试专题文档、功能状态、进度和交接文件可导航",
+        "init.sh 可建立快速验证基线"
+      ],
+      "evidence": "AGENTS.md、docs/testing-standards.md、feature_list.json、progress.md、session-handoff.md、init.sh"
+    },
+    {
+      "id": "feat-006",
+      "name": "升级已知高风险测试与应用依赖",
+      "description": "清除 critical 审计项并完成 Next.js 15 异步请求 API 兼容迁移。",
+      "status": "done",
+      "dependencies": ["feat-002"],
+      "acceptanceCriteria": [
+        "npm audit critical 清零",
+        "Next.js 15 异步请求 API 迁移完成",
+        "类型、lint、测试和生产构建通过"
+      ],
+      "evidence": "Next.js 15.5.24、Vitest 4.1.11、Nodemailer 9.0.5；npm run typecheck/lint/test/build 均通过"
+    },
+    {
+      "id": "feat-007",
+      "name": "规划 Next.js 16 主版本迁移",
+      "description": "在完整测试层验证后迁移 Next.js/React/ESLint 主版本并清除剩余生产审计项。",
+      "status": "done",
+      "dependencies": ["feat-006", "feat-004"],
+      "acceptanceCriteria": [
+        "迁移 Next.js/React/ESLint 配套主版本",
+        "npm audit --omit=dev 不再报告 Next 内置 PostCSS high",
+        "完整门禁通过"
+      ],
+      "evidence": "Next.js 16.3.3、React/React DOM 19.2.8、ESLint 9.39.5 与 flat config；npm audit --omit=dev 为 0 high/critical，仅剩 esbuild low；sudo -n -g docker -u dadalv npm run check:full 通过：45 文件/307 测试、覆盖率门槛、1 文件/3 项 PostgreSQL 集成测试、1 setup + 8 条 Playwright 旅程"
+    },
+    {
+      "id": "feat-008",
+      "name": "修复 WSL 开发服务器 IPv4 可访问性",
+      "description": "让默认 npm run dev 在 WSL mirrored networking 下监听 IPv4，确保 Windows localhost 可访问。",
+      "status": "done",
+      "dependencies": ["feat-006"],
+      "acceptanceCriteria": [
+        "npm run dev 默认监听 0.0.0.0",
+        "Windows 通过 localhost 可访问健康端点",
+        "快速门禁通过"
+      ],
+      "evidence": "npm run dev -- --port 3101 默认执行 next dev --hostname 0.0.0.0；ss 确认 0.0.0.0:3101 IPv4 监听；Windows curl localhost:3101/api/health 返回 ok=true/db=true；npm run check:quick 通过"
+    },
+    {
+      "id": "feat-009",
+      "name": "逐步启用 React Hooks 7 编译器诊断",
+      "description": "在可观察行为测试保护下修复现有组件的纯度、refs 与 effect 诊断，并移除 Next.js 16 迁移期兼容关闭项。",
+      "status": "not-started",
+      "dependencies": ["feat-007"],
+      "acceptanceCriteria": [
+        "逐项启用 eslint.config.mjs 中迁移期关闭的 React Hooks 7 规则",
+        "相关组件交互与关键用户旅程具有行为回归测试",
+        "快速门禁和完整门禁通过"
+      ],
+      "evidence": "feat-007 为保持单 feature 范围，暂时保留旧 core-web-vitals lint 语义并登记后续重构"
+    }
+  ]
+}

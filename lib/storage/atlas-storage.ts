@@ -1,7 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { dirname, extname, resolve, sep } from "node:path";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import OSS from "ali-oss";
 import { env } from "@/lib/env";
 
 const ATLAS_UPLOAD_ROUTE = "/api/atlas/uploads/";
@@ -269,17 +268,26 @@ export function createLocalAtlasStorage(
 }
 
 export function createAliyunOssAtlasStorage(): AtlasStorage {
-  const OssClient = OSS as AliyunOssConstructor;
-  const client = new OssClient({
-    region: env.ALIYUN_OSS_REGION,
-    bucket: env.ALIYUN_OSS_BUCKET,
-    accessKeyId: env.ALIYUN_OSS_ACCESS_KEY_ID,
-    accessKeySecret: env.ALIYUN_OSS_ACCESS_KEY_SECRET,
-    ...(env.ALIYUN_OSS_ENDPOINT ? { endpoint: env.ALIYUN_OSS_ENDPOINT } : {}),
-  });
+  let clientPromise: Promise<AliyunOssClient> | undefined;
+
+  function getClient() {
+    clientPromise ??= import("ali-oss").then(({ default: OSS }) => {
+      const OssClient = OSS as unknown as AliyunOssConstructor;
+      return new OssClient({
+        region: env.ALIYUN_OSS_REGION,
+        bucket: env.ALIYUN_OSS_BUCKET,
+        accessKeyId: env.ALIYUN_OSS_ACCESS_KEY_ID,
+        accessKeySecret: env.ALIYUN_OSS_ACCESS_KEY_SECRET,
+        ...(env.ALIYUN_OSS_ENDPOINT ? { endpoint: env.ALIYUN_OSS_ENDPOINT } : {}),
+      });
+    });
+
+    return clientPromise;
+  }
 
   return {
     async save(input) {
+      const client = await getClient();
       const resolved = resolveAtlasSaveInput(input, env.ALIYUN_OSS_PREFIX);
       const key = normalizeAtlasStorageKey(resolved.key, env.ALIYUN_OSS_PREFIX);
       await client.put(key, resolved.body, {
@@ -298,6 +306,7 @@ export function createAliyunOssAtlasStorage(): AtlasStorage {
     },
 
     async read(key) {
+      const client = await getClient();
       const safeKey = normalizeAtlasStorageKey(key, env.ALIYUN_OSS_PREFIX);
       const result = await client.get(safeKey);
       return {
@@ -307,6 +316,7 @@ export function createAliyunOssAtlasStorage(): AtlasStorage {
     },
 
     async delete(key) {
+      const client = await getClient();
       const safeKey = normalizeAtlasStorageKey(key, env.ALIYUN_OSS_PREFIX);
       try {
         await client.delete(safeKey);

@@ -46,8 +46,9 @@ function generateSessionToken(): string {
 }
 
 // Get client IP address from request headers
-function getClientIp(): string | null {
-  const headersList = headers();
+type HeaderReader = Pick<Headers, "get">;
+
+function getClientIp(headersList: HeaderReader): string | null {
   // Check common proxy headers
   const forwarded = headersList.get("x-forwarded-for");
   if (forwarded) {
@@ -61,13 +62,12 @@ function getClientIp(): string | null {
 }
 
 // Check if request came through HTTPS (considering proxy headers)
-export function isSecureRequest(): boolean {
+function isSecureRequest(headersList: HeaderReader): boolean {
   // Always check APP_BASE_URL first - this is the source of truth
   if (env.APP_BASE_URL.startsWith("https://")) {
     return true;
   }
   // If APP_BASE_URL is http, respect x-forwarded-proto header in case of proxy
-  const headersList = headers();
   const proto = headersList.get("x-forwarded-proto");
   if (proto) {
     return proto === "https";
@@ -76,8 +76,7 @@ export function isSecureRequest(): boolean {
 }
 
 // Get user agent from request headers
-function getUserAgent(): string | null {
-  const headersList = headers();
+function getUserAgent(headersList: HeaderReader): string | null {
   return headersList.get("user-agent");
 }
 
@@ -155,13 +154,12 @@ export function getConfiguredSessionCookieDomain(): string | undefined {
   return getSessionCookieDomainForHost(env.APP_BASE_URL);
 }
 
-function getRequestHostForCookie(): string | undefined {
-  const headersList = headers();
+function getRequestHostForCookie(headersList: HeaderReader): string | undefined {
   return headersList.get("x-forwarded-host")?.split(",")[0]?.trim() ?? headersList.get("host") ?? undefined;
 }
 
-function getSessionCookieDomainForRequest(): string | undefined {
-  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie())[0];
+function getSessionCookieDomainForRequest(headersList: HeaderReader): string | undefined {
+  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie(headersList))[0];
 }
 
 export function signSession(sessionId: string, userId: string, expiresAt: number): string {
@@ -197,22 +195,22 @@ export function verifySession(token: string | undefined, now = Date.now()): Sess
   return { sessionId, userId, expiresAt };
 }
 
-function buildSessionCookie(value: string, domain?: string): SessionCookie {
+function buildSessionCookie(value: string, secure: boolean, domain?: string): SessionCookie {
   return {
     name: USER_COOKIE,
     value,
     httpOnly: true,
     sameSite: "lax",
-    secure: isSecureRequest(),
+    secure,
     path: "/",
     domain,
     maxAge: env.SESSION_MAX_AGE_SECONDS,
   };
 }
 
-function buildClearSessionCookie(domain?: string): SessionCookie {
+function buildClearSessionCookie(secure: boolean, domain?: string): SessionCookie {
   return {
-    ...buildSessionCookie("", domain),
+    ...buildSessionCookie("", secure, domain),
     maxAge: 0,
     expires: new Date(0),
   };
@@ -229,27 +227,29 @@ function serializeSessionCookie(cookie: SessionCookie): string {
   return parts.join("; ");
 }
 
-function getClearSessionCookieDomainsForRequest(): string[] {
-  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie());
+function getClearSessionCookieDomainsForRequest(headersList: HeaderReader): string[] {
+  return getSessionCookieDomainCandidates(env.APP_BASE_URL, getRequestHostForCookie(headersList));
 }
 
-export function appendClearSessionCookieHeaders(responseHeaders: Headers) {
-  responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie()));
-  for (const domain of getClearSessionCookieDomainsForRequest()) {
-    responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie(domain)));
+export async function appendClearSessionCookieHeaders(responseHeaders: Headers) {
+  const headersList = await headers();
+  const secure = isSecureRequest(headersList);
+  responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie(secure)));
+  for (const domain of getClearSessionCookieDomainsForRequest(headersList)) {
+    responseHeaders.append("Set-Cookie", serializeSessionCookie(buildClearSessionCookie(secure, domain)));
   }
 }
 
-export function appendSessionCookieHeaders(responseHeaders: Headers, cookie: SessionCookie) {
-  appendClearSessionCookieHeaders(responseHeaders);
+export async function appendSessionCookieHeaders(responseHeaders: Headers, cookie: SessionCookie) {
+  await appendClearSessionCookieHeaders(responseHeaders);
   responseHeaders.append("Set-Cookie", serializeSessionCookie(cookie));
 }
 
 export async function createSessionCookie(userId: string): Promise<{ sessionId: string; cookie: SessionCookie }> {
-  const jar = cookies();
+  const [jar, headersList] = await Promise.all([cookies(), headers()]);
   const previousSession = verifySession(jar.get(USER_COOKIE)?.value);
-  const clientIp = getClientIp();
-  const userAgent = getUserAgent();
+  const clientIp = getClientIp(headersList);
+  const userAgent = getUserAgent(headersList);
   const now = Date.now();
   const expiresAt = new Date(now + env.SESSION_MAX_AGE_SECONDS * 1000);
 
@@ -284,18 +284,24 @@ export async function createSessionCookie(userId: string): Promise<{ sessionId: 
 
   return {
     sessionId: session.id,
-    cookie: buildSessionCookie(cookieValue, getSessionCookieDomainForRequest()),
+    cookie: buildSessionCookie(
+      cookieValue,
+      isSecureRequest(headersList),
+      getSessionCookieDomainForRequest(headersList)
+    ),
   };
 }
 
 export async function setSessionCookie(userId: string): Promise<string> {
   const { sessionId, cookie } = await createSessionCookie(userId);
-  cookies().set(cookie);
+  const jar = await cookies();
+  jar.set(cookie);
   return sessionId;
 }
 
 export async function getCurrentUser() {
-  const token = cookies().get(USER_COOKIE)?.value;
+  const jar = await cookies();
+  const token = jar.get(USER_COOKIE)?.value;
   const session = verifySession(token);
   if (!session) return null;
 
@@ -310,7 +316,7 @@ export async function getCurrentUser() {
   }
 
   // 自动同步用户地理位置（fire-and-forget，不阻塞认证）
-  const clientIp = getPublicClientIp();
+  const clientIp = await getPublicClientIp();
   if (clientIp && shouldSyncGeoProfile({ profile: dbSession.user.profile, clientIp, now: new Date() })) {
     syncGeoProfileInBackground(dbSession.user.id, clientIp);
   }

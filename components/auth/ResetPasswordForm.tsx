@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { useState } from "react";
 
 import { PasswordInput } from "@/components/auth/PasswordInput";
@@ -69,19 +70,21 @@ export function ResetPasswordForm() {
           <p className="font-medium">密码重置成功</p>
           <p className="mt-1">您现在可以使用新密码登录了。</p>
         </div>
-        <a
+        <Link
           href="/"
           className="block w-full rounded-lg bg-ink px-4 py-3 text-center font-medium text-white transition hover:bg-ink/90"
         >
           前往登录
-        </a>
+        </Link>
       </div>
     );
   }
 
   return (
     <form onSubmit={submit} className="space-y-3">
+      <label htmlFor="reset-password" className="sr-only">新密码</label>
       <PasswordInput
+        id="reset-password"
         value={password}
         onChange={(event) => setPassword(event.target.value)}
         placeholder="新密码（至少 8 个字符）"
@@ -90,7 +93,9 @@ export function ResetPasswordForm() {
         minLength={8}
         disabled={submitting}
       />
+      <label htmlFor="reset-password-confirmation" className="sr-only">确认新密码</label>
       <PasswordInput
+        id="reset-password-confirmation"
         value={confirmPassword}
         onChange={(event) => setConfirmPassword(event.target.value)}
         placeholder="确认新密码"

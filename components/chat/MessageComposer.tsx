@@ -75,6 +75,7 @@ export function MessageComposer({
         <div className="flex gap-2">
           <textarea
             ref={textareaRef}
+            aria-label="消息内容"
             className="min-h-[52px] flex-1 resize-none rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal outline-none transition-colors duration-200 placeholder:text-[#b0b0b0] focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
             placeholder={`写点什么，或者 ${MENTION_AGENT} 明天提醒我给对方发早安`}
             value={content}

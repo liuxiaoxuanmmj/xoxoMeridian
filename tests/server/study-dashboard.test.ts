@@ -150,7 +150,7 @@ describe("StudyDashboard", () => {
       React.createElement(StudyDashboard, {
         initialData: makeStudyData({
           chatSnapshot: {
-            room: { id: "room-1", slug: "our-room", name: "Our Room", participants: [] },
+            room: { id: "room-1", name: "Our Room", participants: [] },
             messages: [
               {
                 id: "m-1",

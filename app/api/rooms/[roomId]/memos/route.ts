@@ -5,13 +5,14 @@ import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { memoPostSchema, readJsonBody } from "@/lib/validation";
 
-export async function GET(_request: Request, { params }: { params: { roomId: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const memos = await prisma.memo.findMany({
-      where: { roomId: params.roomId },
+      where: { roomId },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }]
     });
 
@@ -21,10 +22,11 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
   }
 }
 
-export async function POST(request: Request, { params }: { params: { roomId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `memos:${user.id}`, 20, 60_000);
     if (limited) return limited;
@@ -33,7 +35,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
 
     const memo = await prisma.memo.create({
       data: {
-        roomId: params.roomId,
+        roomId,
         createdById: user.id,
         title,
         content,

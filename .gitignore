@@ -6,6 +6,8 @@ node_modules
 .env.local
 .env.*.local
 coverage
+playwright-report/
+test-results/
 dist
 tsconfig.tsbuildinfo
 prisma/migrations/*/migration_lock.toml
@@ -27,8 +29,5 @@ images/
 .claude/
 .codex/
 
-docs/
-
 # Dev-only scripts (not for production)
 scripts/dev.sh
-package-lock.json

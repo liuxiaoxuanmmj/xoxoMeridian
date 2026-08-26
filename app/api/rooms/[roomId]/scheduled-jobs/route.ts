@@ -17,16 +17,17 @@ export const dynamic = "force-dynamic";
 
 export async function GET(
   request: Request,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const url = new URL(request.url);
     const enabledFilter = url.searchParams.get("enabled");
 
-    const where: Record<string, unknown> = { roomId: params.roomId };
+    const where: Record<string, unknown> = { roomId };
     if (enabledFilter === "true") where.enabled = true;
     if (enabledFilter === "false") where.enabled = false;
 
@@ -60,11 +61,12 @@ export async function GET(
 
 export async function POST(
   request: Request,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs:${user.id}`, 10, 60_000);
     if (limited) return limited;
@@ -77,7 +79,7 @@ export async function POST(
     }
 
     const existingCount = await prisma.scheduledJob.count({
-      where: { roomId: params.roomId, enabled: true },
+      where: { roomId, enabled: true },
     });
     if (existingCount >= MAX_JOBS_PER_ROOM) {
       return jsonError(`Room already has ${existingCount} active jobs (max ${MAX_JOBS_PER_ROOM})`, 409);
@@ -113,7 +115,7 @@ export async function POST(
 
     const job = await prisma.scheduledJob.create({
       data: {
-        roomId: params.roomId,
+        roomId,
         agentId: agent.id,
         cron: effectiveCron,
         timezone: parsed.timezone,

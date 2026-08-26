@@ -37,7 +37,6 @@ export function PasswordInput(props: Omit<React.InputHTMLAttributes<HTMLInputEle
         aria-label={show ? "隐藏密码" : "显示密码"}
         className="absolute right-3 top-1/2 -translate-y-1/2 text-black/25 transition-colors duration-200 hover:text-black/50 focus:outline-none cursor-pointer"
         onClick={() => setShow((v) => !v)}
-        tabIndex={-1}
       >
         {show ? <EyeOffIcon /> : <EyeIcon />}
       </button>

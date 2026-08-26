@@ -12,7 +12,8 @@ export const runtime = "nodejs";
 export async function GET(request: Request) {
   const user = await requireCurrentUser();
 
-  const token = cookies().get(USER_COOKIE)?.value;
+  const jar = await cookies();
+  const token = jar.get(USER_COOKIE)?.value;
   const session = verifySession(token);
   const sessionId = session?.sessionId;
 

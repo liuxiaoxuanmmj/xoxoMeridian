@@ -572,6 +572,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
             <div className="flex gap-2">
               <input
                 type="text"
+                aria-label="添加待办"
                 className="flex-1 min-w-0 h-8 rounded-[8px] border border-sage-200 bg-white px-2.5 text-xs outline-none transition-colors placeholder:text-black/30 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15"
                 placeholder="添加待办…"
                 value={goalDraft}

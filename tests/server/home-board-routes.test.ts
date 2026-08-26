@@ -146,7 +146,7 @@ describe("home-board routes", () => {
         method: "PATCH",
         body: JSON.stringify({ width: 360, height: 270 }),
       }),
-      { params: { elementId: "photo-1" } }
+      { params: Promise.resolve({ elementId: "photo-1" }) }
     );
 
     expect(response.status).toBe(200);
@@ -169,7 +169,7 @@ describe("home-board routes", () => {
         method: "PATCH",
         body: JSON.stringify({ width: 360 }),
       }),
-      { params: { elementId: "atlas-photo" } }
+      { params: Promise.resolve({ elementId: "atlas-photo" }) }
     );
 
     expect(response.status).toBe(404);
@@ -239,7 +239,7 @@ describe("home-board routes", () => {
     const { DELETE } = await import("@/app/api/home-board/elements/[elementId]/route");
     const response = await DELETE(
       new Request("http://localhost/api/home-board/elements/photo-1", { method: "DELETE" }),
-      { params: { elementId: "photo-1" } }
+      { params: Promise.resolve({ elementId: "photo-1" }) }
     );
 
     expect(response.status).toBe(200);
@@ -259,7 +259,7 @@ describe("home-board routes", () => {
     const { DELETE } = await import("@/app/api/home-board/elements/[elementId]/route");
     const response = await DELETE(
       new Request("http://localhost/api/home-board/elements/post-el", { method: "DELETE" }),
-      { params: { elementId: "post-el" } }
+      { params: Promise.resolve({ elementId: "post-el" }) }
     );
 
     expect(response.status).toBe(400);

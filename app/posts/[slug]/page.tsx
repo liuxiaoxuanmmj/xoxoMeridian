@@ -11,12 +11,13 @@ export const dynamic = "force-dynamic";
 export default async function PostDetailPage({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
   const user = await requirePageUser();
+  const { slug } = await params;
 
   const post = await prisma.post.findUnique({
-    where: { slug: params.slug },
+    where: { slug },
     include: {
       author: {
         select: {

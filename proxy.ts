@@ -2,10 +2,10 @@ import { NextResponse, type NextRequest } from "next/server";
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
 
-// APP_BASE_URL is read on the Edge runtime, which can't import the Node-only
-// lib/env.ts validator — so we parse once at module init and tolerate misconfig
-// by silently disabling the CSRF check (the Node-side env.ts will already have
-// exited the process if APP_BASE_URL is missing in production).
+// APP_BASE_URL is read directly at the Proxy boundary instead of importing the
+// application-wide env validator. Parse once at module init and tolerate
+// misconfiguration by disabling this secondary CSRF check; lib/env.ts still
+// rejects a missing APP_BASE_URL in the production application runtime.
 // Accept comma-separated list in APP_BASE_URL / ALLOWED_ORIGINS so the same
 // deployment can be reached via IP and domain (e.g. http://154.12.28.37 and
 // https://meridian.example.com) without tripping CSRF.
@@ -30,7 +30,7 @@ export const config = {
   matcher: ["/((?!_next/static|_next/image|favicon.ico|fonts/|images/).*)"],
 };
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isApiRequest = pathname.startsWith("/api/");
 

@@ -163,7 +163,7 @@ describe("shouldSyncGeoProfile", () => {
 // ---------------------------------------------------------------------------
 
 describe("getPublicClientIp", () => {
-  let getPublicClientIp: () => string | null;
+  let getPublicClientIp: () => Promise<string | null>;
 
   beforeEach(async () => {
     vi.resetModules();
@@ -197,7 +197,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBe("8.8.8.8");
+    expect(await fn()).toBe("8.8.8.8");
   });
 
   it("falls back to x-real-ip when x-forwarded-for is missing", async () => {
@@ -211,7 +211,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBe("8.8.4.4");
+    expect(await fn()).toBe("8.8.4.4");
   });
 
   it("skips private IP in x-forwarded-for and uses public one", async () => {
@@ -225,7 +225,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull(); // first is 10.0.0.1 which is private, so returns null
+    expect(await fn()).toBeNull(); // first is 10.0.0.1 which is private, so returns null
   });
 
   it("rejects 192.168.x.x private IP", async () => {
@@ -239,7 +239,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("rejects 127.0.0.1 loopback", async () => {
@@ -253,7 +253,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("rejects IPv6 loopback ::1", async () => {
@@ -267,7 +267,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("rejects link-local IPv6 fe80::", async () => {
@@ -281,7 +281,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("rejects invalid IP string", async () => {
@@ -295,7 +295,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("returns null when no relevant headers present", async () => {
@@ -304,7 +304,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBeNull();
+    expect(await fn()).toBeNull();
   });
 
   it("accepts valid IPv6 public address", async () => {
@@ -318,7 +318,7 @@ describe("getPublicClientIp", () => {
     }));
     vi.resetModules();
     const { getPublicClientIp: fn } = await import("@/lib/geo-ip");
-    expect(fn()).toBe("2001:db8::1");
+    expect(await fn()).toBe("2001:db8::1");
   });
 });
 

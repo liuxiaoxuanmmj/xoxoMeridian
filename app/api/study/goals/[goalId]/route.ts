@@ -5,11 +5,11 @@ import { readJsonBody, studyGoalPatchSchema } from "@/lib/validation";
 
 export async function PATCH(
   request: Request,
-  { params }: { params: { goalId: string } }
+  { params }: { params: Promise<{ goalId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    const { goalId } = params;
+    const { goalId } = await params;
     const body = await readJsonBody(request, studyGoalPatchSchema);
 
     const goal = await prisma.studyGoal.findFirst({
@@ -46,11 +46,11 @@ export async function PATCH(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { goalId: string } }
+  { params }: { params: Promise<{ goalId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    const { goalId } = params;
+    const { goalId } = await params;
 
     const goal = await prisma.studyGoal.findFirst({
       where: { id: goalId, userId: user.id },

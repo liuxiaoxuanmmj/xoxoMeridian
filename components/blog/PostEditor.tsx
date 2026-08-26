@@ -77,7 +77,9 @@ export function PostEditor({ currentUser, initialValues }: PostEditorProps) {
       )}
 
       <form onSubmit={submit} className="space-y-6">
+        <label htmlFor="post-title" className="sr-only">Post title</label>
         <input
+          id="post-title"
           type="text"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
@@ -87,7 +89,9 @@ export function PostEditor({ currentUser, initialValues }: PostEditorProps) {
           className="w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-lg font-semibold text-black placeholder:text-black/30 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none disabled:opacity-50"
         />
 
+        <label htmlFor="post-content" className="sr-only">Post content</label>
         <textarea
+          id="post-content"
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="Write your post in Markdown..."

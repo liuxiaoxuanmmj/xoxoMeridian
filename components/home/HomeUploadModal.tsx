@@ -108,6 +108,8 @@ export function HomeUploadModal({
 
         {preview ? (
           <div className="relative">
+            {/* Blob previews are local-only and must bypass the Next image optimizer. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={preview}
               alt="Preview"

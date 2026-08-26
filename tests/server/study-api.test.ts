@@ -10,7 +10,6 @@ const {
   mockFocusStateUpsert,
   mockFocusStateUpdate,
   mockFocusSessionCreate,
-  mockRevalidatePath,
   mockRoomParticipantFindFirst,
   mockRoomParticipantFindMany,
   mockStudyGoalFindMany,
@@ -22,7 +21,6 @@ const {
   mockFocusStateUpsert: vi.fn(),
   mockFocusStateUpdate: vi.fn(),
   mockFocusSessionCreate: vi.fn(),
-  mockRevalidatePath: vi.fn(),
   mockRoomParticipantFindFirst: vi.fn(),
   mockRoomParticipantFindMany: vi.fn(),
   mockStudyGoalFindMany: vi.fn(),
@@ -36,10 +34,6 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/room-snapshot", () => ({
   getRoomSnapshot: mockGetRoomSnapshot,
-}));
-
-vi.mock("next/cache", () => ({
-  revalidatePath: mockRevalidatePath,
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -197,8 +191,20 @@ describe("POST /api/study/stop", () => {
 
     expect(response.status).toBe(200);
     expect(data.session.actualMinutes).toBe(25);
+    expect(data.state.status).toBe("idle");
+    expect(response.headers.get("Cache-Control")).toContain("no-store");
+    expect(mockFocusSessionCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        userId: "user-1",
+        status: "completed",
+        mode: "focus",
+        plannedMinutes: 25,
+        actualMinutes: 25,
+        roomId: "room-1",
+      }),
+      select: expect.any(Object),
+    });
     expect(mockFocusStateUpdate).toHaveBeenCalled();
-    expect(mockRevalidatePath).toHaveBeenCalledWith("/home");
   });
 
   it("returns 409 when no focus session is active", async () => {

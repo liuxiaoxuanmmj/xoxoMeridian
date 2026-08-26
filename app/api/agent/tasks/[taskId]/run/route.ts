@@ -3,10 +3,11 @@ import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
-export async function POST(_request: Request, { params }: { params: { taskId: string } }) {
+export async function POST(_request: Request, { params }: { params: Promise<{ taskId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    const task = await prisma.agentTask.findUnique({ where: { id: params.taskId } });
+    const { taskId } = await params;
+    const task = await prisma.agentTask.findUnique({ where: { id: taskId } });
 
     if (!task) {
       return Response.json({ error: "Agent task not found." }, { status: 404 });

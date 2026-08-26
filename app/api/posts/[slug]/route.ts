@@ -9,13 +9,14 @@ import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
 
 export async function GET(
   _request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
     await requireCurrentUser();
+    const { slug } = await params;
 
     const post = await prisma.post.findUnique({
-      where: { slug: params.slug },
+      where: { slug },
       include: {
         author: {
           select: {
@@ -41,10 +42,11 @@ export async function GET(
 
 export async function PUT(
   request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { post } = await assertPostOwnership(params.slug);
+    const { slug } = await params;
+    const { post } = await assertPostOwnership(slug);
     const body = await request.json();
     const { title, content } = body;
 
@@ -74,10 +76,11 @@ export async function PUT(
 
 export async function DELETE(
   _request: Request,
-  { params }: { params: { slug: string } }
+  { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    const { post } = await assertPostOwnership(params.slug);
+    const { slug } = await params;
+    const { post } = await assertPostOwnership(slug);
 
     await prisma.post.delete({ where: { id: post.id } });
 

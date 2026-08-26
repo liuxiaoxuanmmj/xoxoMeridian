@@ -78,6 +78,7 @@ export function useRoomChat({
   const [authSyncing, setAuthSyncing] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
   const roomId = snapshot.room.id;
+  const { onAuthMismatch, onRoomDeleted, onUnauthenticated } = redirects ?? {};
 
   useEffect(() => {
     setSnapshot(initialSnapshot);
@@ -95,7 +96,7 @@ export function useRoomChat({
           credentials: "same-origin",
         });
         if (response.status === 401) {
-          redirects?.onUnauthenticated?.();
+          onUnauthenticated?.();
           return;
         }
         if (!response.ok) return;
@@ -104,7 +105,7 @@ export function useRoomChat({
         if (cancelled) return;
         if (sessionUser.id !== currentUser.id) {
           setAuthSyncing(true);
-          redirects?.onAuthMismatch?.(sessionUser.id);
+          onAuthMismatch?.(sessionUser.id);
         }
       } catch {
         // Keep the server-rendered user during transient network failures.
@@ -120,7 +121,7 @@ export function useRoomChat({
       window.removeEventListener("focus", syncCurrentSessionUser);
       window.removeEventListener("pageshow", syncCurrentSessionUser);
     };
-  }, [currentUser.id, redirects?.onUnauthenticated, redirects?.onAuthMismatch]);
+  }, [currentUser.id, onAuthMismatch, onUnauthenticated]);
 
   // ── Refresh (GET /messages) ────────────────────────────────────────────────
 
@@ -170,7 +171,7 @@ export function useRoomChat({
       const senderId = real.senderId;
       if (real.senderType === "human" && senderId && senderId !== currentUser.id) {
         setAuthSyncing(true);
-        redirects?.onAuthMismatch?.(senderId);
+        onAuthMismatch?.(senderId);
         return;
       }
 
@@ -192,7 +193,7 @@ export function useRoomChat({
         return { ...current, messages: next };
       });
     },
-    [currentUser.id, redirects?.onAuthMismatch],
+    [currentUser.id, onAuthMismatch],
   );
 
   const removeMessage = useCallback((messageId: string) => {
@@ -309,13 +310,13 @@ export function useRoomChat({
           });
           if (response.ok) {
             const user = (await response.json()) as ChatUser;
-            redirects?.onAuthMismatch?.(user.id);
+            onAuthMismatch?.(user.id);
             return;
           }
         } catch {
           // Fall back to the unauthenticated route below.
         }
-        redirects?.onUnauthenticated?.();
+        onUnauthenticated?.();
       });
 
       // Server tells us the room we're viewing was deleted (or we were
@@ -325,7 +326,7 @@ export function useRoomChat({
           terminated = true;
           source?.close();
           source = null;
-          redirects?.onRoomDeleted?.();
+          onRoomDeleted?.();
         }
       });
 
@@ -352,7 +353,7 @@ export function useRoomChat({
       reconnect.attempt = 0;
       source?.close();
     };
-  }, [roomId, refresh, redirectOnRoomDeleted, redirects?.onAuthMismatch, redirects?.onUnauthenticated, redirects?.onRoomDeleted]);
+  }, [onAuthMismatch, onRoomDeleted, onUnauthenticated, redirectOnRoomDeleted, refresh, roomId]);
 
   return {
     snapshot,

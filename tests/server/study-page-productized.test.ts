@@ -117,8 +117,7 @@ describe("getStudyPageData productized payload", () => {
 
     expect(data.members).toHaveLength(2);
     const alice = data.members.find((m: any) => m.userId === "user-1");
-    const bob = data.members.find((m: any) => m.userId === "user-2");
-    expect(alice.online).toBe(false);
+    expect(alice?.online).toBe(false);
     // Bob's lastStudySeenAt is at 01:09, while "now" is 01:10, which is <= 45s ago
     // With system time set to 01:10, 01:09 is only 60s ago — wait, that's > 45s
     // Let's just verify the null case

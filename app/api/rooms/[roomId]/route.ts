@@ -11,17 +11,18 @@ export const dynamic = "force-dynamic";
 // so /chat always has something to redirect to.
 export async function DELETE(
   request: Request,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `room-delete:${user.id}`, 10, 60_000);
     if (limited) return limited;
 
     const remaining = await prisma.roomParticipant.count({
-      where: { userId: user.id, roomId: { not: params.roomId } },
+      where: { userId: user.id, roomId: { not: roomId } },
     });
     if (remaining === 0) {
       return Response.json(
@@ -30,7 +31,7 @@ export async function DELETE(
       );
     }
 
-    await prisma.room.delete({ where: { id: params.roomId } });
+    await prisma.room.delete({ where: { id: roomId } });
 
     return jsonOk({ ok: true });
   } catch (error) {

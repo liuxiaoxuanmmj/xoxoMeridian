@@ -9,13 +9,14 @@ import { messagePostSchema, readJsonBody } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: { params: { roomId: string } }) {
+export async function GET(_request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const recent = await prisma.message.findMany({
-      where: { roomId: params.roomId },
+      where: { roomId },
       orderBy: { createdAt: "desc" },
       take: 80,
       include: {
@@ -41,10 +42,11 @@ export async function GET(_request: Request, { params }: { params: { roomId: str
   }
 }
 
-export async function POST(request: Request, { params }: { params: { roomId: string } }) {
+export async function POST(request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `msg:${user.id}`, 30, 60_000);
     if (limited) return limited;
@@ -52,7 +54,7 @@ export async function POST(request: Request, { params }: { params: { roomId: str
     const { content, forceAgent } = await readJsonBody(request, messagePostSchema);
 
     const result = await createHumanMessage({
-      roomId: params.roomId,
+      roomId,
       userId: user.id,
       content,
       forceAgent
@@ -76,16 +78,15 @@ export async function POST(request: Request, { params }: { params: { roomId: str
 // half-cleared state.
 export async function DELETE(
   request: Request,
-  { params }: { params: { roomId: string } }
+  { params }: { params: Promise<{ roomId: string }> }
 ) {
   try {
     const user = await requireCurrentUser();
-    await assertRoomAccess(params.roomId, user.id);
+    const { roomId } = await params;
+    await assertRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `room-wipe:${user.id}`, 10, 60_000);
     if (limited) return limited;
-
-    const roomId = params.roomId;
 
     await prisma.$transaction([
       // Order matters: ScheduledJob has no FK to Message, but some Memo

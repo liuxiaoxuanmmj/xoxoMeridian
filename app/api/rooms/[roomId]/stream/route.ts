@@ -9,12 +9,14 @@ import { USER_COOKIE, verifySession } from "@/lib/auth";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-export async function GET(request: Request, { params }: { params: { roomId: string } }) {
+export async function GET(request: Request, { params }: { params: Promise<{ roomId: string }> }) {
   const user = await requireCurrentUser();
-  await assertRoomAccess(params.roomId, user.id);
+  const { roomId } = await params;
+  await assertRoomAccess(roomId, user.id);
 
   // Get the session ID from the cookie to track this specific session
-  const token = cookies().get(USER_COOKIE)?.value;
+  const jar = await cookies();
+  const token = jar.get(USER_COOKIE)?.value;
   const session = verifySession(token);
   const sessionId = session?.sessionId;
 
@@ -61,7 +63,7 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
         //    another client cascades the participant row, so this single
         //    lookup covers both "room deleted" and "user ejected".
         const participant = await prisma.roomParticipant.findUnique({
-          where: { roomId_userId: { roomId: params.roomId, userId: user.id } },
+          where: { roomId_userId: { roomId, userId: user.id } },
           select: { id: true },
         });
         if (!participant) {
@@ -71,7 +73,7 @@ export async function GET(request: Request, { params }: { params: { roomId: stri
         }
 
         try {
-          const snapshot = await getRoomSnapshot(params.roomId, user.id);
+          const snapshot = await getRoomSnapshot(roomId, user.id);
           controller.enqueue(encoder.encode(sse(snapshot)));
         } catch (error) {
           controller.enqueue(
