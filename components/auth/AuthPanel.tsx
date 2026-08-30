@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties } from "react";
 import Link from "next/link";
 
 import { BrandBadge } from "@/components/layout/BrandBadge";
@@ -25,6 +25,29 @@ type AuthPanelStyle = CSSProperties & {
   "--auth-gradient-to": string;
   "--auth-overlay": string;
 };
+
+const REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+
+function subscribeToReducedMotion(onStoreChange: () => void) {
+  if (typeof window === "undefined" || !window.matchMedia) {
+    return () => {};
+  }
+
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+  if (mediaQuery.addEventListener) {
+    mediaQuery.addEventListener("change", onStoreChange);
+    return () => mediaQuery.removeEventListener("change", onStoreChange);
+  }
+
+  mediaQuery.addListener(onStoreChange);
+  return () => mediaQuery.removeListener(onStoreChange);
+}
+
+function getReducedMotionSnapshot() {
+  return typeof window !== "undefined" &&
+    !!window.matchMedia &&
+    window.matchMedia(REDUCED_MOTION_QUERY).matches;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
@@ -51,30 +74,11 @@ function isSafeVisualItem(value: unknown): value is LoginVisualItem {
 }
 
 function usePrefersReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false);
-
-  useEffect(() => {
-    if (typeof window === "undefined" || !window.matchMedia) {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mediaQuery.matches);
-
-    const handleChange = (event: MediaQueryListEvent) => {
-      setPrefersReducedMotion(event.matches);
-    };
-
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-
-  return prefersReducedMotion;
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionSnapshot,
+    () => false
+  );
 }
 
 function getSafeVisualItems(visuals: LoginVisualsManifest): LoginVisualItem[] {
@@ -117,18 +121,15 @@ export function AuthPanel({ visuals }: AuthPanelProps) {
   };
 
   useEffect(() => {
-    if (activeIndex >= visualItems.length) {
-      setActiveIndex(0);
-    }
-  }, [activeIndex, visualItems.length]);
-
-  useEffect(() => {
     if (prefersReducedMotion || visualItems.length <= 1) {
       return;
     }
 
     const intervalId = window.setInterval(() => {
-      setActiveIndex((currentIndex) => (currentIndex + 1) % visualItems.length);
+      setActiveIndex((currentIndex) => {
+        const boundedIndex = currentIndex < visualItems.length ? currentIndex : 0;
+        return (boundedIndex + 1) % visualItems.length;
+      });
     }, intervalMs);
 
     return () => window.clearInterval(intervalId);

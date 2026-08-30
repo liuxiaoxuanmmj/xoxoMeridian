@@ -10,6 +10,7 @@ type TimezoneInput = {
 export function createTimezoneTool(): AgentTool<TimezoneInput> {
   return {
     name: "timezone.compare",
+    risk: "low",
     description: "Compare the current local time for two timezones and return a contact suggestion.",
     schema: {
       type: "object",

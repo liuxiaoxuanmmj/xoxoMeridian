@@ -28,8 +28,10 @@ enum MessageStatus {
 enum AgentTaskStatus {
   pending
   running
+  waiting_approval
   completed
   failed
+  cancelled
 }
 
 enum ToolCallStatus {
@@ -41,6 +43,18 @@ enum ToolCallStatus {
 enum LLMCallStatus {
   completed
   failed
+}
+
+enum AgentToolRisk {
+  low
+  medium
+  high
+}
+
+enum AgentToolApprovalStatus {
+  pending
+  approved
+  rejected
 }
 
 model User {
@@ -58,16 +72,17 @@ model User {
   requestedTasks AgentTask[]       @relation("RequestedTasks")
   memos          Memo[]
 
-  eventLogs           EventLog[]
-  memories            Memory[]
-  scheduledJobs       ScheduledJob[]
-  atlasElements       AtlasElement[]
-  sessions            Session[]
-  passwordResetTokens PasswordResetToken[]
-  posts               Post[]
-  focusState          FocusState?
-  focusSessions       FocusSession[]
-  studyGoals          StudyGoal[]
+  eventLogs             EventLog[]
+  memories              Memory[]
+  scheduledJobs         ScheduledJob[]
+  atlasElements         AtlasElement[]
+  sessions              Session[]
+  passwordResetTokens   PasswordResetToken[]
+  posts                 Post[]
+  focusState            FocusState?
+  focusSessions         FocusSession[]
+  studyGoals            StudyGoal[]
+  toolApprovalDecisions AgentToolApproval[]  @relation("ToolApprovalDecision")
 }
 
 model Session {
@@ -187,31 +202,32 @@ model Agent {
 }
 
 model AgentTask {
-  id              String          @id @default(cuid())
+  id              String              @id @default(cuid())
   roomId          String
   agentId         String
-  sourceMessageId String?         @unique
+  sourceMessageId String?             @unique
   requestedById   String?
-  status          AgentTaskStatus @default(pending)
+  status          AgentTaskStatus     @default(pending)
   input           Json
   plan            Json?
   result          Json?
   error           String?
-  retryCount      Int             @default(0)
+  retryCount      Int                 @default(0)
   startedAt       DateTime?
   completedAt     DateTime?
-  finalMessageId  String?         @unique
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
-  room            Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  agent           Agent           @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  sourceMessage   Message?        @relation("SourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
-  requestedBy     User?           @relation("RequestedTasks", fields: [requestedById], references: [id], onDelete: SetNull)
-  finalMessage    Message?        @relation("FinalMessage", fields: [finalMessageId], references: [id], onDelete: SetNull)
+  finalMessageId  String?             @unique
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  room            Room                @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  agent           Agent               @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  sourceMessage   Message?            @relation("SourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
+  requestedBy     User?               @relation("RequestedTasks", fields: [requestedById], references: [id], onDelete: SetNull)
+  finalMessage    Message?            @relation("FinalMessage", fields: [finalMessageId], references: [id], onDelete: SetNull)
   toolCalls       ToolCall[]
   llmCalls        LLMCall[]
   eventLogs       EventLog[]
   memos           Memo[]
+  toolApprovals   AgentToolApproval[]
 
   @@index([status, createdAt])
   @@index([roomId])
@@ -221,6 +237,7 @@ model AgentTask {
 model ToolCall {
   id         String         @id @default(cuid())
   taskId     String
+  stepKey    String?
   toolName   String
   input      Json?
   output     Json?
@@ -232,8 +249,28 @@ model ToolCall {
   createdAt  DateTime       @default(now())
   task       AgentTask      @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
+  @@unique([taskId, stepKey])
   @@index([taskId])
   @@index([toolName])
+}
+
+model AgentToolApproval {
+  id          String                  @id @default(cuid())
+  taskId      String
+  stepKey     String
+  toolName    String
+  risk        AgentToolRisk
+  input       Json
+  status      AgentToolApprovalStatus @default(pending)
+  decidedById String?
+  requestedAt DateTime                @default(now())
+  decidedAt   DateTime?
+  task        AgentTask               @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  decidedBy   User?                   @relation("ToolApprovalDecision", fields: [decidedById], references: [id], onDelete: SetNull)
+
+  @@unique([taskId, stepKey])
+  @@index([status, requestedAt])
+  @@index([decidedById])
 }
 
 model LLMCall {
@@ -406,23 +443,23 @@ model AtlasConnection {
 }
 
 model Post {
-  id           String        @id @default(cuid())
-  slug         String        @unique
-  title        String
-  content      String        // Markdown
-  type         PostType      @default(user_post)
+  id             String        @id @default(cuid())
+  slug           String        @unique
+  title          String
+  content        String // Markdown
+  type           PostType      @default(user_post)
   authorId       String?
   roomId         String?
   authorCity     String?
   authorCountry  String?
   authorTimezone String?
   publishedAt    DateTime
-  metadata     Json?
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  author       User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
-  room         Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
-  atlasElement AtlasElement?
+  metadata       Json?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  author         User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
+  room           Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  atlasElement   AtlasElement?
 
   @@index([type, publishedAt(sort: Desc)])
   @@index([authorId])
@@ -448,10 +485,10 @@ enum FocusSessionStatus {
 }
 
 model FocusState {
-  id                String          @id @default(cuid())
-  userId            String          @unique
-  status            FocusStatus     @default(idle)
-  mode              StudyTimerMode  @default(focus)
+  id                String         @id @default(cuid())
+  userId            String         @unique
+  status            FocusStatus    @default(idle)
+  mode              StudyTimerMode @default(focus)
   plannedMinutes    Int
   remainingSeconds  Int?
   startedAt         DateTime?
@@ -460,10 +497,10 @@ model FocusState {
   lastStudySeenAt   DateTime?
   currentSessionKey String?
   roomId            String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  user              User            @relation(fields: [userId], references: [id], onDelete: Cascade)
-  room              Room?           @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  user              User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room              Room?          @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
   @@index([status])
   @@index([roomId])
@@ -493,17 +530,17 @@ model FocusSession {
 }
 
 model StudyGoal {
-  id        String       @id @default(cuid())
+  id        String   @id @default(cuid())
   userId    String
   roomId    String?
   localDate String
   text      String
-  done      Boolean      @default(false)
-  sortOrder Int          @default(0)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  room      Room?        @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  done      Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room      Room?    @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
   @@index([userId, localDate, sortOrder])
   @@index([roomId, localDate])

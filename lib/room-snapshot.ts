@@ -9,6 +9,7 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     scheduledJobs,
     runningTasks,
     recentTasks,
+    pendingApprovals,
     room,
     rooms
   ] = await Promise.all([
@@ -48,6 +49,21 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
       orderBy: { createdAt: "desc" },
       take: 5,
       select: { id: true, status: true, createdAt: true, error: true }
+    }),
+    prisma.agentToolApproval.findMany({
+      where: {
+        status: "pending",
+        task: { roomId }
+      },
+      orderBy: { requestedAt: "asc" },
+      select: {
+        id: true,
+        taskId: true,
+        toolName: true,
+        risk: true,
+        input: true,
+        requestedAt: true
+      }
     }),
     prisma.room.findUnique({
       where: { id: roomId },
@@ -113,7 +129,8 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     agentStatus: {
       isWorking: runningTasks > 0,
       runningTasks,
-      recentTasks
+      recentTasks,
+      pendingApprovals
     },
     rooms
   };

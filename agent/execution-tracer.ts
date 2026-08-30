@@ -22,15 +22,8 @@ export class ExecutionTracer {
     });
   }
 
-  async markRunning() {
-    await this.prisma.agentTask.update({
-      where: { id: this.taskId },
-      data: {
-        status: "running",
-        startedAt: new Date()
-      }
-    });
-    await this.event("agent.task.running");
+  async markRunning(claimedAt: Date) {
+    await this.event("agent.task.running", { claimedAt });
   }
 
   async markCompleted(finalMessageId: string, result: unknown) {

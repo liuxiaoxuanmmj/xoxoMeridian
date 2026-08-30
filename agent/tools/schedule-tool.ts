@@ -38,6 +38,7 @@ export const MAX_JOBS_PER_ROOM = 30;
 export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
   return {
     name: "schedule.create",
+    risk: "medium",
     description:
       "Create a scheduled job that fires the given prompt to the agent. " +
       "**For ONE-OFF tasks at a specific datetime** (今晚八点 / 明早 7:30 / 4月5日 9:00), " +
@@ -53,6 +54,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
       "'0 */2 * * *' = every 2 hours. " +
       "Always set timezone to the user's IANA zone (e.g. 'Asia/Shanghai'); for fireAt, the ISO offset also carries zone info but timezone is still used for display. " +
       "The prompt field is what the agent will receive and act on when the schedule fires — phrase it as a command to yourself, e.g. '提醒用户打扫卫生，温柔一点'.",
+    effect: "database-write",
     schema: {
       type: "object",
       required: ["timezone", "prompt"],
@@ -161,6 +163,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
 export function createScheduleListTool(): AgentTool<ScheduleListInput> {
   return {
     name: "schedule.list",
+    risk: "low",
     description:
       "List the active scheduled jobs for this room (recurring and one-off). Call this BEFORE creating or updating a schedule if the user's request sounds similar to an existing one, so you don't create duplicates.",
     schema: { type: "object", properties: {} },
@@ -199,10 +202,12 @@ export function createScheduleListTool(): AgentTool<ScheduleListInput> {
 export function createScheduleCancelTool(): AgentTool<ScheduleCancelInput> {
   return {
     name: "schedule.cancel",
+    risk: "medium",
     description:
       "Cancel (disable) a scheduled job by its jobId. Use this when the user asks to fully stop a scheduled task. " +
       "If the user only wants to CHANGE the schedule (frequency, time, prompt), use schedule.update instead of cancel+create. " +
       "Call schedule.list first if you don't know the id.",
+    effect: "database-write",
     schema: {
       type: "object",
       required: ["jobId"],
@@ -233,6 +238,7 @@ export function createScheduleCancelTool(): AgentTool<ScheduleCancelInput> {
 export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
   return {
     name: "schedule.update",
+    risk: "medium",
     description:
       "Modify an existing scheduled job in place. Use this when the user wants to change an existing schedule — " +
       "for example '改成每周六' / '其实我只要今晚一次' / '把时间改到九点'. " +
@@ -241,6 +247,7 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
       "Setting runOnce=true converts a recurring job into a one-off that disables itself after the next fire; " +
       "setting runOnce=false converts it back to recurring. " +
       "If you change cron or timezone, nextRunAt is recomputed automatically.",
+    effect: "database-write",
     schema: {
       type: "object",
       required: ["jobId"],

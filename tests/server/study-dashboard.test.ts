@@ -168,7 +168,12 @@ describe("StudyDashboard", () => {
             ],
             memos: [],
             scheduledJobs: [],
-            agentStatus: { isWorking: false, runningTasks: 0, recentTasks: [] },
+            agentStatus: {
+              isWorking: false,
+              runningTasks: 0,
+              recentTasks: [],
+              pendingApprovals: [],
+            },
           },
         }),
       })

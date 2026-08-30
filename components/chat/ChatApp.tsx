@@ -8,6 +8,7 @@ import { AgentStatusBadge } from "@/components/chat/AgentStatusBadge";
 import { LeftRail } from "@/components/chat/LeftRail";
 import { LifePanel } from "@/components/chat/LifePanel";
 import { MessageComposer } from "@/components/chat/MessageComposer";
+import { ToolApprovalPanel } from "@/components/chat/ToolApprovalPanel";
 import { BrandBadge } from "@/components/layout/BrandBadge";
 import { MessageList } from "@/components/chat/MessageList";
 import type { ChatUser, RoomSnapshot } from "@/components/chat/types";
@@ -112,6 +113,8 @@ export function ChatApp({
           />
         </div>
       </header>
+
+      <ToolApprovalPanel approvals={snapshot.agentStatus.pendingApprovals ?? []} />
 
       <div className="flex min-h-0 flex-1">
         <LeftRail

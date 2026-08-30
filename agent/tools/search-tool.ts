@@ -77,6 +77,7 @@ export async function fetchSearchResults(
 export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
   return {
     name: "web.search",
+    risk: "low",
     description:
       "Search the web for real-time information using Tavily API. " +
       "**Use for**: breaking news, local recommendations (restaurants/events/attractions), " +
@@ -231,4 +232,3 @@ export const __testing = {
   mockSearch,
   callTavilyAPI
 };
-

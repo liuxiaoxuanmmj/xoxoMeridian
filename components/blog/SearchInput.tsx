@@ -5,17 +5,27 @@ import { useEffect, useRef, useState } from "react";
 
 export function SearchInput() {
   const pathname = usePathname();
-  const router = useRouter();
   const searchParams = useSearchParams();
-  const [value, setValue] = useState(searchParams.get("q") ?? "");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const searchParamsRef = useRef(searchParams);
-  searchParamsRef.current = searchParams;
 
-  useEffect(() => {
-    const q = searchParams.get("q") ?? "";
-    setValue((prev) => (prev !== q ? q : prev));
-  }, [searchParams]);
+  if (pathname !== "/home") return null;
+
+  const query = searchParams.get("q") ?? "";
+  return (
+    <SearchField
+      key={query}
+      initialQuery={query}
+    />
+  );
+}
+
+function SearchField({
+  initialQuery,
+}: {
+  initialQuery: string;
+}) {
+  const router = useRouter();
+  const [value, setValue] = useState(initialQuery);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value;
@@ -24,7 +34,7 @@ export function SearchInput() {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
       const trimmed = nextValue.trim();
-      const params = new URLSearchParams(searchParamsRef.current.toString());
+      const params = new URLSearchParams(window.location.search);
       if (trimmed) {
         params.set("q", trimmed);
       } else {
@@ -47,10 +57,11 @@ export function SearchInput() {
     };
   }, []);
 
-  if (pathname !== "/home") return null;
-
   return (
     <div className="relative flex items-center">
+      <label htmlFor="home-post-search" className="sr-only">
+        Search posts
+      </label>
       <svg
         className="absolute left-2.5 h-3.5 w-3.5 text-black/30 pointer-events-none"
         xmlns="http://www.w3.org/2000/svg"
@@ -66,6 +77,7 @@ export function SearchInput() {
         <path d="m21 21-4.3-4.3" />
       </svg>
       <input
+        id="home-post-search"
         type="text"
         value={value}
         onChange={handleChange}

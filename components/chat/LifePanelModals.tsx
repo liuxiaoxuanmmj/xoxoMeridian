@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import type { ChatUser, LifeMemo, LifeScheduledJob } from "@/components/chat/types";
 import { BaseModal, ModalActions } from "@/components/chat/BaseModal";
 import { TimezoneSelector, getDefaultTimezone } from "@/components/chat/TimezoneSelector";
@@ -24,21 +24,26 @@ type ScheduledJobModalProps = ModalProps & {
 };
 
 export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModalProps) {
-  const [busy, setBusy] = useState(false);
-  const [formData, setFormData] = useState({
-    title: "",
-    content: "",
-    pinned: false,
-  });
+  if (!isOpen) return null;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    setFormData({
+  return (
+    <MemoModalForm
+      key={memo?.id ?? "new"}
+      onClose={onClose}
+      roomId={roomId}
+      memo={memo}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function MemoModalForm({ onClose, roomId, memo, onSuccess }: Omit<MemoModalProps, "isOpen">) {
+  const [busy, setBusy] = useState(false);
+  const [formData, setFormData] = useState(() => ({
       title: memo?.title ?? "",
       content: memo?.content ?? "",
       pinned: memo?.pinned ?? false,
-    });
-  }, [isOpen, memo]);
+  }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,11 +68,12 @@ export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModa
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} title={memo ? "编辑备忘录" : "新建备忘录"}>
+    <BaseModal isOpen onClose={onClose} title={memo ? "编辑备忘录" : "新建备忘录"}>
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         <div>
-          <label className="block text-sm font-medium text-black/70">标题 *</label>
+          <label htmlFor="memo-title" className="block text-sm font-medium text-black/70">标题 *</label>
           <input
+            id="memo-title"
             type="text"
             value={formData.title}
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
@@ -77,8 +83,9 @@ export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModa
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-black/70">内容 *</label>
+          <label htmlFor="memo-content" className="block text-sm font-medium text-black/70">内容 *</label>
           <textarea
+            id="memo-content"
             value={formData.content}
             onChange={(e) => setFormData({ ...formData, content: e.target.value })}
             className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
@@ -113,28 +120,39 @@ export function ScheduledJobModal({
   participants,
   onSuccess,
 }: ScheduledJobModalProps) {
-  const [busy, setBusy] = useState(false);
-  const [mode, setMode] = useState<"once" | "recurring">("recurring");
-  const [formData, setFormData] = useState({
-    description: "",
-    prompt: "",
-    fireAt: "",
-    cron: "0 9 * * *",
-    timezone: getDefaultTimezone(participants),
-  });
+  if (!isOpen) return null;
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const isOnce = !!(job?.payload?.runOnce);
-    setMode(isOnce ? "once" : "recurring");
-    setFormData({
+  return (
+    <ScheduledJobModalForm
+      key={job?.id ?? "new"}
+      onClose={onClose}
+      roomId={roomId}
+      job={job}
+      participants={participants}
+      onSuccess={onSuccess}
+    />
+  );
+}
+
+function ScheduledJobModalForm({
+  onClose,
+  roomId,
+  job,
+  participants,
+  onSuccess,
+}: Omit<ScheduledJobModalProps, "isOpen">) {
+  const [busy, setBusy] = useState(false);
+  const isOnce = !!job?.payload?.runOnce;
+  const [mode, setMode] = useState<"once" | "recurring">(
+    isOnce ? "once" : "recurring"
+  );
+  const [formData, setFormData] = useState(() => ({
       description: (job?.payload?.description as string | null) ?? "",
       prompt: (job?.payload?.prompt as string | null) ?? "",
       fireAt: job?.nextRunAt ? new Date(job.nextRunAt).toISOString().slice(0, 16) : "",
       cron: job?.cron ?? "0 9 * * *",
       timezone: job?.timezone ?? getDefaultTimezone(participants),
-    });
-  }, [isOpen, job, participants]);
+  }));
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -188,7 +206,7 @@ export function ScheduledJobModal({
   };
 
   return (
-    <BaseModal isOpen={isOpen} onClose={onClose} title={job ? "编辑任务" : "新建任务"}>
+    <BaseModal isOpen onClose={onClose} title={job ? "编辑任务" : "新建任务"}>
       <form onSubmit={handleSubmit} className="mt-4 space-y-4">
         <div className="flex gap-2">
           <button
@@ -215,8 +233,9 @@ export function ScheduledJobModal({
           </button>
         </div>
         <div>
-          <label className="block text-sm font-medium text-black/70">任务描述</label>
+          <label htmlFor="job-description" className="block text-sm font-medium text-black/70">任务描述</label>
           <input
+            id="job-description"
             type="text"
             value={formData.description}
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -226,8 +245,9 @@ export function ScheduledJobModal({
           />
         </div>
         <div>
-          <label className="block text-sm font-medium text-black/70">执行指令 *</label>
+          <label htmlFor="job-prompt" className="block text-sm font-medium text-black/70">执行指令 *</label>
           <textarea
+            id="job-prompt"
             value={formData.prompt}
             onChange={(e) => setFormData({ ...formData, prompt: e.target.value })}
             className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
@@ -239,8 +259,9 @@ export function ScheduledJobModal({
         </div>
         {mode === "once" ? (
           <div>
-            <label className="block text-sm font-medium text-black/70">执行时间 *</label>
+            <label htmlFor="job-fire-at" className="block text-sm font-medium text-black/70">执行时间 *</label>
             <input
+              id="job-fire-at"
               type="datetime-local"
               value={formData.fireAt}
               onChange={(e) => setFormData({ ...formData, fireAt: e.target.value })}

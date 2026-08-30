@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { detectAgentTarget } from "@/lib/agent-detection";
-import { filterToolsForTrigger } from "@/agent/agent-runtime";
+import { filterToolsForTrigger, readPersistedAgentPlan } from "@/agent/agent-runtime";
 import { createMockLLMProvider } from "@/agent/llm-provider";
 import { createToolRegistry } from "@/agent/tool-registry";
 
@@ -39,6 +39,13 @@ describe("agent dispatch primitives", () => {
       "weather.get",
       "web.search"
     ]);
+  });
+
+  it("classifies every Tool risk and marks permanent deletion as high risk", () => {
+    const tools = createToolRegistry().list();
+
+    expect(tools.every((tool) => ["low", "medium", "high"].includes(tool.risk))).toBe(true);
+    expect(tools.find((tool) => tool.name === "memo.delete")?.risk).toBe("high");
   });
 
   it("mock llm returns a structured weather plan", async () => {
@@ -98,5 +105,27 @@ describe("filterToolsForTrigger", () => {
     const filtered = filterToolsForTrigger(allTools, "scheduled.job").map((t) => t.name);
     expect(filtered).not.toContain("schedule.create");
     expect(filtered).toContain("memory.recall");
+  });
+});
+
+describe("readPersistedAgentPlan", () => {
+  it("restores a complete persisted plan for task retry", () => {
+    const plan = {
+      intent: "create_memo",
+      confidence: 0.9,
+      requiredTools: ["memo.create"],
+      taskSteps: ["create memo"],
+      finalResponsePlan: "confirm",
+      finalResponseText: "已经记下了。",
+      toolInputs: {
+        "memo.create": { content: "remember this" }
+      }
+    };
+
+    expect(readPersistedAgentPlan(plan)).toEqual(plan);
+  });
+
+  it("rejects incomplete persisted data instead of resuming it", () => {
+    expect(readPersistedAgentPlan({ intent: "create_memo" })).toBeNull();
   });
 });

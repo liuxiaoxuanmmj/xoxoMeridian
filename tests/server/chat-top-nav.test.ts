@@ -60,7 +60,12 @@ describe("ChatApp top navigation", () => {
           messages: [],
           memos: [],
           scheduledJobs: [],
-          agentStatus: { isWorking: false, runningTasks: 0, recentTasks: [] },
+          agentStatus: {
+            isWorking: false,
+            runningTasks: 0,
+            recentTasks: [],
+            pendingApprovals: [],
+          },
           rooms: [],
         },
       })

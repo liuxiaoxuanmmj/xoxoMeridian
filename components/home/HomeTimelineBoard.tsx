@@ -19,7 +19,7 @@ export function HomeTimelineBoard({
   initialSnapshot: HomeBoardSnapshot;
 }) {
   const boardRef = useRef<HTMLDivElement>(null);
-  const anchorsRef = useRef(new Map<string, HomeAnchor>());
+  const [anchors, setAnchors] = useState(() => new Map<string, HomeAnchor>());
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
   const [elements, setElements] = useState(initialSnapshot.elements);
   const [connections, setConnections] = useState<AtlasConnectionData[]>(initialSnapshot.connections);
@@ -31,25 +31,25 @@ export function HomeTimelineBoard({
   // Search state
   const searchParams = useSearchParams();
   const q = searchParams.get("q")?.trim() ?? "";
-  const [searchResults, setSearchResults] = useState<TimelinePost[] | null>(null);
+  const [searchState, setSearchState] = useState<{
+    query: string;
+    posts: TimelinePost[] | null;
+  } | null>(null);
 
   useEffect(() => {
-    if (!q) {
-      setSearchResults(null);
-      return;
-    }
+    if (!q) return;
 
     const controller = new AbortController();
 
     fetch(`/api/posts?q=${encodeURIComponent(q)}&limit=50`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data) => {
-        setSearchResults(data.posts ?? []);
+        setSearchState({ query: q, posts: data.posts ?? [] });
       })
       .catch((err) => {
         if (err.name !== "AbortError") {
           console.error("Search failed:", err);
-          setSearchResults(null);
+          setSearchState({ query: q, posts: null });
         }
       });
 
@@ -58,8 +58,9 @@ export function HomeTimelineBoard({
     };
   }, [q]);
 
-  const displayPosts = q ? (searchResults ?? posts) : posts;
-  const emptyMessage = q && searchResults !== null && searchResults.length === 0
+  const currentSearchResults = searchState?.query === q ? searchState.posts : null;
+  const displayPosts = q ? (currentSearchResults ?? posts) : posts;
+  const emptyMessage = q && currentSearchResults !== null && currentSearchResults.length === 0
     ? "No posts match your search."
     : undefined;
 
@@ -109,18 +110,34 @@ export function HomeTimelineBoard({
   }, [contextMenu]);
 
   const registerAnchor = useCallback((id: string, getRect: () => DOMRect | null) => {
-    anchorsRef.current.set(id, { id, kind: "post", getRect });
+    setAnchors((current) => {
+      const next = new Map(current);
+      next.set(id, { id, kind: "post", getRect });
+      return next;
+    });
     refreshBoardRect();
     return () => {
-      anchorsRef.current.delete(id);
+      setAnchors((current) => {
+        const next = new Map(current);
+        next.delete(id);
+        return next;
+      });
     };
   }, [refreshBoardRect]);
 
   const registerPhotoAnchor = useCallback((id: string, getRect: () => DOMRect | null) => {
-    anchorsRef.current.set(id, { id, kind: "photo", getRect });
+    setAnchors((current) => {
+      const next = new Map(current);
+      next.set(id, { id, kind: "photo", getRect });
+      return next;
+    });
     refreshBoardRect();
     return () => {
-      anchorsRef.current.delete(id);
+      setAnchors((current) => {
+        const next = new Map(current);
+        next.delete(id);
+        return next;
+      });
     };
   }, [refreshBoardRect]);
 
@@ -192,7 +209,7 @@ export function HomeTimelineBoard({
     >
       <HomeSpatialLayer
         boardRect={boardRect}
-        anchors={anchorsRef.current}
+        anchors={anchors}
         photos={photos}
         connections={connections}
         connectFromId={connectFromId}

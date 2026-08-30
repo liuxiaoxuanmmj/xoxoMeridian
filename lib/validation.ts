@@ -108,6 +108,11 @@ export const agentDispatchSchema = z
     message: "Either content or sourceMessageId is required",
   });
 
+export const toolApprovalDecisionSchema = z.object({
+  approvalId: z.string().min(1).max(64),
+  decision: z.enum(["approve", "reject"]),
+});
+
 export const studyModeSchema = z.enum(["focus", "short", "long"]);
 
 export const studyStartSchema = z.object({

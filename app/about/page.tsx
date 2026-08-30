@@ -40,6 +40,15 @@ const INTERESTS: [string, string][] = [
   ["🌿", "growing side by side"],
 ];
 
+const AMBIENT_DOTS = Array.from({ length: 18 }, (_, index) => ({
+  id: index,
+  x: (index * 37 + 11) % 100,
+  y: (index * 61 + 23) % 100,
+  size: 3 + ((index * 17 + 5) % 50) / 10,
+  delay: ((index * 29 + 7) % 40) / 10,
+  duration: 4 + ((index * 43 + 13) % 40) / 10,
+}));
+
 const MOOD_BARS = [
   { label: "handwritten warmth", val: 95 },
   { label: "attention to detail", val: 88 },
@@ -265,18 +274,9 @@ function TimelineItem({
 }
 
 function AmbientDots() {
-  const dots = useMemo(() =>
-    Array.from({ length: 18 }, (_, i) => ({
-      id: i,
-      x: Math.random() * 100,
-      y: Math.random() * 100,
-      size: 3 + Math.random() * 5,
-      delay: Math.random() * 4,
-      duration: 4 + Math.random() * 4,
-    })), []);
   return (
     <div className="pointer-events-none absolute inset-0 overflow-hidden">
-      {dots.map((d) => (
+      {AMBIENT_DOTS.map((d) => (
         <motion.div
           key={d.id}
           className="absolute rounded-full"

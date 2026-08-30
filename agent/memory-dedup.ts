@@ -1,9 +1,9 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 const SIMILARITY_THRESHOLD = 0.5;
 
 export async function deduplicatedMemoryWrite(
-  prisma: PrismaClient,
+  prisma: Prisma.TransactionClient,
   roomId: string,
   key: string,
   value: string,

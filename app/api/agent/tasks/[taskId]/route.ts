@@ -14,6 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tas
         sourceMessage: true,
         finalMessage: true,
         toolCalls: true,
+        toolApprovals: { orderBy: { requestedAt: "asc" } },
         llmCalls: true,
         eventLogs: { orderBy: { createdAt: "asc" } }
       }

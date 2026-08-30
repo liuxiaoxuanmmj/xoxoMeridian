@@ -24,6 +24,8 @@ const agentTasks: { id: string; roomId: string; agentId: string; input: unknown 
 const eventLogs: { type: string; payload: unknown; agentTaskId: string }[] = [];
 
 let dispatchHook: (() => Promise<void>) | null = null;
+let eventHook: (() => Promise<void>) | null = null;
+let afterRollbackHook: (() => Promise<void>) | null = null;
 
 function reset() {
   jobs.length = 0;
@@ -31,9 +33,25 @@ function reset() {
   agentTasks.length = 0;
   eventLogs.length = 0;
   dispatchHook = null;
+  eventHook = null;
+  afterRollbackHook = null;
 }
 
 const mockPrisma = {
+  $transaction: vi.fn(async (callback: (client: typeof mockPrisma) => Promise<unknown>) => {
+    const jobSnapshot = jobs.map((job) => ({ ...job }));
+    const taskSnapshot = agentTasks.map((task) => ({ ...task }));
+    const eventSnapshot = eventLogs.map((event) => ({ ...event }));
+    try {
+      return await callback(mockPrisma);
+    } catch (error) {
+      jobs.splice(0, jobs.length, ...jobSnapshot);
+      agentTasks.splice(0, agentTasks.length, ...taskSnapshot);
+      eventLogs.splice(0, eventLogs.length, ...eventSnapshot);
+      if (afterRollbackHook) await afterRollbackHook();
+      throw error;
+    }
+  }),
   scheduledJob: {
     findMany: vi.fn(async ({ where, orderBy }: { where: any; orderBy?: any }) => {
       let rows = jobs.filter((j) => {
@@ -65,6 +83,12 @@ const mockPrisma = {
         if (where.id && j.id !== where.id) return false;
         if (where.enabled !== undefined && j.enabled !== where.enabled) return false;
         if (where.nextRunAt && j.nextRunAt.getTime() !== where.nextRunAt.getTime()) return false;
+        if (Object.hasOwn(where, "lastRunAt")) {
+          const left = j.lastRunAt?.getTime() ?? null;
+          const right = where.lastRunAt?.getTime() ?? null;
+          if (left !== right) return false;
+        }
+        if (where.failCount !== undefined && j.failCount !== where.failCount) return false;
         return true;
       });
       for (const j of matched) Object.assign(j, data);
@@ -92,6 +116,7 @@ const mockPrisma = {
   },
   eventLog: {
     create: vi.fn(async ({ data }: { data: any }) => {
+      if (eventHook) await eventHook();
       eventLogs.push(data);
       return { id: `log-${eventLogs.length}`, ...data };
     }),
@@ -203,6 +228,45 @@ describe("schedulerTick - scheduled job CAS", () => {
     expect(jobs[0].nextRunAt.getTime()).toBe(oldNext.getTime());
     expect(jobs[0].failCount).toBe(1);
     expect(jobs[0].enabled).toBe(true);
+  });
+
+  it("rolls back the derived task when the fired event cannot be written", async () => {
+    const oldNext = new Date(Date.now() - 1000);
+    jobs.push(makeJob({ nextRunAt: oldNext }));
+    eventHook = async () => {
+      throw new Error("event insert failed");
+    };
+
+    await schedulerTick(new Date());
+
+    expect(agentTasks).toHaveLength(0);
+    expect(eventLogs).toHaveLength(0);
+    expect(jobs[0].nextRunAt.getTime()).toBe(oldNext.getTime());
+    expect(jobs[0].failCount).toBe(1);
+  });
+
+  it("does not overwrite a newer Job claim while recording a stale failure", async () => {
+    const oldNext = new Date(Date.now() - 1000);
+    const newerNext = new Date(Date.now() + 5 * 60_000);
+    jobs.push(makeJob({ nextRunAt: oldNext }));
+    eventHook = async () => {
+      throw new Error("event insert failed");
+    };
+    afterRollbackHook = async () => {
+      jobs[0].nextRunAt = newerNext;
+      jobs[0].lastRunAt = new Date();
+    };
+    const consoleWarn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await schedulerTick(new Date());
+
+    expect(jobs[0].nextRunAt).toBe(newerNext);
+    expect(jobs[0].failCount).toBe(0);
+    expect(consoleWarn).toHaveBeenCalledWith(
+      expect.stringContaining("ignored stale failure"),
+      "event insert failed"
+    );
+    consoleWarn.mockRestore();
   });
 
   it("disables job after MAX_FAIL_COUNT consecutive failures", async () => {

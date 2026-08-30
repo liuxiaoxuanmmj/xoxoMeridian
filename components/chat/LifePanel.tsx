@@ -43,8 +43,11 @@ export function LifePanel({
 }) {
   const router = useRouter();
   const [now, setNow] = useState(() => new Date());
-  const [weather, setWeather] = useState<WeatherResult | null>(null);
-  const [weatherLoading, setWeatherLoading] = useState(true);
+  const [weatherState, setWeatherState] = useState<{
+    roomId: string;
+    result: WeatherResult | null;
+    loaded: boolean;
+  }>({ roomId, result: null, loaded: false });
   const [deletingItem, setDeletingItem] = useState<string | null>(null);
 
   type ModalState =
@@ -68,15 +71,12 @@ export function LifePanel({
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const payload = (await response.json()) as { results?: WeatherResult[] };
         if (cancelled) return;
-        setWeather(payload.results?.[0] ?? null);
+        setWeatherState({ roomId, result: payload.results?.[0] ?? null, loaded: true });
       } catch {
-        if (!cancelled) setWeather(null);
-      } finally {
-        if (!cancelled) setWeatherLoading(false);
+        if (!cancelled) setWeatherState({ roomId, result: null, loaded: true });
       }
     }
 
-    setWeatherLoading(true);
     void load();
     const timer = setInterval(load, WEATHER_REFRESH_MS);
     return () => {
@@ -84,6 +84,9 @@ export function LifePanel({
       clearInterval(timer);
     };
   }, [roomId]);
+
+  const weather = weatherState.roomId === roomId ? weatherState.result : null;
+  const weatherLoading = weatherState.roomId !== roomId || !weatherState.loaded;
 
   const selfUser = participants[0];
   const partnerUser = participants[1];

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-26",
+  "updatedAt": "2026-08-30",
   "features": [
     {
       "id": "feat-001",
@@ -110,14 +110,92 @@
       "id": "feat-009",
       "name": "逐步启用 React Hooks 7 编译器诊断",
       "description": "在可观察行为测试保护下修复现有组件的纯度、refs 与 effect 诊断，并移除 Next.js 16 迁移期兼容关闭项。",
-      "status": "not-started",
+      "status": "done",
       "dependencies": ["feat-007"],
       "acceptanceCriteria": [
         "逐项启用 eslint.config.mjs 中迁移期关闭的 React Hooks 7 规则",
         "相关组件交互与关键用户旅程具有行为回归测试",
         "快速门禁和完整门禁通过"
       ],
-      "evidence": "feat-007 为保持单 feature 范围，暂时保留旧 core-web-vitals lint 语义并登记后续重构"
+      "evidence": "eslint.config.mjs 中 14 条 React Hooks 7 编译器诊断全部设为 error 且 npm run lint 通过；新增 6 个组件行为测试文件并扩展 AuthPanel 测试，覆盖 Atlas 最新 viewport、搜索防抖/结果、天气切房间、弹窗重开、消息草稿与请求锁；sudo -n -g docker -u dadalv npm run check:full 通过：51 文件/318 项 Vitest、生产构建、覆盖率门槛、1 文件/3 项 PostgreSQL 集成测试、1 setup + 8 条 Playwright 旅程"
+    },
+    {
+      "id": "feat-010",
+      "name": "修复房间 SSE 关闭竞态",
+      "description": "避免房间事件流在客户端断开后继续向已关闭的 ReadableStream controller 写入并触发未处理拒绝。",
+      "status": "done",
+      "dependencies": ["feat-009"],
+      "acceptanceCriteria": [
+        "客户端断开房间 SSE 时停止后续 snapshot 与 error enqueue",
+        "连接关闭竞态具有 Route Handler 或真实浏览器回归测试",
+        "完整门禁不再记录 ERR_INVALID_STATE 或 Controller is already closed"
+      ],
+      "evidence": "app/api/rooms/[roomId]/stream/route.ts 提前监听 abort、在异步边界后检查关闭状态并统一安全写入；tests/server/room-stream.test.ts 的 3 项 Route Handler 回归测试覆盖初始 snapshot/error 与在途轮询断开；sudo -n -g docker -u dadalv npm run check:full 通过，52 文件/321 项 Vitest、生产构建、覆盖率、1 文件/3 项 PostgreSQL 集成测试、1 setup + 8 条 Playwright 旅程全部通过，WebServer 未再记录 ERR_INVALID_STATE、Controller is already closed 或 unhandledRejection"
+    },
+    {
+      "id": "feat-011",
+      "name": "沉淀 Agent Runtime 评分 Skill 与审查报告",
+      "description": "将 Agent Runtime 工程成熟度评分细则封装为可复用 Skill，并持久化当前项目的完整审查报告。",
+      "status": "done",
+      "dependencies": ["feat-010"],
+      "acceptanceCriteria": [
+        "创建并校验可发现的 agent-runtime-review Skill，包含 100 分细则、L0-L4 等级门槛与证据规则",
+        "将完整 Agent Runtime Review 报告写入 docs/optimization 下的 Markdown 文件",
+        "快速门禁通过，状态、验证证据和交接记录完成更新"
+      ],
+      "evidence": "~/.codex/skills/agent-runtime-review/SKILL.md、agents/openai.yaml 与 references/scoring-rubric.md 已创建并通过 skill-creator quick_validate.py；docs/optimization/agent-runtime-review.md 初版持久化 49/100、L1 完整审查报告，完成 P0 后已复审更新为 74/100、最终 L1；./init.sh 与 npm run check:quick 均通过，52 文件/321 项 Vitest 测试通过"
+    },
+    {
+      "id": "feat-012",
+      "name": "实现 AgentTask 原子抢占",
+      "description": "让 Worker、手动运行与内联执行通过同一条件更新原子获取执行权，阻止并发重复执行副作用 Tool。",
+      "status": "done",
+      "dependencies": ["feat-011"],
+      "acceptanceCriteria": [
+        "AgentTask 只允许通过单条条件更新从 pending 或 failed 原子迁移到 running",
+        "未获得执行权的并发调用不会进入 LLM、Tool 或失败消息路径",
+        "真实 PostgreSQL 并发测试证明同一任务只有一个调用者获得执行权"
+      ],
+      "evidence": "agent/task-claim.ts 通过单条 updateMany CAS 统一抢占 pending/failed 任务；tests/agent/task-claim.test.ts 证明竞争失败者不进入 LLM；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-task-claim.integration.test.ts 通过 12 路并发仅 1 个 claim；npm run check:quick 通过，53 文件/322 项 Vitest"
+    },
+    {
+      "id": "feat-013",
+      "name": "实现副作用 Tool 重放幂等",
+      "description": "持久化稳定 Tool step key，让数据库副作用与 ToolCall 结果原子提交，并在任务重试时恢复已验证计划和复用已完成结果。",
+      "status": "done",
+      "dependencies": ["feat-012"],
+      "acceptanceCriteria": [
+        "任务重试复用已持久化的有效计划和稳定 Tool step key，不重新规划已开始的步骤",
+        "数据库写 Tool 的副作用、ToolCall 结果与关键事件在同一事务提交，并由 taskId 与 stepKey 唯一约束去重",
+        "真实 PostgreSQL 重放测试证明 memo.create 与 schedule.create 不产生重复资源"
+      ],
+      "evidence": "prisma/migrations/20260830152500_add_tool_call_step_key 新增 (taskId, stepKey) 唯一约束；Runtime 重试恢复持久化 plan，数据库写 Tool 在事务内提交副作用、ToolCall 与事件；tests/agent/task-claim.test.ts 验证不重新规划；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-idempotency.integration.test.ts 通过 2 项 PostgreSQL 重放/回滚测试；npm run check:quick 通过，53 文件/325 项 Vitest"
+    },
+    {
+      "id": "feat-014",
+      "name": "实现高风险 Tool 持久化审批",
+      "description": "为 Tool 建立 Runtime 风险分级，让永久删除进入持久化 waiting_approval，并提供受认证的 Approve/Reject 与重启恢复流程。",
+      "status": "done",
+      "dependencies": ["feat-013"],
+      "acceptanceCriteria": [
+        "Registry 中所有 Tool 具有明确 low/medium/high 风险等级，high Tool 未获批准前不会创建 ToolCall 或提交副作用",
+        "审批请求、输入、决定人与状态持久化；房间成员可通过校验后的 API Approve 或 Reject，任务相应恢复为 pending 或终止为 cancelled",
+        "真实 PostgreSQL 测试证明 memo.delete 在批准前保留数据、批准后仅删除一次、拒绝与服务重建后状态可恢复"
+      ],
+      "evidence": "prisma/migrations/20260830153500_add_agent_tool_approvals 新增 waiting_approval/cancelled 与持久化 AgentToolApproval；Registry 全部 Tool 显式分级且 memo.delete=high；认证+房间成员审批 API、SSE snapshot 与可访问审批面板完成；tests/component/tool-approval-panel.test.tsx 通过；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-approval.integration.test.ts 通过 2 项批准/拒绝/恢复测试；npm run check:quick 通过，54 文件/327 项 Vitest"
+    },
+    {
+      "id": "feat-015",
+      "name": "实现 Scheduler 原子任务派生",
+      "description": "将 ScheduledJob 条件抢占、下一状态、AgentTask 创建与 fired Event 写入同一事务，消除孤儿任务和重复派生。",
+      "status": "done",
+      "dependencies": ["feat-014"],
+      "acceptanceCriteria": [
+        "轮询与近时 timer 路径复用同一事务，在单个原子边界内完成 Job CAS、AgentTask 创建与 fired Event 写入",
+        "Task 或 Event 写入失败时事务回滚且不会留下孤儿 Task；失败计数使用旧 Job 版本 CAS，不覆盖其他 Worker 的成功 claim",
+        "真实 PostgreSQL 故障注入测试证明 Event 写入失败会同时回滚 Task 与 Job claim"
+      ],
+      "evidence": "agent/scheduler-tick.ts 将 Job 版本 CAS、状态推进、AgentTask 与 fired Event 收敛到同一 Prisma transaction，失败计数用旧版本 CAS；tests/agent/scheduler-tick.test.ts 12 项通过，覆盖 Event 失败回滚和 stale failure；tests/integration/scheduler-atomic-dispatch.integration.test.ts 通过真实 PostgreSQL trigger 故障注入；最终 sudo -n -g docker -u dadalv npm run check:full 退出 0：54 文件/329 项 Vitest、生产构建、覆盖率门槛、5 文件/9 项 PostgreSQL 集成测试与 9 项 Playwright E2E 全部通过"
     }
   ]
 }

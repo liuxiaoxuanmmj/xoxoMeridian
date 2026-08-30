@@ -103,6 +103,7 @@ export async function fetchWeatherSnapshot(
 export function createWeatherTool(): AgentTool<WeatherInput> {
   return {
     name: "weather.get",
+    risk: "low",
     description:
       "Get current weather (and optional 3-day forecast) via QWeather. Falls back to a mock when WEATHER_PROVIDER is not 'qweather' or credentials are missing.",
     schema: {

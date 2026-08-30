@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from "react";
 
 import type { AtlasElementData, AtlasConnectionData } from "@/components/atlas/types";
 import { AtlasElement } from "@/components/atlas/AtlasElement";
@@ -43,9 +43,7 @@ export function AtlasCanvas({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const vpRef = useRef(viewport);
-  vpRef.current = viewport;
   const onViewportChangeRef = useRef(onViewportChange);
-  onViewportChangeRef.current = onViewportChange;
   const panRef = useRef<{ active: boolean; startX: number; startY: number; vpX: number; vpY: number }>({
     active: false,
     startX: 0,
@@ -53,6 +51,11 @@ export function AtlasCanvas({
     vpX: 0,
     vpY: 0,
   });
+
+  useLayoutEffect(() => {
+    vpRef.current = viewport;
+    onViewportChangeRef.current = onViewportChange;
+  }, [onViewportChange, viewport]);
 
   const onPointerDown = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {

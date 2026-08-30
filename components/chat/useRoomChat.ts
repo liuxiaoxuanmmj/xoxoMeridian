@@ -75,15 +75,18 @@ export function useRoomChat({
   redirects?: RoomChatRedirects;
 }) {
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [snapshotSource, setSnapshotSource] = useState(initialSnapshot);
   const [authSyncing, setAuthSyncing] = useState(false);
   const [connState, setConnState] = useState<ConnState>("connecting");
-  const roomId = snapshot.room.id;
-  const { onAuthMismatch, onRoomDeleted, onUnauthenticated } = redirects ?? {};
 
-  useEffect(() => {
+  if (snapshotSource !== initialSnapshot) {
+    setSnapshotSource(initialSnapshot);
     setSnapshot(initialSnapshot);
     setConnState("connecting");
-  }, [initialSnapshot]);
+  }
+
+  const roomId = snapshot.room.id;
+  const { onAuthMismatch, onRoomDeleted, onUnauthenticated } = redirects ?? {};
 
   // ── Auth sync ──────────────────────────────────────────────────────────────
 

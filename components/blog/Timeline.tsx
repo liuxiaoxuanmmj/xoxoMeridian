@@ -126,6 +126,15 @@ export function Timeline({
   }, [sorted]);
 
   const leftUserId = humanAuthors[0] ?? currentUserId;
+  const agentSides = useMemo(
+    () =>
+      new Map(
+        entries
+          .filter((entry) => entry.post.type === "agent_log")
+          .map((entry, index) => [entry.id, index % 2 === 0 ? "left" : "right"] as const)
+      ),
+    [entries]
+  );
 
   if (entries.length === 0) {
     return (
@@ -140,8 +149,6 @@ export function Timeline({
     );
   }
 
-  let agentSide: "left" | "right" = "left";
-
   return (
     <div className="relative">
       <div className="timeline-line" aria-hidden="true" />
@@ -151,11 +158,8 @@ export function Timeline({
           const post = entry.post;
 
           if (post.type === "agent_log") {
-            const side = agentSide;
-            agentSide = agentSide === "left" ? "right" : "left";
-
             return (
-              <TimelineItem key={post.id} side={side}>
+              <TimelineItem key={post.id} side={agentSides.get(post.id) ?? "left"}>
                 <AgentLogCard post={post as any} />
               </TimelineItem>
             );

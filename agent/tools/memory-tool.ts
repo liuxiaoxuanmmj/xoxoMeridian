@@ -19,6 +19,7 @@ const VALUE_MAX = 1000;
 export function createMemorySetTool(): AgentTool<MemorySetInput> {
   return {
     name: "memory.set",
+    risk: "medium",
     description:
       "Persist a stable, high-signal fact about the room or its participants for future conversations. " +
       "Use ONLY for durable things: allergies, lasting preferences, important relationship dates, recurring routines, long-term goals, addresses/timezones. " +
@@ -26,6 +27,7 @@ export function createMemorySetTool(): AgentTool<MemorySetInput> {
       "Keys MUST be dotted, lowercase, and scoped: 'shared.<topic>' for room-level facts, 'me.<topic>' for the requester, 'her.<topic>' for the partner. " +
       "Examples: 'her.allergy.peanut'='confirmed 2026-05', 'shared.anniversary'='2024-10-12', 'me.timezone'='Asia/Shanghai'. " +
       "Existing keys are upserted (overwritten), so prefer stable key names over timestamped ones.",
+    effect: "database-write",
     schema: {
       type: "object",
       required: ["key", "value"],
@@ -71,6 +73,7 @@ export function createMemorySetTool(): AgentTool<MemorySetInput> {
 export function createMemoryRecallTool(): AgentTool<MemoryRecallInput> {
   return {
     name: "memory.recall",
+    risk: "low",
     description:
       "Retrieve previously persisted facts about this room. Useful when you need to verify a remembered detail before acting (e.g. confirming an allergy before suggesting food). " +
       "Returns up to `limit` rows ordered by recency. Optional `prefix` filter (e.g. 'her.') narrows by key namespace.",

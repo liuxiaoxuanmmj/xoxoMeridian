@@ -68,30 +68,13 @@ async function fireDueScheduledJobs(now: Date) {
     if (activeJobTimers.has(job.id)) continue;
 
     const inWindow = now.getTime() - job.nextRunAt.getTime() <= MISSED_WINDOW_MS;
-    const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
-    const runOnce = isRunOnce(job);
-
-    const claim = await prisma.scheduledJob.updateMany({
-      where: { id: job.id, enabled: true, nextRunAt: job.nextRunAt },
-      data: {
-        lastRunAt: inWindow ? now : job.lastRunAt,
-        nextRunAt: newNextRunAt,
-        failCount: 0,
-        enabled: runOnce && inWindow ? false : true,
-      },
-    });
-    if (claim.count === 0) continue;
-
-    if (!inWindow) {
-      skipped += 1;
-      continue;
-    }
 
     try {
-      await dispatchScheduledJobTask(job);
-      fired += 1;
+      const result = await claimAndDispatchScheduledJob(job, now, inWindow);
+      if (result === "fired") fired += 1;
+      if (result === "skipped") skipped += 1;
     } catch (error) {
-      await rollbackJobClaim(job, error);
+      await recordJobDispatchFailure(job, error);
       failed += 1;
     }
   }
@@ -99,13 +82,48 @@ async function fireDueScheduledJobs(now: Date) {
   return { fired, skipped, failed };
 }
 
-async function dispatchScheduledJobTask(job: ScheduledJob) {
+async function claimAndDispatchScheduledJob(
+  job: ScheduledJob,
+  now: Date,
+  inWindow: boolean
+): Promise<"lost" | "skipped" | "fired"> {
+  const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
+  const runOnce = isRunOnce(job);
+
+  return prisma.$transaction(async (tx) => {
+    const claim = await tx.scheduledJob.updateMany({
+      where: {
+        id: job.id,
+        enabled: job.enabled,
+        nextRunAt: job.nextRunAt,
+        lastRunAt: job.lastRunAt,
+        failCount: job.failCount
+      },
+      data: {
+        lastRunAt: inWindow ? now : job.lastRunAt,
+        nextRunAt: newNextRunAt,
+        failCount: 0,
+        enabled: runOnce && inWindow ? false : true
+      }
+    });
+    if (claim.count === 0) return "lost";
+    if (!inWindow) return "skipped";
+
+    await dispatchScheduledJobTask(job, tx);
+    return "fired";
+  });
+}
+
+async function dispatchScheduledJobTask(
+  job: ScheduledJob,
+  client: Prisma.TransactionClient
+) {
   const payload = (job.payload ?? {}) as Record<string, unknown>;
   const promptFromPayload = typeof payload.prompt === "string" ? payload.prompt.trim() : "";
   const action = promptFromPayload || "执行预设的定时任务，并向房间发一条简短的播报。";
   const prompt = wrapTriggerPrompt(action);
 
-  const task = await prisma.agentTask.create({
+  const task = await client.agentTask.create({
     data: {
       roomId: job.roomId,
       agentId: job.agentId,
@@ -118,7 +136,7 @@ async function dispatchScheduledJobTask(job: ScheduledJob) {
     },
   });
 
-  await prisma.eventLog.create({
+  await client.eventLog.create({
     data: {
       roomId: job.roomId,
       agentTaskId: task.id,
@@ -149,21 +167,29 @@ function isRunOnce(job: ScheduledJob): boolean {
   return payload.runOnce === true;
 }
 
-async function rollbackJobClaim(job: ScheduledJob, error: unknown) {
+async function recordJobDispatchFailure(job: ScheduledJob, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   const failCount = job.failCount + 1;
   const reachedCap = failCount >= MAX_FAIL_COUNT;
 
-  await prisma.scheduledJob.update({
-    where: { id: job.id },
-    data: {
+  const update = await prisma.scheduledJob.updateMany({
+    where: {
+      id: job.id,
+      enabled: job.enabled,
       nextRunAt: job.nextRunAt,
       lastRunAt: job.lastRunAt,
-      failCount,
-      enabled: reachedCap ? false : job.enabled,
+      failCount: job.failCount
     },
+    data: {
+      failCount,
+      enabled: reachedCap ? false : job.enabled
+    }
   });
-  console.error(`[scheduler] job ${job.id} failed (failCount=${failCount}):`, message);
+  if (update.count === 1) {
+    console.error(`[scheduler] job ${job.id} failed (failCount=${failCount}):`, message);
+  } else {
+    console.warn(`[scheduler] ignored stale failure for job ${job.id}:`, message);
+  }
 }
 
 async function scheduleNearTermJobs(now: Date) {
@@ -192,23 +218,10 @@ async function fireJobNow(jobId: string) {
   if (!job || !job.enabled) return;
 
   const now = new Date();
-  const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
-  const runOnce = isRunOnce(job);
-
-  const claim = await prisma.scheduledJob.updateMany({
-    where: { id: jobId, enabled: true, nextRunAt: job.nextRunAt },
-    data: {
-      lastRunAt: now,
-      nextRunAt: newNextRunAt,
-      failCount: 0,
-      enabled: runOnce ? false : true,
-    },
-  });
-  if (claim.count === 0) return;
 
   try {
-    await dispatchScheduledJobTask(job);
+    await claimAndDispatchScheduledJob(job, now, true);
   } catch (error) {
-    await rollbackJobClaim(job, error);
+    await recordJobDispatchFailure(job, error);
   }
 }

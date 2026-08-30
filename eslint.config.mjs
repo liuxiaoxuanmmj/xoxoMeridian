@@ -4,23 +4,21 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 export default defineConfig([
   ...nextVitals,
   {
-    // Next.js 16 bundles React Hooks 7 compiler diagnostics. Keep the pre-migration
-    // lint scope until those cross-feature component refactors are tracked separately.
     rules: {
-      "react-hooks/config": "off",
-      "react-hooks/error-boundaries": "off",
-      "react-hooks/gating": "off",
-      "react-hooks/globals": "off",
-      "react-hooks/immutability": "off",
-      "react-hooks/incompatible-library": "off",
-      "react-hooks/preserve-manual-memoization": "off",
-      "react-hooks/purity": "off",
-      "react-hooks/refs": "off",
-      "react-hooks/set-state-in-effect": "off",
-      "react-hooks/set-state-in-render": "off",
-      "react-hooks/static-components": "off",
-      "react-hooks/unsupported-syntax": "off",
-      "react-hooks/use-memo": "off",
+      "react-hooks/config": "error",
+      "react-hooks/error-boundaries": "error",
+      "react-hooks/gating": "error",
+      "react-hooks/globals": "error",
+      "react-hooks/immutability": "error",
+      "react-hooks/incompatible-library": "error",
+      "react-hooks/preserve-manual-memoization": "error",
+      "react-hooks/purity": "error",
+      "react-hooks/refs": "error",
+      "react-hooks/set-state-in-effect": "error",
+      "react-hooks/set-state-in-render": "error",
+      "react-hooks/static-components": "error",
+      "react-hooks/unsupported-syntax": "error",
+      "react-hooks/use-memo": "error",
     },
   },
   globalIgnores([

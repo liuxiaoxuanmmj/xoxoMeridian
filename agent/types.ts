@@ -1,4 +1,4 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma } from "@prisma/client";
 
 import type { ExecutionTracer } from "@/agent/execution-tracer";
 
@@ -75,7 +75,7 @@ export interface LLMProvider {
 export type RuntimeContext = Awaited<ReturnType<typeof import("@/agent/context-builder").buildAgentContext>>;
 
 export type ToolExecutionContext = {
-  prisma: PrismaClient;
+  prisma: Prisma.TransactionClient;
   taskId: string;
   roomId: string;
   agentId: string;
@@ -84,10 +84,14 @@ export type ToolExecutionContext = {
   tracer: ExecutionTracer;
 };
 
+export type ToolRisk = "low" | "medium" | "high";
+
 export interface AgentTool<Input = unknown, Output = unknown> {
   name: string;
   description: string;
   schema: unknown;
+  risk: ToolRisk;
+  effect?: "database-write";
   execute(input: Input, context: ToolExecutionContext): Promise<Output>;
 }
 

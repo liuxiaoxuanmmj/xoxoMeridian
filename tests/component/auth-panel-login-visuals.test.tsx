@@ -140,4 +140,22 @@ describe("AuthPanel", () => {
     expect(screen.getByTestId("auth-visual-layer-first")).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("auth-visual-layer-second")).toHaveAttribute("data-active", "false");
   });
+
+  it("keeps an active visual in bounds when the manifest shrinks", () => {
+    vi.useFakeTimers();
+    const { rerender } = render(<AuthPanel visuals={twoVisuals} />);
+
+    act(() => {
+      vi.advanceTimersByTime(5000);
+    });
+    expect(screen.getByTestId("auth-visual-layer-second")).toHaveAttribute("data-active", "true");
+
+    rerender(
+      <AuthPanel
+        visuals={{ ...twoVisuals, items: [twoVisuals.items[0]] }}
+      />
+    );
+
+    expect(screen.getByTestId("auth-visual-layer-first")).toHaveAttribute("data-active", "true");
+  });
 });

@@ -5,23 +5,33 @@ import { useEffect, useRef, useState } from "react";
 import type { ChatUser } from "@/components/chat/types";
 import { MENTION_AGENT } from "@/lib/identity";
 
-export function MessageComposer({
-  currentUser: _currentUser,
-  externalDraft,
-  onSubmitMessage,
-}: {
+type MessageComposerProps = {
   currentUser: ChatUser;
   externalDraft?: string;
   onSubmitMessage: (text: string) => Promise<{ ok: true } | { ok: false; error: string }>;
-}) {
-  const [content, setContent] = useState("");
+};
+
+export function MessageComposer(props: MessageComposerProps) {
+  return (
+    <MessageComposerEditor
+      key={props.externalDraft ?? ""}
+      {...props}
+    />
+  );
+}
+
+function MessageComposerEditor({
+  currentUser: _currentUser,
+  externalDraft,
+  onSubmitMessage,
+}: MessageComposerProps) {
+  const [content, setContent] = useState(externalDraft ?? "");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
   useEffect(() => {
     if (externalDraft) {
-      setContent(externalDraft);
       requestAnimationFrame(() => {
         const ta = textareaRef.current;
         if (!ta) return;

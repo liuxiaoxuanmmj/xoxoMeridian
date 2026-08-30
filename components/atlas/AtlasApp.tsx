@@ -29,8 +29,6 @@ export function AtlasApp({
 
   // === UI State ===
   const [viewport, setViewport] = useState({ x: 0, y: 0, zoom: 1 });
-  const viewportRef = useRef(viewport);
-  viewportRef.current = viewport;
   const [connectMode, setConnectMode] = useState(false);
   const [connectFrom, setConnectFrom] = useState<string | null>(null);
   const connectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -225,9 +223,8 @@ export function AtlasApp({
 
   const onAddNote = useCallback(
     async (x?: number, y?: number) => {
-      const vp = viewportRef.current;
-      const cx = x ?? -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
-      const cy = y ?? -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
+      const cx = x ?? -viewport.x / viewport.zoom + window.innerWidth / 2 / viewport.zoom;
+      const cy = y ?? -viewport.y / viewport.zoom + window.innerHeight / 2 / viewport.zoom;
       const resp = await fetch(`/api/atlas/elements`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -238,7 +235,7 @@ export function AtlasApp({
         setOptimisticOps((ops) => [...ops, { type: "add", id: element.id, element, ts: Date.now() }]);
       }
     },
-    []
+    [viewport]
   );
 
   const onElementClick = useCallback(
@@ -360,9 +357,8 @@ export function AtlasApp({
             finalX = uploadPosition.x;
             finalY = uploadPosition.y;
           } else {
-            const vp = viewportRef.current;
-            finalX = -vp.x / vp.zoom + window.innerWidth / 2 / vp.zoom;
-            finalY = -vp.y / vp.zoom + window.innerHeight / 2 / vp.zoom;
+            finalX = -viewport.x / viewport.zoom + window.innerWidth / 2 / viewport.zoom;
+            finalY = -viewport.y / viewport.zoom + window.innerHeight / 2 / viewport.zoom;
           }
           await fetch(`/api/atlas/elements/${element.id}`, {
             method: "PATCH",

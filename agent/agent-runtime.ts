@@ -10,12 +10,15 @@ import {
   SCHEDULER_BLOCKED_TOOLS,
   TRIGGER_SCHEDULED_JOB,
 } from "@/agent/scheduler-tick";
+import { claimAgentTask } from "@/agent/task-claim";
+import { ToolApprovalRequiredError } from "@/agent/tool-approval";
 import { createToolRegistry } from "@/agent/tool-registry";
 import type { AgentPlan, ToolResult } from "@/agent/types";
 import { appendChatLog } from "@/lib/chat-log-file";
 import { prisma } from "@/lib/prisma";
 
 export async function runAgentTask(taskId: string) {
+  const claim = await claimAgentTask(taskId);
   const task = await prisma.agentTask.findUnique({
     where: { id: taskId },
     include: {
@@ -29,14 +32,14 @@ export async function runAgentTask(taskId: string) {
     throw new Error(`Agent task not found: ${taskId}`);
   }
 
-  if (task.status === "completed" || task.status === "running") {
+  if (!claim.claimed) {
     return task;
   }
 
   const tracer = new ExecutionTracer(prisma, task.id, task.roomId);
 
   try {
-    await tracer.markRunning();
+    await tracer.markRunning(claim.claimedAt);
     const runtimeContext = await buildAgentContext(task.roomId);
     await tracer.event("agent.context.built", {
       recentMessageCount: runtimeContext.recentMessages.length,
@@ -44,7 +47,6 @@ export async function runAgentTask(taskId: string) {
     });
 
     const registry = createToolRegistry();
-    const provider = createLLMProvider();
     const prompt = getTaskPrompt(task.input);
     const trigger = getTaskTrigger(task.input);
     const allTools = registry.list().map((tool) => ({
@@ -58,136 +60,47 @@ export async function runAgentTask(taskId: string) {
     const availableTools = filterToolsForTrigger(allTools, trigger);
     const availableToolNames = availableTools.map((t) => t.name);
 
-    const llmStartedAt = Date.now();
-    await tracer.event("agent.llm.started", {
-      provider: provider.name,
-      model: provider.model,
-      availableTools: availableToolNames
-    });
-
-    let plan: AgentPlan;
-    try {
-      const planResult = await provider.plan({
-        prompt,
-        roomContext: runtimeContext.roomContext,
-        availableTools,
-        agentSystemPrompt: task.agent.systemPrompt
+    let plan = readPersistedAgentPlan(task.plan);
+    if (plan) {
+      await tracer.event("agent.plan.resumed", {
+        intent: plan.intent,
+        requiredTools: plan.requiredTools
       });
-
-      plan = planResult;
-      await prisma.lLMCall.create({
-        data: {
-          taskId: task.id,
-          provider: provider.name,
-          model: provider.model,
-          inputSummary: prompt.slice(0, 240),
-          requestPayload: {
-            prompt,
-            roomContext: runtimeContext.roomContext,
-            availableTools: availableToolNames
-          } as unknown as Prisma.InputJsonObject,
-          responsePayload: planResult.rawResponse ?? planResult,
-          promptTokens: planResult.usage?.promptTokens,
-          completionTokens: planResult.usage?.completionTokens,
-          totalTokens: planResult.usage?.totalTokens,
-          status: "completed",
-          durationMs: Date.now() - llmStartedAt
-        }
-      });
-      await appendChatLog(task.roomId, {
-        kind: "llm.call",
-        taskId: task.id,
+    } else {
+      const provider = createLLMProvider();
+      const llmStartedAt = Date.now();
+      await tracer.event("agent.llm.started", {
         provider: provider.name,
         model: provider.model,
-        status: "completed",
-        durationMs: Date.now() - llmStartedAt,
-        requestPayload: {
-          prompt,
-          roomContext: runtimeContext.roomContext,
-          availableTools: availableToolNames
-        },
-        responsePayload: planResult.rawResponse ?? planResult,
-        tokens: {
-          prompt: planResult.usage?.promptTokens,
-          completion: planResult.usage?.completionTokens,
-          total: planResult.usage?.totalTokens
-        }
-      });
-      await tracer.event("agent.llm.completed", { intent: plan.intent, requiredTools: plan.requiredTools });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : "LLM planning failed";
-      await prisma.lLMCall.create({
-        data: {
-          taskId: task.id,
-          provider: provider.name,
-          model: provider.model,
-          inputSummary: prompt.slice(0, 240),
-          requestPayload: { prompt, availableTools: availableToolNames } as unknown as Prisma.InputJsonObject,
-          status: "failed",
-          error: message,
-          durationMs: Date.now() - llmStartedAt
-        }
-      });
-      await appendChatLog(task.roomId, {
-        kind: "llm.call",
-        taskId: task.id,
-        provider: provider.name,
-        model: provider.model,
-        status: "failed",
-        durationMs: Date.now() - llmStartedAt,
-        requestPayload: { prompt, availableTools: availableToolNames },
-        error: message
-      });
-      throw error;
-    }
-
-    // --- Plan consistency check ---------------------------------------------
-    // The LLM sometimes produces a final_response_text that does not match its
-    // tool_inputs (e.g. promising "今晚只发一次" while only calling schedule.cancel).
-    // We validate the plan; on issues we retry once with structured feedback,
-    // and if the retry still fails we fall back to a safe "ask user to confirm"
-    // reply rather than executing a mismatched plan.
-    let planIssues = validatePlan(plan, prompt);
-    if (planIssues.length > 0) {
-      await tracer.event("agent.plan.validation.failed", {
-        attempt: 1,
-        issueCodes: planIssues.map((i) => i.code),
-        issues: planIssues
+        availableTools: availableToolNames
       });
 
-      const retryStartedAt = Date.now();
       try {
-        const retryResult = await provider.plan({
+        const planResult = await provider.plan({
           prompt,
           roomContext: runtimeContext.roomContext,
           availableTools,
-          agentSystemPrompt: task.agent.systemPrompt,
-          validationFeedback: {
-            previousPlan: plan,
-            issues: formatIssuesForLLM(planIssues)
-          }
+          agentSystemPrompt: task.agent.systemPrompt
         });
+
+        plan = planResult;
         await prisma.lLMCall.create({
           data: {
             taskId: task.id,
             provider: provider.name,
             model: provider.model,
-            inputSummary: `[retry] ${prompt.slice(0, 230)}`,
+            inputSummary: prompt.slice(0, 240),
             requestPayload: {
               prompt,
               roomContext: runtimeContext.roomContext,
-              availableTools: availableToolNames,
-              validationFeedback: {
-                previousPlan: plan,
-                issues: planIssues
-              }
+              availableTools: availableToolNames
             } as unknown as Prisma.InputJsonObject,
-            responsePayload: retryResult.rawResponse ?? retryResult,
-            promptTokens: retryResult.usage?.promptTokens,
-            completionTokens: retryResult.usage?.completionTokens,
-            totalTokens: retryResult.usage?.totalTokens,
+            responsePayload: planResult.rawResponse ?? planResult,
+            promptTokens: planResult.usage?.promptTokens,
+            completionTokens: planResult.usage?.completionTokens,
+            totalTokens: planResult.usage?.totalTokens,
             status: "completed",
-            durationMs: Date.now() - retryStartedAt
+            durationMs: Date.now() - llmStartedAt
           }
         });
         await appendChatLog(task.roomId, {
@@ -196,76 +109,184 @@ export async function runAgentTask(taskId: string) {
           provider: provider.name,
           model: provider.model,
           status: "completed",
-          durationMs: Date.now() - retryStartedAt,
+          durationMs: Date.now() - llmStartedAt,
           requestPayload: {
             prompt,
             roomContext: runtimeContext.roomContext,
-            availableTools: availableToolNames,
-            validationFeedback: {
-              previousPlan: plan,
-              issues: planIssues
-            }
+            availableTools: availableToolNames
           },
-          responsePayload: retryResult.rawResponse ?? retryResult,
+          responsePayload: planResult.rawResponse ?? planResult,
           tokens: {
-            prompt: retryResult.usage?.promptTokens,
-            completion: retryResult.usage?.completionTokens,
-            total: retryResult.usage?.totalTokens
+            prompt: planResult.usage?.promptTokens,
+            completion: planResult.usage?.completionTokens,
+            total: planResult.usage?.totalTokens
           }
         });
-        plan = retryResult;
-        await tracer.event("agent.plan.validation.retry.completed", {
+        await tracer.event("agent.llm.completed", {
           intent: plan.intent,
           requiredTools: plan.requiredTools
         });
       } catch (error) {
-        const message = error instanceof Error ? error.message : "LLM retry failed";
-        await tracer.event("agent.plan.validation.retry.failed", { error: message });
+        const message = error instanceof Error ? error.message : "LLM planning failed";
+        await prisma.lLMCall.create({
+          data: {
+            taskId: task.id,
+            provider: provider.name,
+            model: provider.model,
+            inputSummary: prompt.slice(0, 240),
+            requestPayload: { prompt, availableTools: availableToolNames } as unknown as Prisma.InputJsonObject,
+            status: "failed",
+            error: message,
+            durationMs: Date.now() - llmStartedAt
+          }
+        });
+        await appendChatLog(task.roomId, {
+          kind: "llm.call",
+          taskId: task.id,
+          provider: provider.name,
+          model: provider.model,
+          status: "failed",
+          durationMs: Date.now() - llmStartedAt,
+          requestPayload: { prompt, availableTools: availableToolNames },
+          error: message
+        });
+        throw error;
       }
 
-      planIssues = validatePlan(plan, prompt);
+      // --- Plan consistency check -------------------------------------------
+      // The LLM sometimes produces a final_response_text that does not match its
+      // tool_inputs (e.g. promising "今晚只发一次" while only calling schedule.cancel).
+      // We validate the plan; on issues we retry once with structured feedback,
+      // and if the retry still fails we fall back to a safe "ask user to confirm"
+      // reply rather than executing a mismatched plan.
+      let planIssues = validatePlan(plan, prompt);
       if (planIssues.length > 0) {
-        const repairedFromCodes = planIssues.map((i) => i.code);
-        const { repaired, remainingIssues } = repairPlan(plan, prompt, planIssues);
-        plan = repaired;
-        await tracer.event("agent.plan.validation.repaired", {
-          repairedFromCodes,
-          remainingCodes: remainingIssues.map((i) => i.code),
-          remainingIssues
+        await tracer.event("agent.plan.validation.failed", {
+          attempt: 1,
+          issueCodes: planIssues.map((i) => i.code),
+          issues: planIssues
         });
 
-        if (remainingIssues.length > 0) {
-          await tracer.event("agent.plan.validation.fallback", {
-            issueCodes: remainingIssues.map((i) => i.code),
-            issues: remainingIssues,
-            discardedPlan: plan
+        const retryStartedAt = Date.now();
+        try {
+          const retryResult = await provider.plan({
+            prompt,
+            roomContext: runtimeContext.roomContext,
+            availableTools,
+            agentSystemPrompt: task.agent.systemPrompt,
+            validationFeedback: {
+              previousPlan: plan,
+              issues: formatIssuesForLLM(planIssues)
+            }
           });
-          plan = buildClarifyPlan(remainingIssues, prompt);
+          await prisma.lLMCall.create({
+            data: {
+              taskId: task.id,
+              provider: provider.name,
+              model: provider.model,
+              inputSummary: `[retry] ${prompt.slice(0, 230)}`,
+              requestPayload: {
+                prompt,
+                roomContext: runtimeContext.roomContext,
+                availableTools: availableToolNames,
+                validationFeedback: {
+                  previousPlan: plan,
+                  issues: planIssues
+                }
+              } as unknown as Prisma.InputJsonObject,
+              responsePayload: retryResult.rawResponse ?? retryResult,
+              promptTokens: retryResult.usage?.promptTokens,
+              completionTokens: retryResult.usage?.completionTokens,
+              totalTokens: retryResult.usage?.totalTokens,
+              status: "completed",
+              durationMs: Date.now() - retryStartedAt
+            }
+          });
+          await appendChatLog(task.roomId, {
+            kind: "llm.call",
+            taskId: task.id,
+            provider: provider.name,
+            model: provider.model,
+            status: "completed",
+            durationMs: Date.now() - retryStartedAt,
+            requestPayload: {
+              prompt,
+              roomContext: runtimeContext.roomContext,
+              availableTools: availableToolNames,
+              validationFeedback: {
+                previousPlan: plan,
+                issues: planIssues
+              }
+            },
+            responsePayload: retryResult.rawResponse ?? retryResult,
+            tokens: {
+              prompt: retryResult.usage?.promptTokens,
+              completion: retryResult.usage?.completionTokens,
+              total: retryResult.usage?.totalTokens
+            }
+          });
+          plan = retryResult;
+          await tracer.event("agent.plan.validation.retry.completed", {
+            intent: plan.intent,
+            requiredTools: plan.requiredTools
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "LLM retry failed";
+          await tracer.event("agent.plan.validation.retry.failed", { error: message });
+        }
+
+        planIssues = validatePlan(plan, prompt);
+        if (planIssues.length > 0) {
+          const repairedFromCodes = planIssues.map((i) => i.code);
+          const { repaired, remainingIssues } = repairPlan(plan, prompt, planIssues);
+          plan = repaired;
+          await tracer.event("agent.plan.validation.repaired", {
+            repairedFromCodes,
+            remainingCodes: remainingIssues.map((i) => i.code),
+            remainingIssues
+          });
+
+          if (remainingIssues.length > 0) {
+            await tracer.event("agent.plan.validation.fallback", {
+              issueCodes: remainingIssues.map((i) => i.code),
+              issues: remainingIssues,
+              discardedPlan: plan
+            });
+            plan = buildClarifyPlan(remainingIssues, prompt);
+          }
         }
       }
+      // ------------------------------------------------------------------------
+
+      await prisma.agentTask.update({
+        where: { id: task.id },
+        data: { plan: plan as Prisma.InputJsonObject }
+      });
     }
-    // ------------------------------------------------------------------------
-
-
-    await prisma.agentTask.update({
-      where: { id: task.id },
-      data: { plan: plan as Prisma.InputJsonObject }
-    });
 
     const toolResults: ToolResult[] = [];
+    let stepIndex = 0;
     for (const toolName of plan.requiredTools) {
       const args = plan.toolInputs[toolName];
       const argList = Array.isArray(args) ? args : [args ?? {}];
       for (const arg of argList) {
-        const output = await registry.execute(toolName, arg, {
-          prisma,
-          taskId: task.id,
-          roomId: task.roomId,
-          agentId: task.agentId,
-          requestedById: task.requestedById,
-          runtimeContext,
-          tracer
-        });
+        stepIndex += 1;
+        const output = await registry.execute(
+          toolName,
+          arg,
+          {
+            prisma,
+            taskId: task.id,
+            roomId: task.roomId,
+            agentId: task.agentId,
+            requestedById: task.requestedById,
+            runtimeContext,
+            tracer
+          },
+          {
+            stepKey: `tool:${stepIndex}`
+          }
+        );
         toolResults.push(output);
       }
     }
@@ -309,6 +330,18 @@ export async function runAgentTask(taskId: string) {
       include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
     });
   } catch (error) {
+    if (error instanceof ToolApprovalRequiredError) {
+      return prisma.agentTask.findUniqueOrThrow({
+        where: { id: task.id },
+        include: {
+          toolCalls: true,
+          llmCalls: true,
+          finalMessage: true,
+          eventLogs: true,
+          toolApprovals: true
+        }
+      });
+    }
     const message = error instanceof Error ? error.message : "Agent task failed";
     const finalMessage = await prisma.message.create({
       data: {
@@ -339,6 +372,35 @@ export async function runAgentTask(taskId: string) {
       include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
     });
   }
+}
+
+export function readPersistedAgentPlan(value: unknown): AgentPlan | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.intent !== "string") return null;
+  if (typeof value.confidence !== "number") return null;
+  if (!isStringArray(value.requiredTools)) return null;
+  if (!isStringArray(value.taskSteps)) return null;
+  if (typeof value.finalResponsePlan !== "string") return null;
+  if (typeof value.finalResponseText !== "string") return null;
+  if (!isRecord(value.toolInputs)) return null;
+
+  return {
+    intent: value.intent,
+    confidence: value.confidence,
+    requiredTools: value.requiredTools,
+    taskSteps: value.taskSteps,
+    finalResponsePlan: value.finalResponsePlan,
+    finalResponseText: value.finalResponseText,
+    toolInputs: value.toolInputs
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
 function getTaskPrompt(input: unknown) {

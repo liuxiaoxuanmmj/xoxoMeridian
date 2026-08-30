@@ -2,7 +2,11 @@ import { AGENT_DISPLAY_NAME } from "@/lib/identity";
 import { cn } from "@/lib/utils";
 
 export function AgentStatusBadge({ isWorking, latestStatus }: { isWorking: boolean; latestStatus?: string }) {
-  const label = isWorking
+  const label = latestStatus === "waiting_approval"
+    ? `${AGENT_DISPLAY_NAME}等待你的确认`
+    : latestStatus === "cancelled"
+      ? `${AGENT_DISPLAY_NAME}操作已取消`
+      : isWorking
     ? latestStatus === "pending"
       ? `${AGENT_DISPLAY_NAME}正在理解任务`
       : `${AGENT_DISPLAY_NAME}正在调用工具`
