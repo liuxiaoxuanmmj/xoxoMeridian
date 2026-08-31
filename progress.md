@@ -2,7 +2,51 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-08-31。feat-021「收紧生产 Agent 执行边界与预算部署配置」已完成。重新审查发现的生产 Web 直跑 P1 已关闭；Docker Compose Runtime Budget 变量遗漏 P2 已关闭。当前没有 `in-progress` feature；Trace 隐私治理、Tool 隔离/HITL Edit 与未来外部副作用幂等仍是独立 P2。
+Last Updated：2026-08-31。feat-022「建立 Compose 部署烟雾验证」已完成，当前没有 `in-progress` feature。现在可用独立的静态 Compose 配置门禁与真实 Docker 部署 smoke test 覆盖发布镜像、init、Web healthcheck/standalone 和独立 Worker 消费；它们不替代应用的 `check:full`。Trace 隐私治理、Tool 隔离/HITL Edit 与未来外部副作用幂等仍是独立 P2。
+
+## 2026-08-31 — feat-022 建立 Compose 部署烟雾验证
+
+### 已完成
+
+- 新增 `docker-compose.smoke.yml`，仅为测试覆盖固定 `container_name`、宿主端口和数据 bind mount：随机 project 为全部容器命名，PostgreSQL 不发布宿主端口，Web 使用临时 `127.0.0.1` 端口，chat log/Atlas 数据使用 `/tmp` 下独立目录，PostgreSQL 使用 project-scoped named volume；生产 Compose、Dockerfile 和镜像策略未改动。
+- 新增 `scripts/compose-deployment-smoke.ts` 与 `npm run check:compose-config` / `npm run test:compose-smoke`。前者用临时非敏感 env 渲染并断言隔离 project、卷、端口、build target、production 环境和 `AGENT_TASK_INLINE_RUN=false`，不访问 Docker daemon；后者实际构建 Web/Worker 镜像。
+- Smoke 按 `postgres → init → web + agent-worker` 运行：验证 init 以 exit 0 完成迁移/seed、Web Docker healthcheck 与 `/api/health`、Web PID 1 的 `/sbin/tini -- node server.js` standalone 命令（不是 `next dev`）、独立 Worker entry 运行。
+- Harness 经 Compose Web 注册用户并创建 AgentTask，轮询受认证任务 API，验证最终消息、completed `plan`/`final` durable steps 与房间消息 API；再将 `agent.task.running` 事件中的 `workerId` 与 `agent-worker` 容器 hostname 匹配，证明不是 inline Runtime 消费。
+- 失败时写入 `test-results/compose-smoke/` 的 Compose `ps`/日志，结束时执行 `down --volumes --remove-orphans --rmi local`，移除 project 专属 Worker/Web 测试镜像，并主动断言不存在同 project 的容器、网络、卷或测试镜像。
+
+### 验证证据
+
+- `npm run check:compose-config`：通过；只执行 Compose config 渲染和隔离断言，未访问 Docker daemon。
+- `sudo -n -g docker -u dadalv npm run test:compose-smoke`：退出 0；实际构建 production Web/Worker，init exit 0，Web health 与 standalone 命令通过；任务 `cmtgyjlcb00099cmp78ie5axr` 由 `agent-worker` 容器 hostname 对应的 Worker 完成，durable `plan`/`final` 和房间可见消息均通过，随机 project 的容器、网络、卷和测试镜像清理后无残留。
+- `npm run check:quick`：TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
+- `git diff --check`：通过。
+
+### 风险与后续
+
+- Compose smoke 需要 Docker Compose 2.24.4+ 以支持隔离 override 中的 `!reset` / `!override`；它应在 CI 或发布候选环境作为单独门禁运行，不能替代 `check:full` 的应用级覆盖。
+- 当前生产 Compose 的固定 `container_name`、Worker `latest` 标签和缺少 Worker healthcheck 仍是独立运维改进项，未在本 feature 中变更。
+
+### 下一步
+
+在确定产品优先级后登记唯一的新 feature；如要继续提升 Runtime，优先单独规划 Trace 隐私治理，不与部署 smoke 或 Tool 隔离混合。
+
+## 2026-08-31 — Compose 部署与测试环境复核（仅登记，未启动 feature）
+
+### 结论
+
+- `docker-compose.yml` 当前没有阻止单机部署的结构性错误：`postgres` 有健康检查，`init` 依赖 `service_healthy`，`web` 与 `agent-worker` 依赖 `init` 的 `service_completed_successfully`；Web 使用 non-root production standalone runner，Worker 独立消费任务。
+- `docker compose config -q` 当前退出 0，但这只证明 Compose 插值和模型可渲染，不能证明镜像构建、init 的迁移/seed/挂载目录权限、Web healthcheck、Worker 消费或真实运行环境成功。
+- `npm run check:full` 是有效的应用门禁，却不是部署门禁：Playwright 启动 PostgreSQL Testcontainer、迁移/seed 和本机 `next dev --webpack --hostname 127.0.0.1 --port 3100`；它不会构建或运行 `web-runner`、`worker-runner`、`init` 容器。
+- E2E 明确设置 `AGENT_TASK_INLINE_RUN=false`，但不启动 `agent-worker`；现有浏览器用例仅发送普通房间消息，未验证 Worker 接管 AgentTask。因此不能依据现有测试宣称 `docker compose build web agent-worker init && docker compose up -d` 已获端到端覆盖。
+
+### 已登记范围
+
+- 新增 `feat-022`，状态为 `not-started`、依赖 `feat-021`。该 feature 只建立隔离 Compose smoke test：构建镜像、启动服务、检查 init/Web、提交 AgentTask 并证明独立 Worker 完成；不混入镜像标签、固定 container_name、Worker 健康探针或存储卷策略等后续运维增强。
+- `harness-creator` 的结构性检查为 100/100，说明指令、状态、验证入口、范围与交接齐全；但仓库内未发现 GitHub Actions、GitLab CI、Jenkins 等受版本控制的 CI 配置，完整门禁尚未被强制为合并/发布门槛。
+
+### 下一步
+
+保持 `feat-022` 为唯一推荐下一项。开始时先将它改为 `in-progress`，再在不接触生产数据的独立 Compose project 中实现和验证。
 
 ## 2026-08-31 — feat-021 收紧生产 Agent 执行边界与预算部署配置
 

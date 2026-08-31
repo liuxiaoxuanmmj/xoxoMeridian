@@ -1,0 +1,50 @@
+services:
+  postgres:
+    container_name: ${COMPOSE_PROJECT_NAME}-postgres
+    ports: !reset []
+
+  init:
+    image: ${COMPOSE_PROJECT_NAME}-worker:smoke
+    container_name: ${COMPOSE_PROJECT_NAME}-init
+    volumes: !override
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/chat-logs
+        target: /app/data/chat-logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/atlas-uploads
+        target: /app/data/atlas-uploads
+        bind:
+          create_host_path: false
+
+  web:
+    container_name: ${COMPOSE_PROJECT_NAME}-web
+    ports: !override
+      - 127.0.0.1:${SMOKE_WEB_PORT:?SMOKE_WEB_PORT is required}:3000
+    volumes: !override
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/chat-logs
+        target: /app/data/chat-logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/atlas-uploads
+        target: /app/data/atlas-uploads
+        bind:
+          create_host_path: false
+
+  agent-worker:
+    image: ${COMPOSE_PROJECT_NAME}-worker:smoke
+    container_name: ${COMPOSE_PROJECT_NAME}-agent-worker
+    volumes: !override
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/chat-logs
+        target: /app/data/chat-logs
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${SMOKE_DATA_ROOT:?SMOKE_DATA_ROOT is required}/atlas-uploads
+        target: /app/data/atlas-uploads
+        bind:
+          create_host_path: false

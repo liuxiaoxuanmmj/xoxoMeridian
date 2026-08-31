@@ -9,6 +9,7 @@ node_modules
 !.env.example
 .env.local
 coverage
+test-results
 data
 .git
 .gitignore

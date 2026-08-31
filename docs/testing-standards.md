@@ -32,6 +32,8 @@ Jest、Cypress、AVA、Mocha 都能完成部分工作，但引入它们会造成
 - `npm run test:integration`：启动 PostgreSQL 16 Testcontainer、执行迁移并运行 Prisma 集成测试。
 - `npm run test:e2e`：启动 PostgreSQL Testcontainer、迁移和 seed、Next.js 测试服务，再运行全部 Playwright 项目。
 - `npm run test:e2e:public`：只选择 public 项目；它仍依赖认证 setup。
+- `npm run check:compose-config`：用临时非敏感环境变量渲染 production + smoke Compose 配置，并校验 project、端口、卷、runner target 与 `AGENT_TASK_INLINE_RUN=false` 的隔离约束；不访问 Docker daemon。
+- `npm run test:compose-smoke`：构建 production Web/Worker 镜像，在随机 Compose project 中启动 PostgreSQL、init、Web 与独立 Worker，通过真实 Web API 验证 Worker 完成 AgentTask；要求 Docker Compose 2.24.4+，失败日志保留在 `test-results/compose-smoke/`，结束后清理隔离资源。
 - `npm run check:quick`：类型检查、ESLint、Vitest。
 - `npm run check`：快速门禁、生产构建和覆盖率。
 - `npm run check:full`：标准门禁、集成测试和 E2E。

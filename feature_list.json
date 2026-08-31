@@ -275,6 +275,20 @@
         "Route Handler 回归测试与快速门禁通过"
       ],
       "evidence": "app/api/agent/tasks/[taskId]/run/route.ts 在 AGENT_TASK_INLINE_RUN=false 时返回 202 queued 且不导入 Runtime；inline 模式按用户/IP 10 次/分钟限流。tests/server/agent-task-run-route.test.ts 覆盖生产排队、inline 执行与限流拒绝；docker compose config 使用覆盖值验证 web、agent-worker 与 init 均收到八项预算变量；./init.sh 与 npm run check:quick 通过，58 文件/344 项 Vitest。"
+    },
+    {
+      "id": "feat-022",
+      "name": "建立 Compose 部署烟雾验证",
+      "description": "在隔离的 Docker Compose 项目中验证发布镜像、init、Web 健康检查和独立 Agent Worker 的真实协作，弥补本机 Next.js 开发服务 E2E 与生产容器路径之间的缺口。",
+      "status": "done",
+      "dependencies": ["feat-021"],
+      "acceptanceCriteria": [
+        "测试以独立 Compose project、临时环境变量和独立数据卷/目录运行；不得复用或写入开发、预发布或生产数据库、卷和 .env",
+        "测试实际构建 web 与 agent-worker 镜像，启动 postgres、init、web 与 agent-worker；断言 init 成功退出、Web healthcheck 通过，并确认运行的是 production standalone server 而非 next dev",
+        "通过 Compose Web 创建 Agent 任务并以可观察的最终消息、任务/步骤记录证明 AGENT_TASK_INLINE_RUN=false 时由独立 agent-worker 消费；失败时保留 Compose 日志，结束后可靠清理隔离资源",
+        "将 Compose config 校验与该烟雾测试作为独立、可在 CI/发布候选环境运行的命令；不在本 feature 内混入镜像标签策略、container_name 重构或 Worker 健康探针实现"
+      ],
+      "evidence": "新增 docker-compose.smoke.yml 与 TypeScript harness；npm run check:compose-config 通过隔离配置断言，sudo -n -g docker -u dadalv npm run test:compose-smoke 退出 0，实际构建 production web/agent-worker，完成 init、Web health/standalone、Worker 消费 AgentTask、durable plan/final 与房间可见消息验证，并清理随机 Compose project 的容器、网络、卷和测试镜像；npm run check:quick 58 文件/344 项通过。"
     }
   ]
 }
