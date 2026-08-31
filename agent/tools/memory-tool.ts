@@ -1,4 +1,5 @@
 import type { AgentTool } from "@/agent/types";
+import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import { deduplicatedMemoryWrite } from "@/agent/memory-dedup";
 
 type MemorySetInput = {
@@ -20,6 +21,7 @@ export function createMemorySetTool(): AgentTool<MemorySetInput> {
   return {
     name: "memory.set",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Persist a stable, high-signal fact about the room or its participants for future conversations. " +
       "Use ONLY for durable things: allergies, lasting preferences, important relationship dates, recurring routines, long-term goals, addresses/timezones. " +
@@ -74,6 +76,7 @@ export function createMemoryRecallTool(): AgentTool<MemoryRecallInput> {
   return {
     name: "memory.recall",
     risk: "low",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Retrieve previously persisted facts about this room. Useful when you need to verify a remembered detail before acting (e.g. confirming an allergy before suggesting food). " +
       "Returns up to `limit` rows ordered by recency. Optional `prefix` filter (e.g. 'her.') narrows by key namespace.",
@@ -98,7 +101,14 @@ export function createMemoryRecallTool(): AgentTool<MemoryRecallInput> {
         select: { key: true, value: true, updatedAt: true }
       });
 
-      return { count: memories.length, memories };
+      return {
+        count: memories.length,
+        memories: memories.map((memory) => ({
+          key: memory.key,
+          value: memory.value,
+          updatedAt: memory.updatedAt.toISOString()
+        }))
+      };
     }
   };
 }

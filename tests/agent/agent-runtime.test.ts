@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { z } from "zod";
 
 import { detectAgentTarget } from "@/lib/agent-detection";
 import { filterToolsForTrigger, readPersistedAgentPlan } from "@/agent/agent-runtime";
@@ -46,6 +47,25 @@ describe("agent dispatch primitives", () => {
 
     expect(tools.every((tool) => ["low", "medium", "high"].includes(tool.risk))).toBe(true);
     expect(tools.find((tool) => tool.name === "memo.delete")?.risk).toBe("high");
+  });
+
+  it("requires every Tool to declare a bounded retry policy", () => {
+    const tools = createToolRegistry().list();
+
+    expect(tools.every((tool) => (
+      Number.isInteger(tool.retry.maxAttempts)
+      && tool.retry.maxAttempts >= 1
+      && tool.retry.backoffMs >= 0
+    ))).toBe(true);
+  });
+
+  it("derives Planner JSON Schema from each runtime Zod input contract", () => {
+    const tools = createToolRegistry().list();
+
+    expect(tools.every((tool) => tool.inputSchema && tool.outputSchema)).toBe(true);
+    for (const tool of tools) {
+      expect(tool.schema).toEqual(z.toJSONSchema(tool.inputSchema));
+    }
   });
 
   it("mock llm returns a structured weather plan", async () => {

@@ -1,5 +1,7 @@
-import type { PrismaClient } from "@prisma/client";
+import type { Prisma, PrismaClient } from "@prisma/client";
 
+import { withAgentTaskLease } from "@/agent/task-claim";
+import type { AgentTaskLeaseOwnership } from "@/agent/types";
 import { createAgentLogPost, buildAgentLogContent } from "@/lib/agent-posts";
 import { appendChatLog } from "@/lib/chat-log-file";
 
@@ -7,7 +9,8 @@ export class ExecutionTracer {
   constructor(
     private readonly prisma: PrismaClient,
     private readonly taskId: string,
-    private readonly roomId: string
+    private readonly roomId: string,
+    private readonly lease?: AgentTaskLeaseOwnership
   ) {}
 
   async event(type: string, payload?: unknown, actorUserId?: string | null) {
@@ -23,20 +26,74 @@ export class ExecutionTracer {
   }
 
   async markRunning(claimedAt: Date) {
-    await this.event("agent.task.running", { claimedAt });
+    await this.event("agent.task.running", {
+      claimedAt,
+      attemptId: this.lease?.attemptId,
+      workerId: this.lease?.workerId
+    });
   }
 
-  async markCompleted(finalMessageId: string, result: unknown) {
-    await this.prisma.agentTask.update({
-      where: { id: this.taskId },
-      data: {
-        status: "completed",
-        completedAt: new Date(),
-        finalMessageId,
-        result: result as object
-      }
-    });
-    await this.event("agent.task.completed", { finalMessageId });
+  async completeWithMessage(
+    messageData: Prisma.MessageUncheckedCreateInput,
+    result: unknown
+  ) {
+    if (!this.lease) {
+      throw new Error("Agent task completion requires lease ownership.");
+    }
+    const finalMessage = await withAgentTaskLease(
+      this.taskId,
+      this.lease,
+      async (tx) => {
+        const message = await tx.message.create({ data: messageData });
+        const finalStep = await tx.agentStep.updateMany({
+          where: {
+            taskId: this.taskId,
+            stepKey: "final",
+            kind: "final",
+            status: "running"
+          },
+          data: {
+            status: "completed",
+            output: {
+              finalMessageId: message.id,
+              content: message.content
+            },
+            completedAt: new Date(),
+            error: null,
+            errorCategory: null
+          }
+        });
+        if (finalStep.count !== 1) {
+          throw new Error("Durable final step is not active and cannot complete.");
+        }
+        await tx.agentTask.update({
+          where: { id: this.taskId },
+          data: {
+            status: "completed",
+            completedAt: new Date(),
+            finalMessageId: message.id,
+            result: result as object,
+            currentStepKey: null,
+            workerId: null,
+            heartbeatAt: null,
+            leaseExpiresAt: null
+          }
+        });
+        await tx.eventLog.create({
+          data: {
+            roomId: this.roomId,
+            agentTaskId: this.taskId,
+            type: "agent.task.completed",
+            payload: {
+              finalMessageId: message.id,
+              attemptId: this.lease?.attemptId
+            }
+          }
+        });
+        return message;
+      },
+      this.prisma
+    );
 
     // Auto-generate timeline entry for significant agent tasks
     try {
@@ -65,19 +122,69 @@ export class ExecutionTracer {
     } catch (e) {
       console.error("[agent-posts] failed to create timeline entry:", e);
     }
+    return finalMessage;
   }
 
-  async markFailed(error: string, finalMessageId?: string) {
-    await this.prisma.agentTask.update({
-      where: { id: this.taskId },
-      data: {
-        status: "failed",
-        completedAt: new Date(),
-        finalMessageId,
-        error
-      }
-    });
-    await this.event("agent.task.failed", { error, finalMessageId });
+  async failWithMessage(
+    messageData: Prisma.MessageUncheckedCreateInput,
+    error: string
+  ) {
+    if (!this.lease) {
+      throw new Error("Agent task failure requires lease ownership.");
+    }
+    return withAgentTaskLease(
+      this.taskId,
+      this.lease,
+      async (tx) => {
+        const finalMessage = await tx.message.create({ data: messageData });
+        const task = await tx.agentTask.findUniqueOrThrow({
+          where: { id: this.taskId },
+          select: { currentStepKey: true }
+        });
+        if (task.currentStepKey) {
+          await tx.agentStep.updateMany({
+            where: {
+              taskId: this.taskId,
+              stepKey: task.currentStepKey,
+              status: { not: "completed" }
+            },
+            data: {
+              status: "failed",
+              error,
+              errorCategory: "runtime",
+              completedAt: new Date()
+            }
+          });
+        }
+        await tx.agentTask.update({
+          where: { id: this.taskId },
+          data: {
+            status: "failed",
+            completedAt: new Date(),
+            finalMessageId: finalMessage.id,
+            error,
+            currentStepKey: null,
+            workerId: null,
+            heartbeatAt: null,
+            leaseExpiresAt: null
+          }
+        });
+        await tx.eventLog.create({
+          data: {
+            roomId: this.roomId,
+            agentTaskId: this.taskId,
+            type: "agent.task.failed",
+            payload: {
+              error,
+              finalMessageId: finalMessage.id,
+              attemptId: this.lease?.attemptId
+            }
+          }
+        });
+        return finalMessage;
+      },
+      this.prisma
+    );
   }
 
   async startToolCall(toolName: string, input: unknown) {
@@ -128,7 +235,12 @@ export class ExecutionTracer {
     });
   }
 
-  async failToolCall(toolCallId: string, startedAt: Date, error: string) {
+  async failToolCall(
+    toolCallId: string,
+    startedAt: Date,
+    error: string,
+    errorCategory?: string
+  ) {
     const endedAt = new Date();
     const durationMs = endedAt.getTime() - startedAt.getTime();
     await this.prisma.toolCall.update({
@@ -140,7 +252,7 @@ export class ExecutionTracer {
         durationMs
       }
     });
-    await this.event("agent.tool.failed", { toolCallId, error });
+    await this.event("agent.tool.failed", { toolCallId, error, errorCategory });
     const tc = await this.prisma.toolCall.findUnique({ where: { id: toolCallId }, select: { toolName: true } });
     await appendChatLog(this.roomId, {
       kind: "tool.call",

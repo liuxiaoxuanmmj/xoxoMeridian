@@ -55,6 +55,9 @@ const baseSchema = z.object({
   SMTP_PASSWORD: z.string().optional().default(""),
 
   AGENT_WORKER_POLL_MS: z.coerce.number().int().positive().default(3000),
+  AGENT_TASK_LEASE_MS: z.coerce.number().int().min(1000).default(60000),
+  AGENT_TASK_HEARTBEAT_MS: z.coerce.number().int().min(250).default(15000),
+  AGENT_TOOL_TIMEOUT_MS: z.coerce.number().int().min(100).default(12000),
   AGENT_TASK_INLINE_RUN: z
     .enum(["true", "false"])
     .default("false")
@@ -78,6 +81,16 @@ const baseSchema = z.object({
   LOGIN_VISUALS_IMAGE_SRC: z.string().optional().default(""),
 });
 
+const envSchema = baseSchema.superRefine((value, context) => {
+  if (value.AGENT_TASK_HEARTBEAT_MS >= value.AGENT_TASK_LEASE_MS) {
+    context.addIssue({
+      code: "custom",
+      path: ["AGENT_TASK_HEARTBEAT_MS"],
+      message: "AGENT_TASK_HEARTBEAT_MS must be shorter than AGENT_TASK_LEASE_MS"
+    });
+  }
+});
+
 const lenientPlaceholders = {
   DATABASE_URL: "postgresql://placeholder@localhost:5432/placeholder",
   APP_BASE_URL: "http://localhost:3000",
@@ -96,7 +109,7 @@ function parseEnv() {
     }
   }
 
-  const result = baseSchema.safeParse(source);
+  const result = envSchema.safeParse(source);
   if (!result.success) {
     const issues = result.error.issues
       .map((i) => `  - ${i.path.join(".") || "(root)"}: ${i.message}`)
@@ -106,7 +119,7 @@ function parseEnv() {
 
     if (isBuildPhase || isTest) {
       console.warn(`[env] ${message}`);
-      return baseSchema.parse({ ...source, ...lenientPlaceholders });
+      return envSchema.parse({ ...source, ...lenientPlaceholders });
     }
 
     console.error(`[env] ${message}`);

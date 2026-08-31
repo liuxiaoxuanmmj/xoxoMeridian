@@ -1,5 +1,6 @@
 import { CronExpressionParser } from "cron-parser";
 
+import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
 
 type ScheduleCreateInput = {
@@ -39,6 +40,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
   return {
     name: "schedule.create",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Create a scheduled job that fires the given prompt to the agent. " +
       "**For ONE-OFF tasks at a specific datetime** (今晚八点 / 明早 7:30 / 4月5日 9:00), " +
@@ -164,6 +166,7 @@ export function createScheduleListTool(): AgentTool<ScheduleListInput> {
   return {
     name: "schedule.list",
     risk: "low",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "List the active scheduled jobs for this room (recurring and one-off). Call this BEFORE creating or updating a schedule if the user's request sounds similar to an existing one, so you don't create duplicates.",
     schema: { type: "object", properties: {} },
@@ -203,6 +206,7 @@ export function createScheduleCancelTool(): AgentTool<ScheduleCancelInput> {
   return {
     name: "schedule.cancel",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Cancel (disable) a scheduled job by its jobId. Use this when the user asks to fully stop a scheduled task. " +
       "If the user only wants to CHANGE the schedule (frequency, time, prompt), use schedule.update instead of cancel+create. " +
@@ -239,6 +243,7 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
   return {
     name: "schedule.update",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Modify an existing scheduled job in place. Use this when the user wants to change an existing schedule — " +
       "for example '改成每周六' / '其实我只要今晚一次' / '把时间改到九点'. " +

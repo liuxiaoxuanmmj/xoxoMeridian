@@ -1,4 +1,5 @@
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
+import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 
 type WeatherInput = {
   city?: string;
@@ -72,7 +73,8 @@ type WeatherSnapshotResult = ReturnType<typeof formatSnapshot> | ReturnType<type
 
 export async function fetchWeatherSnapshot(
   cityInput: string,
-  includeForecast = false
+  includeForecast = false,
+  signal?: AbortSignal
 ): Promise<WeatherSnapshotResult> {
   const city = cityInput.trim();
   if (!city) throw new Error("city is required.");
@@ -92,8 +94,9 @@ export async function fetchWeatherSnapshot(
   }
 
   try {
-    return await getQWeather(city, includeForecast, apiKey);
+    return await getQWeather(city, includeForecast, apiKey, signal);
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`[weather.get] qweather call failed, falling back to mock: ${reason}`);
     return mockWeather(city, reason);
@@ -104,6 +107,7 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
   return {
     name: "weather.get",
     risk: "low",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Get current weather (and optional 3-day forecast) via QWeather. Falls back to a mock when WEATHER_PROVIDER is not 'qweather' or credentials are missing.",
     schema: {
@@ -121,7 +125,7 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
     },
     async execute(input: WeatherInput, context: ToolExecutionContext) {
       const city = input.city?.trim() || inferPartnerCity(context) || "Beijing";
-      return fetchWeatherSnapshot(city, Boolean(input.includeForecast));
+      return fetchWeatherSnapshot(city, Boolean(input.includeForecast), context.signal);
     }
   };
 }
@@ -141,7 +145,12 @@ function mockWeather(city: string, fallbackReason?: string) {
   };
 }
 
-async function getQWeather(city: string, includeForecast: boolean, apiKey: string) {
+async function getQWeather(
+  city: string,
+  includeForecast: boolean,
+  apiKey: string,
+  signal?: AbortSignal
+) {
   const apiHost = (process.env.QWEATHER_API_HOST || "devapi.qweather.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
   const geoHost = (process.env.QWEATHER_GEOAPI_HOST || "geoapi.qweather.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
 
@@ -151,9 +160,11 @@ async function getQWeather(city: string, includeForecast: boolean, apiKey: strin
     return formatSnapshot(cached.value);
   }
 
-  const location = await resolveLocation(city, apiKey, geoHost);
-  const now = await fetchWeatherNow(location.id, apiKey, apiHost);
-  const daily = includeForecast ? await fetchWeather3d(location.id, apiKey, apiHost) : undefined;
+  const location = await resolveLocation(city, apiKey, geoHost, signal);
+  const now = await fetchWeatherNow(location.id, apiKey, apiHost, signal);
+  const daily = includeForecast
+    ? await fetchWeather3d(location.id, apiKey, apiHost, signal)
+    : undefined;
 
   const snapshot: QWeatherSnapshot = { location, now, daily };
   evictOldest(WEATHER_CACHE, MAX_CACHE_SIZE);
@@ -161,7 +172,12 @@ async function getQWeather(city: string, includeForecast: boolean, apiKey: strin
   return formatSnapshot(snapshot);
 }
 
-async function resolveLocation(city: string, apiKey: string, geoHost: string): Promise<QWeatherLocation> {
+async function resolveLocation(
+  city: string,
+  apiKey: string,
+  geoHost: string,
+  signal?: AbortSignal
+): Promise<QWeatherLocation> {
   const cacheKey = `${geoHost}|${city.toLowerCase()}`;
   const cached = LOCATION_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
@@ -174,7 +190,7 @@ async function resolveLocation(city: string, apiKey: string, geoHost: string): P
   const geoPath = isDedicated ? "/geo/v2/city/lookup" : "/v2/city/lookup";
 
   const url = `https://${geoHost}${geoPath}?location=${encodeURIComponent(city)}&number=1&lang=zh`;
-  const data = await qweatherFetch<{ code: string; location?: QWeatherLocation[] }>(url, apiKey);
+  const data = await qweatherFetch<{ code: string; location?: QWeatherLocation[] }>(url, apiKey, signal);
   const first = data.location?.[0];
   if (!first?.id) {
     throw new Error(`QWeather city lookup returned no result for "${city}" (code=${data.code})`);
@@ -185,31 +201,47 @@ async function resolveLocation(city: string, apiKey: string, geoHost: string): P
   return first;
 }
 
-async function fetchWeatherNow(locationId: string, apiKey: string, apiHost: string): Promise<QWeatherNow> {
+async function fetchWeatherNow(
+  locationId: string,
+  apiKey: string,
+  apiHost: string,
+  signal?: AbortSignal
+): Promise<QWeatherNow> {
   const url = `https://${apiHost}/v7/weather/now?location=${encodeURIComponent(locationId)}&lang=zh&unit=m`;
-  const data = await qweatherFetch<{ code: string; now?: QWeatherNow }>(url, apiKey);
+  const data = await qweatherFetch<{ code: string; now?: QWeatherNow }>(url, apiKey, signal);
   if (!data.now) {
     throw new Error(`QWeather weather/now returned no payload (code=${data.code})`);
   }
   return data.now;
 }
 
-async function fetchWeather3d(locationId: string, apiKey: string, apiHost: string): Promise<QWeatherDaily[]> {
+async function fetchWeather3d(
+  locationId: string,
+  apiKey: string,
+  apiHost: string,
+  signal?: AbortSignal
+): Promise<QWeatherDaily[]> {
   const url = `https://${apiHost}/v7/weather/3d?location=${encodeURIComponent(locationId)}&lang=zh&unit=m`;
-  const data = await qweatherFetch<{ code: string; daily?: QWeatherDaily[] }>(url, apiKey);
+  const data = await qweatherFetch<{ code: string; daily?: QWeatherDaily[] }>(url, apiKey, signal);
   return data.daily ?? [];
 }
 
-async function qweatherFetch<T extends { code: string }>(url: string, apiKey: string): Promise<T> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+async function qweatherFetch<T extends { code: string }>(
+  url: string,
+  apiKey: string,
+  signal?: AbortSignal
+): Promise<T> {
+  const controller = signal ? null : new AbortController();
+  const timer = controller
+    ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    : null;
   try {
     const response = await fetch(url, {
       headers: {
         "X-QW-Api-Key": apiKey,
         Accept: "application/json"
       },
-      signal: controller.signal
+      signal: signal ?? controller?.signal
     });
     if (!response.ok) {
       throw new Error(`QWeather request failed: HTTP ${response.status}`);
@@ -220,7 +252,7 @@ async function qweatherFetch<T extends { code: string }>(url: string, apiKey: st
     }
     return data;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
   }
 }
 

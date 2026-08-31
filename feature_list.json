@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-08-30",
+  "updatedAt": "2026-08-31",
   "features": [
     {
       "id": "feat-001",
@@ -196,6 +196,58 @@
         "真实 PostgreSQL 故障注入测试证明 Event 写入失败会同时回滚 Task 与 Job claim"
       ],
       "evidence": "agent/scheduler-tick.ts 将 Job 版本 CAS、状态推进、AgentTask 与 fired Event 收敛到同一 Prisma transaction，失败计数用旧版本 CAS；tests/agent/scheduler-tick.test.ts 12 项通过，覆盖 Event 失败回滚和 stale failure；tests/integration/scheduler-atomic-dispatch.integration.test.ts 通过真实 PostgreSQL trigger 故障注入；最终 sudo -n -g docker -u dadalv npm run check:full 退出 0：54 文件/329 项 Vitest、生产构建、覆盖率门槛、5 文件/9 项 PostgreSQL 集成测试与 9 项 Playwright E2E 全部通过"
+    },
+    {
+      "id": "feat-016",
+      "name": "实现 AgentTask Lease 与 Worker Crash Recovery",
+      "description": "为任务执行权增加 attempt、worker、lease 与 heartbeat，使 Worker 崩溃后过期 running 任务可以被安全原子接管。",
+      "status": "done",
+      "dependencies": ["feat-015"],
+      "acceptanceCriteria": [
+        "每次 claim 生成新的 attemptId，持久化 workerId 与 leaseExpiresAt，只有当前 attempt 可以续租或提交终态",
+        "Dispatcher 同时发现 pending 与 lease 已过期的 running 任务，并通过单条条件更新原子接管，旧 Worker 失去提交权限",
+        "真实 PostgreSQL 与 Worker 进程测试证明崩溃任务可恢复、未过期任务不会被接管且旧 attempt 不会覆盖新结果"
+      ],
+      "evidence": "prisma/migrations/20260830215000_add_agent_task_lease 新增 attempt/worker/heartbeat/lease 字段与扫描索引；Runtime heartbeat、Dispatcher 过期 running 扫描及 Tool/审批/终态 attempt 栅栏完成；tests/agent/task-dispatcher.test.ts 通过；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-task-claim.integration.test.ts 通过 2 项真实 PostgreSQL 测试，含独立 Worker SIGKILL、过期接管、续租和旧 attempt 终态拒绝；npm run check:quick 通过，55 文件/330 项 Vitest"
+    },
+    {
+      "id": "feat-017",
+      "name": "实现统一 Tool Deadline 与受控 Retry",
+      "description": "由 Tool Executor 为全部 Tool 强制 deadline、传播 AbortSignal，并只对可重试且可安全重放的失败执行有限退避 Retry。",
+      "status": "done",
+      "dependencies": ["feat-016"],
+      "acceptanceCriteria": [
+        "所有 Registry Tool 均由 Executor deadline 包围并收到同一 AbortSignal，超时产生可识别的 Timeout 错误且不会提交数据库写事务",
+        "Tool 明确声明 retry 策略，Executor 仅对 retryable 且幂等/只读 Tool 的 Network、Timeout 等瞬时错误执行有上限的退避重试",
+        "行为测试覆盖超时中止、成功重试、不可重试错误、重试耗尽与数据库写回滚，快速门禁通过"
+      ],
+      "evidence": "agent/tool-errors.ts 与 agent/tool-registry.ts 为全部 Tool 提供 12s 默认 deadline、AbortSignal、Timeout/Network 分类及显式有界退避策略；13 个内置 Tool 全部声明 retry policy，天气/搜索适配层传播 Executor signal；tests/agent/tool-registry-reliability.test.ts 4 项通过；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-idempotency.integration.test.ts 通过 3 项真实 PostgreSQL 测试，含 Tool 超时后的事务回滚；npm run check:quick 通过，56 文件/335 项 Vitest"
+    },
+    {
+      "id": "feat-018",
+      "name": "实现 Tool 输入输出 Zod 契约",
+      "description": "让每个 Registry Tool 提供运行时 input/output schema，由 Executor 在副作用前后统一校验并记录 Validation 类错误。",
+      "status": "done",
+      "dependencies": ["feat-017"],
+      "acceptanceCriteria": [
+        "全部内置 Tool 具有明确 Zod input/output schema，Planner JSON Schema 与运行时输入契约来自同一 schema 来源",
+        "Executor 在权限、重试和 Tool 执行前解析输入，在结果进入 Trace、后续步骤或事务提交前解析输出",
+        "无效输入不会调用 Tool，无效数据库写输出会回滚副作用，Validation 错误不可重试且不暴露不可信完整载荷"
+      ],
+      "evidence": "agent/tool-contracts.ts 为 13 个内置 Tool 定义 Zod input/output 契约，ToolRegistry 由 input schema 生成 Planner JSON Schema；Executor 在审批/执行前校验输入，在 ToolCall 完成、数据库事务提交和 replay 复用前校验输出，Validation 错误不可重试且 Trace 不含原始载荷；tests/agent/tool-registry-reliability.test.ts 覆盖输入/输出失败；sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-idempotency.integration.test.ts 通过 4 项真实 PostgreSQL 测试，含无效 output 回滚；npm run check:quick 通过，56 文件/338 项 Vitest"
+    },
+    {
+      "id": "feat-019",
+      "name": "实现通用 Durable Step 恢复模型",
+      "description": "将 Plan、Tool、审批与 Final 统一为持久化 AgentStep 状态机，使 Runtime 从稳定 checkpoint 恢复并跳过全部已完成步骤。",
+      "status": "done",
+      "dependencies": ["feat-018"],
+      "acceptanceCriteria": [
+        "AgentTask 持久化 currentStepKey，AgentStep 以 taskId+stepKey 唯一记录 kind、状态、输入、输出、attempt 与时间",
+        "Runtime 的 Plan、全部读取/写入 Tool、审批暂停和 Final 都通过统一 Step API 转移状态，重启后校验并复用 completed output",
+        "真实 PostgreSQL 恢复测试证明已完成 Plan 与读取 Tool 不会重跑，审批可继续，Final/副作用不会重复提交"
+      ],
+      "evidence": "prisma/migrations/20260831083000_add_agent_steps 新增 AgentStep kind/status、taskId+stepKey 唯一约束、attempt/时间/checkpoint 字段及 AgentTask.currentStepKey；agent/durable-step.ts 统一 Plan、全部读取/写入 Tool、审批与 Final 的开始/完成/失败/恢复语义，Runtime 重启后校验并复用 completed output，最终消息、Final Step 与任务终态原子提交；tests/integration/agent-durable-step.integration.test.ts 通过 2 项真实 PostgreSQL 测试，证明 Plan/read Tool 不重跑、审批继续、Final 与删除副作用不重复；全部 PostgreSQL 集成测试 6 文件/14 项通过；npm run check:quick 通过 56 文件/338 项 Vitest；最终 sudo -n -g docker -u dadalv npm run check:full 退出 0，生产构建、覆盖率、14 项集成与 9 项 Playwright E2E 全部通过"
     }
   ]
 }

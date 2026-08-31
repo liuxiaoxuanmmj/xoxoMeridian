@@ -2,7 +2,124 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-08-30。feat-012 至 feat-015 已按单 feature 工作流完成，原审查报告列出的 4 项 P0 全部关闭；最终完整门禁退出 0。复审分数由 49/100 提升至 74/100，但因缺少覆盖全部 Tool 的统一 Timeout，L2 Gate 未通过，最终等级仍为 L1。当前没有 `in-progress` feature。
+Last Updated：2026-08-31。feat-016 至 feat-019 已严格按一次一个 feature 的顺序完成；Agent Runtime 审查中的四项 P1——Worker Crash Recovery、统一 Tool deadline/Retry、Zod 输入输出契约与通用 Durable Step——均已关闭，当前没有 `in-progress` feature。复评分为 88/100；分数属于 L3，但 Runtime Budget 硬门槛缺失，最终等级为 L2。
+
+## 2026-08-31 — feat-019 通用 Durable Step 恢复模型与 P1 汇总复审
+
+### 已完成
+
+- 新增持久化 `AgentStep` 状态机和 `AgentTask.currentStepKey`；每个 Step 以 `(taskId, stepKey)` 唯一记录 `plan` / `tool` / `final` kind、输入输出、状态、attempt 次数与起止时间，并通过时间戳迁移保持部署兼容。
+- 新增统一 Durable Step API，在 lease 栅栏内完成 Step 开始、恢复、完成和失败状态转移；Step kind 或规范化输入与既有 checkpoint 不一致时拒绝重放。
+- Runtime 的 Plan、全部读取/写入 Tool 与 Final 均通过稳定 Step key 执行；completed Plan/Tool checkpoint 会先校验持久化输出再直接复用，不重复调用 LLM、读取 Tool 或副作用 Tool。
+- high-risk Tool 请求审批时将对应 Step 持久化为 `waiting_approval`；批准后改为 `pending` 并由新 attempt 恢复，拒绝时 Step 与任务以 permission 类别终止。
+- Final 消息、`final` Step 完成和 `AgentTask.completed` 在同一租约栅栏事务提交；旧 attempt 或重复 Final 无法创建第二条可见消息。
+- `memory.recall` 的 `updatedAt` 统一输出 ISO 字符串，确保经过 Prisma JSON checkpoint 后仍能通过相同 output schema 的恢复校验。
+- 使用 `agent-runtime-review` Skill 完成 P1 汇总复审：工程分由 74 提升至 88；四项 P1 全部关闭。分数落在 L3 区间，但 Runtime Budget 仍为 0/8，L3 Gate 未通过，最终等级为 L2。
+
+### 验证证据
+
+- `./init.sh`：feat-019 修改前基线通过，56 个文件/338 项 Vitest。
+- `npm run test:unit -- tests/agent/tool-registry-reliability.test.ts tests/agent/agent-runtime.test.ts tests/agent/task-claim.test.ts`：3 个文件/21 项测试通过。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-durable-step.integration.test.ts`：1 个文件/2 项真实 PostgreSQL 测试通过，覆盖 Plan/read Tool checkpoint 恢复、审批继续、Final 栅栏与副作用重放。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-task-claim.integration.test.ts`：1 个文件/2 项通过，确认 Crash Recovery 接管后遵循统一 Final Step 协议。
+- `sudo -n -g docker -u dadalv npm run test:integration`：6 个文件/14 项全部通过。
+- `npm run check:quick`：TypeScript、ESLint、56 个文件/338 项 Vitest 全部通过。
+- `sudo -n -g docker -u dadalv npm run check:full`：退出 0；快速门禁、Next.js 生产构建、覆盖率基线、6 个文件/14 项 PostgreSQL 集成测试与 9 项 Playwright E2E 全部通过。
+- `git diff --check`：通过。
+
+### 风险与后续
+
+- 当前 P1 已全部完成；Runtime 仍没有 `max_turns`、`max_tool_calls`、Run deadline、token/cost budget 和明确的超限终态，因此不能越过 L3 Gate，也不能宣称生产就绪。
+- Durable Step 已覆盖当前同库副作用；未来新增邮件、支付或外部发布等非数据库写操作时，仍必须提供供应商幂等键或 Outbox/relay，不能仅依赖数据库 checkpoint。
+- Trace 仍保存较完整的 LLM payload，缺少字段级脱敏、保留周期、成本聚合与全局顺序号；Tool 隔离仍主要依赖应用/容器边界，尚无每 Tool 独立沙箱。
+
+### 下一步
+
+登记一个独立 P2 feature，实现 Runtime Budget：为 Run 增加 `max_turns`、`max_tool_calls`、统一 deadline、token/cost 上限与稳定 `LIMIT_EXCEEDED` 终态，并提供预算耗尽恢复测试。
+
+## 2026-08-31 — feat-018 Tool 输入输出 Zod 契约
+
+### 已完成
+
+- 新增 13 个内置 Tool 的集中式 Zod input/output 契约；Registry 注册时必须解析出两类 schema，否则拒绝注册。Planner 使用的 JSON Schema 由同一 `inputSchema` 生成，不再以手写 JSON 元数据作为执行校验依据。
+- Executor 在审批、Retry 与 Tool 执行前 `safeParse` 输入；解析结果会剥离未知字段，并作为审批绑定与 Tool 实际参数。失败只记录 direction、issue path/code/message，不把原始不可信载荷写入 Validation Event。
+- 普通与数据库写 Tool 的 output 都在 ToolCall 完成、下游结果收集或事务提交前校验；已持久化的 replay output 复用前也重新校验。
+- `ToolValidationError` 统一归类为 `validation` 且 `retryable=false`；即使 Tool 配置了瞬时错误 Retry，输入/输出契约错误也只执行一次。
+- 真实 PostgreSQL 故障测试让数据库 Tool 先创建 Memo 再返回错误形状，证明 output 校验异常会回滚 Memo、留下失败 ToolCall，且不会提交无效结果。
+
+### 验证证据
+
+- `./init.sh`：feat-018 修改前基线通过，56 个文件/335 项 Vitest。
+- `npm run test:unit -- tests/agent/tool-registry-reliability.test.ts tests/agent/agent-runtime.test.ts tests/agent/task-claim.test.ts`：3 个文件/21 项测试通过。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-idempotency.integration.test.ts`：1 个文件/4 项真实 PostgreSQL 测试通过，覆盖重放幂等、普通失败回滚、deadline 回滚和无效 output 回滚。
+- `npm run check:quick`：TypeScript、ESLint、56 个文件/338 项 Vitest 全部通过。
+- `git diff --check`：通过。
+
+### 风险与后续
+
+- Zod 契约负责结构、类型、长度与枚举；房间所有权、资源存在性、cron 语义、Memory scope 等依赖数据库或业务上下文的规则仍由 Tool 内部领域校验执行，不能被静态 schema 替代。
+- 既有 Tool 源文件中的手写 `schema` 字段仅作为未注册对象的旧元数据；Registry 注册后会以 Zod input contract 生成的 JSON Schema 覆盖它，Runtime 与 Planner 使用的有效 schema 已同源。后续可做纯维护性清理，但不属于本 feature 验收范围。
+
+### 下一步
+
+登记并单独启动通用 Durable Step feature，将 Plan、读取/写入 Tool、审批与 Final 统一为持久化 step 状态和 `currentStepKey`，恢复时跳过所有已完成步骤。
+
+## 2026-08-30 — feat-017 统一 Tool Deadline 与受控 Retry
+
+### 已完成
+
+- 新增统一 `ToolExecutionError`、`ToolTimeoutError` 与错误分类，将 Executor 超时、Abort、常见 Node 网络错误和 Prisma 瞬时错误转换为稳定类别与 retryable 语义。
+- `ToolRegistry` 为每次 Tool attempt 创建 `AbortController`，使用 `AGENT_TOOL_TIMEOUT_MS` 强制 deadline，并把同一 `AbortSignal` 传给 Tool；数据库写 Tool 同时设置 Prisma interactive transaction timeout，超时会拒绝事务并回滚副作用。
+- 全部 13 个内置 Tool 显式声明 retry policy；Executor 仅在错误本身 retryable、类别在 Tool allowlist 内且尚未达到 `maxAttempts` 时执行指数退避，普通业务错误、权限/输入错误不会重试。
+- 每次 Retry 记录 attempt、下一 attempt、退避、错误类别与 step key；最终失败 Event 也带 `errorCategory`。天气与搜索适配层复用 Executor signal，Runtime 超时不会被 provider fallback 吞掉。
+- 新增行为测试覆盖统一超时中止、瞬时失败后成功、不可重试错误、重试耗尽，以及真实 PostgreSQL 中“先写 Memo、再等待超时”的事务回滚。
+
+### 验证证据
+
+- `./init.sh`：feat-017 修改前基线通过，55 个文件/330 项 Vitest。
+- `npm run test:unit -- tests/agent/tool-registry-reliability.test.ts tests/agent/agent-runtime.test.ts tests/agent/task-claim.test.ts`：3 个文件/17 项测试通过。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-tool-idempotency.integration.test.ts`：1 个文件/3 项真实 PostgreSQL 测试通过；超时用例证明事务内 Memo 为 0 且失败 ToolCall 持久化。
+- `npm run check:quick`：TypeScript、ESLint、56 个文件/335 项 Vitest 全部通过。
+- `git diff --check`：通过。
+
+### 风险与后续
+
+- JavaScript 无法抢占同步阻塞 CPU 的 Tool；当前 Registry Tool 均为有限同步计算或异步 I/O，I/O 通过 Executor deadline 和 `AbortSignal` 受控。未来 CPU 密集 Tool 应放入受限 Worker/容器，而不是主 Runtime 进程。
+- 天气与搜索保留 provider 失败时的既有 mock fallback；只有 Runtime signal 超时会穿透 fallback，由 Executor 统一分类。该产品降级语义不等同于 Retry。
+- 当前 Tool 仍主要依靠给 Planner 的 JSON Schema 与各实现手工检查，下一 feature 将改为 Executor 运行时 Zod 输入/输出契约。
+
+### 下一步
+
+登记并单独启动 Tool schema feature，为每个 Registry Tool 提供 Zod input/output schema，并在 Executor 中统一校验和分类 Validation 错误。
+
+## 2026-08-30 — feat-016 AgentTask Lease 与 Worker Crash Recovery
+
+### 已完成
+
+- 为 `AgentTask` 新增 `attemptCount`、`attemptId`、`workerId`、`heartbeatAt` 与 `leaseExpiresAt`，新增 `(status, leaseExpiresAt, createdAt)` 扫描索引及时间戳迁移；既有 `running` 且无 lease 的遗留任务被视为可恢复候选。
+- Claim 通过单条条件更新获取 `pending`、`failed` 或 lease 已过期的 `running` 任务，每次生成新 attempt；heartbeat 只能为未过期且仍匹配 `attemptId + workerId` 的当前所有者续租。
+- Dispatcher 同时扫描 `pending` 与过期 `running`，Worker 进程使用稳定 `workerId`；Runtime 在长异步边界、Tool 和 Final 前检查 lease，停止时清理 heartbeat timer。
+- 数据库写 Tool 在原事务开头续租并锁定当前 attempt；high-risk 审批暂停、Plan checkpoint、成功/失败终态与最终消息均执行 attempt 栅栏，旧 Worker 失权后不能提交副作用或可见终态。
+- 新增独立 Worker 子进程强制退出测试：子进程 claim 成功后由测试进程发送 `SIGKILL`，随后按 lease 到期时间接管，并证明旧 attempt 不能续租、不能创建终态消息或覆盖恢复结果。
+
+### 验证证据
+
+- `./init.sh`：变更前基线通过，54 个文件/329 项 Vitest。
+- `npm run test:unit -- tests/agent/task-claim.test.ts tests/agent/task-dispatcher.test.ts`：2 个文件/3 项测试通过。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-task-claim.integration.test.ts`：1 个文件/2 项真实 PostgreSQL 测试通过，覆盖 12 路原子 claim、heartbeat 续租、未过期拒绝、Worker `SIGKILL`、过期接管与旧 attempt 终态栅栏。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-task-claim.integration.test.ts tests/integration/agent-tool-idempotency.integration.test.ts tests/integration/agent-tool-approval.integration.test.ts`：3 个文件/6 项通过，确认 lease 改动未破坏既有副作用重放幂等与审批恢复。
+- `npm run check:quick`：TypeScript、ESLint、55 个文件/330 项 Vitest 全部通过。
+- `git diff --check`：通过。
+
+### 验证过程与风险
+
+- 沙箱内首次运行 Docker 集成测试原始失败为 `sudo: The "no new privileges" flag is set`；授权后使用同一命令通过。
+- 当前 Runtime 对 lease 的数据库栅栏已覆盖数据库写 Tool、审批暂停、Plan 与终态；读取 Tool 的外部请求可在失权后完成但其结果不会提交终态，下一 feature 的统一 deadline/AbortSignal 会进一步缩短该窗口。
+- 锁定的 Prisma 5.22 在 Node 22.22.1 下再次出现 generator 静默不刷新；使用同属 Node.js 22 的临时 22.11.0 成功生成 Client，依赖与锁文件未改变。
+
+### 下一步
+
+登记并单独启动统一 Tool deadline/Retry feature，为全部 Tool 提供 Runtime deadline、AbortSignal、幂等感知的有限退避 Retry 与错误分类。
 
 ## 2026-08-30 — P0 汇总复审与完整门禁
 

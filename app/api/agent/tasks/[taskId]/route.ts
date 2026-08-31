@@ -13,6 +13,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tas
         agent: true,
         sourceMessage: true,
         finalMessage: true,
+        steps: { orderBy: { createdAt: "asc" } },
         toolCalls: true,
         toolApprovals: { orderBy: { requestedAt: "asc" } },
         llmCalls: true,

@@ -1,6 +1,12 @@
 import type { Prisma } from "@prisma/client";
 
 import { buildAgentContext } from "@/agent/context-builder";
+import {
+  beginAgentStep,
+  completeAgentStep,
+  executeDurableToolStep,
+  AgentStepConflictError
+} from "@/agent/durable-step";
 import { runPostTaskHooks } from "@/agent/post-task";
 import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
@@ -10,15 +16,32 @@ import {
   SCHEDULER_BLOCKED_TOOLS,
   TRIGGER_SCHEDULED_JOB,
 } from "@/agent/scheduler-tick";
-import { claimAgentTask } from "@/agent/task-claim";
+import {
+  AgentTaskLeaseLostError,
+  claimAgentTask,
+  getRuntimeWorkerId,
+  startAgentTaskHeartbeat
+} from "@/agent/task-claim";
 import { ToolApprovalRequiredError } from "@/agent/tool-approval";
 import { createToolRegistry } from "@/agent/tool-registry";
-import type { AgentPlan, ToolResult } from "@/agent/types";
+import type { AgentPlan, AgentTaskLeaseOwnership, ToolResult } from "@/agent/types";
 import { appendChatLog } from "@/lib/chat-log-file";
+import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
 
-export async function runAgentTask(taskId: string) {
-  const claim = await claimAgentTask(taskId);
+export type RunAgentTaskOptions = {
+  workerId?: string;
+  leaseDurationMs?: number;
+  heartbeatIntervalMs?: number;
+};
+
+export async function runAgentTask(
+  taskId: string,
+  options: RunAgentTaskOptions = {}
+) {
+  const leaseDurationMs = options.leaseDurationMs ?? env.AGENT_TASK_LEASE_MS;
+  const workerId = options.workerId ?? getRuntimeWorkerId();
+  const claim = await claimAgentTask(taskId, { workerId, leaseDurationMs });
   const task = await prisma.agentTask.findUnique({
     where: { id: taskId },
     include: {
@@ -36,11 +59,22 @@ export async function runAgentTask(taskId: string) {
     return task;
   }
 
-  const tracer = new ExecutionTracer(prisma, task.id, task.roomId);
+  const lease: AgentTaskLeaseOwnership = {
+    attemptId: claim.attemptId,
+    workerId: claim.workerId,
+    leaseDurationMs: claim.leaseDurationMs
+  };
+  const heartbeat = startAgentTaskHeartbeat({
+    taskId: task.id,
+    ownership: lease,
+    intervalMs: options.heartbeatIntervalMs ?? env.AGENT_TASK_HEARTBEAT_MS
+  });
+  const tracer = new ExecutionTracer(prisma, task.id, task.roomId, lease);
 
   try {
     await tracer.markRunning(claim.claimedAt);
     const runtimeContext = await buildAgentContext(task.roomId);
+    await heartbeat.assertActive();
     await tracer.event("agent.context.built", {
       recentMessageCount: runtimeContext.recentMessages.length,
       memoCount: runtimeContext.memos.length
@@ -60,12 +94,35 @@ export async function runAgentTask(taskId: string) {
     const availableTools = filterToolsForTrigger(allTools, trigger);
     const availableToolNames = availableTools.map((t) => t.name);
 
-    let plan = readPersistedAgentPlan(task.plan);
+    const planCheckpoint = await beginAgentStep({
+      taskId: task.id,
+      roomId: task.roomId,
+      lease,
+      stepKey: "plan",
+      kind: "plan",
+      stepInput: { prompt, availableTools: availableToolNames }
+    });
+    let plan = planCheckpoint.step.status === "completed"
+      ? readPersistedAgentPlan(planCheckpoint.step.output)
+      : readPersistedAgentPlan(task.plan);
+    if (planCheckpoint.step.status === "completed" && !plan) {
+      throw new AgentStepConflictError("Durable plan step has invalid persisted output.");
+    }
     if (plan) {
       await tracer.event("agent.plan.resumed", {
         intent: plan.intent,
         requiredTools: plan.requiredTools
       });
+      if (planCheckpoint.step.status !== "completed") {
+        await completeAgentStep({
+          taskId: task.id,
+          roomId: task.roomId,
+          lease,
+          stepKey: "plan",
+          output: plan,
+          taskData: { plan: plan as Prisma.InputJsonObject }
+        });
+      }
     } else {
       const provider = createLLMProvider();
       const llmStartedAt = Date.now();
@@ -83,6 +140,7 @@ export async function runAgentTask(taskId: string) {
           agentSystemPrompt: task.agent.systemPrompt
         });
 
+        await heartbeat.assertActive();
         plan = planResult;
         await prisma.lLMCall.create({
           data: {
@@ -179,6 +237,7 @@ export async function runAgentTask(taskId: string) {
               issues: formatIssuesForLLM(planIssues)
             }
           });
+          await heartbeat.assertActive();
           await prisma.lLMCall.create({
             data: {
               taskId: task.id,
@@ -258,9 +317,13 @@ export async function runAgentTask(taskId: string) {
       }
       // ------------------------------------------------------------------------
 
-      await prisma.agentTask.update({
-        where: { id: task.id },
-        data: { plan: plan as Prisma.InputJsonObject }
+      await completeAgentStep({
+        taskId: task.id,
+        roomId: task.roomId,
+        lease,
+        stepKey: "plan",
+        output: plan,
+        taskData: { plan: plan as Prisma.InputJsonObject }
       });
     }
 
@@ -270,30 +333,50 @@ export async function runAgentTask(taskId: string) {
       const args = plan.toolInputs[toolName];
       const argList = Array.isArray(args) ? args : [args ?? {}];
       for (const arg of argList) {
+        await heartbeat.assertActive();
         stepIndex += 1;
-        const output = await registry.execute(
+        const output = await executeDurableToolStep({
+          registry,
           toolName,
-          arg,
-          {
+          toolInput: arg,
+          stepKey: `tool:${stepIndex}`,
+          context: {
             prisma,
             taskId: task.id,
             roomId: task.roomId,
             agentId: task.agentId,
             requestedById: task.requestedById,
             runtimeContext,
-            tracer
-          },
-          {
-            stepKey: `tool:${stepIndex}`
+            tracer,
+            lease
           }
-        );
+        });
         toolResults.push(output);
       }
     }
 
+    await heartbeat.assertActive();
     const content = renderAgentReply(plan, toolResults);
-    const finalMessage = await prisma.message.create({
-      data: {
+    const result = { plan, toolResults };
+    const finalCheckpoint = await beginAgentStep({
+      taskId: task.id,
+      roomId: task.roomId,
+      lease,
+      stepKey: "final",
+      kind: "final",
+      stepInput: {
+        intent: plan.intent,
+        toolStepCount: stepIndex,
+        content
+      }
+    });
+    if (finalCheckpoint.step.status === "completed") {
+      throw new AgentStepConflictError(
+        "Final step is completed while its AgentTask is still claimable."
+      );
+    }
+    const finalMessage = await tracer.completeWithMessage(
+      {
         roomId: task.roomId,
         senderType: "agent",
         senderAgentId: task.agentId,
@@ -305,13 +388,9 @@ export async function runAgentTask(taskId: string) {
           confidence: plan.confidence,
           toolResults
         } as Prisma.InputJsonObject
-      }
-    });
-
-    await tracer.markCompleted(finalMessage.id, {
-      plan,
-      toolResults
-    });
+      },
+      result
+    );
 
     await appendChatLog(task.roomId, {
       kind: "message.agent",
@@ -327,7 +406,13 @@ export async function runAgentTask(taskId: string) {
 
     return prisma.agentTask.findUniqueOrThrow({
       where: { id: task.id },
-      include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
+      include: {
+        steps: true,
+        toolCalls: true,
+        llmCalls: true,
+        finalMessage: true,
+        eventLogs: true
+      }
     });
   } catch (error) {
     if (error instanceof ToolApprovalRequiredError) {
@@ -335,6 +420,20 @@ export async function runAgentTask(taskId: string) {
         where: { id: task.id },
         include: {
           toolCalls: true,
+          steps: true,
+          llmCalls: true,
+          finalMessage: true,
+          eventLogs: true,
+          toolApprovals: true
+        }
+      });
+    }
+    if (error instanceof AgentTaskLeaseLostError) {
+      return prisma.agentTask.findUniqueOrThrow({
+        where: { id: task.id },
+        include: {
+          toolCalls: true,
+          steps: true,
           llmCalls: true,
           finalMessage: true,
           eventLogs: true,
@@ -343,8 +442,10 @@ export async function runAgentTask(taskId: string) {
       });
     }
     const message = error instanceof Error ? error.message : "Agent task failed";
-    const finalMessage = await prisma.message.create({
-      data: {
+    let finalMessage;
+    try {
+      finalMessage = await tracer.failWithMessage(
+        {
         roomId: task.roomId,
         senderType: "agent",
         senderAgentId: task.agentId,
@@ -355,9 +456,25 @@ export async function runAgentTask(taskId: string) {
           taskId: task.id,
           error: message
         }
+        },
+        message
+      );
+    } catch (failureError) {
+      if (failureError instanceof AgentTaskLeaseLostError) {
+        return prisma.agentTask.findUniqueOrThrow({
+          where: { id: task.id },
+          include: {
+            toolCalls: true,
+            steps: true,
+            llmCalls: true,
+            finalMessage: true,
+            eventLogs: true,
+            toolApprovals: true
+          }
+        });
       }
-    });
-    await tracer.markFailed(message, finalMessage.id);
+      throw failureError;
+    }
     await appendChatLog(task.roomId, {
       kind: "message.agent",
       messageId: finalMessage.id,
@@ -369,8 +486,16 @@ export async function runAgentTask(taskId: string) {
     });
     return prisma.agentTask.findUniqueOrThrow({
       where: { id: task.id },
-      include: { toolCalls: true, llmCalls: true, finalMessage: true, eventLogs: true }
+      include: {
+        steps: true,
+        toolCalls: true,
+        llmCalls: true,
+        finalMessage: true,
+        eventLogs: true
+      }
     });
+  } finally {
+    await heartbeat.stop();
   }
 }
 

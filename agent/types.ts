@@ -1,4 +1,5 @@
 import type { Prisma } from "@prisma/client";
+import type { z } from "zod";
 
 import type { ExecutionTracer } from "@/agent/execution-tracer";
 
@@ -74,6 +75,12 @@ export interface LLMProvider {
 
 export type RuntimeContext = Awaited<ReturnType<typeof import("@/agent/context-builder").buildAgentContext>>;
 
+export type AgentTaskLeaseOwnership = {
+  attemptId: string;
+  workerId: string;
+  leaseDurationMs: number;
+};
+
 export type ToolExecutionContext = {
   prisma: Prisma.TransactionClient;
   taskId: string;
@@ -82,16 +89,34 @@ export type ToolExecutionContext = {
   requestedById: string | null;
   runtimeContext: RuntimeContext;
   tracer: ExecutionTracer;
+  lease?: AgentTaskLeaseOwnership;
+  signal?: AbortSignal;
 };
 
 export type ToolRisk = "low" | "medium" | "high";
+export type ToolErrorCategory =
+  | "validation"
+  | "permission"
+  | "timeout"
+  | "network"
+  | "tool"
+  | "runtime";
+
+export type ToolRetryPolicy = {
+  maxAttempts: number;
+  backoffMs: number;
+  retryOn: ToolErrorCategory[];
+};
 
 export interface AgentTool<Input = unknown, Output = unknown> {
   name: string;
   description: string;
   schema: unknown;
   risk: ToolRisk;
+  retry: ToolRetryPolicy;
   effect?: "database-write";
+  inputSchema?: z.ZodType<Input>;
+  outputSchema?: z.ZodType<Output>;
   execute(input: Input, context: ToolExecutionContext): Promise<Output>;
 }
 

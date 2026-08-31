@@ -1,5 +1,9 @@
 import { Prisma, type AgentToolApprovalStatus } from "@prisma/client";
 
+import {
+  AgentTaskLeaseLostError,
+  renewAgentTaskLease
+} from "@/agent/task-claim";
 import type { ToolExecutionContext, ToolRisk } from "@/agent/types";
 import { prisma } from "@/lib/prisma";
 
@@ -48,6 +52,19 @@ export async function requireToolApproval(input: {
   }
 
   const approval = await prisma.$transaction(async (tx) => {
+    if (input.context.lease) {
+      const lease = await renewAgentTaskLease(
+        input.context.taskId,
+        input.context.lease,
+        tx
+      );
+      if (!lease.renewed) {
+        throw new AgentTaskLeaseLostError(
+          input.context.taskId,
+          input.context.lease.attemptId
+        );
+      }
+    }
     const requested = existing ?? await tx.agentToolApproval.create({
       data: {
         taskId: input.context.taskId,
@@ -57,12 +74,45 @@ export async function requireToolApproval(input: {
         input: toJsonInput(input.toolInput)
       }
     });
+    await tx.agentStep.upsert({
+      where: {
+        taskId_stepKey: {
+          taskId: input.context.taskId,
+          stepKey: input.stepKey
+        }
+      },
+      create: {
+        taskId: input.context.taskId,
+        stepKey: input.stepKey,
+        kind: "tool",
+        status: "waiting_approval",
+        input: toJsonInput({
+          toolName: input.toolName,
+          input: input.toolInput
+        }),
+        attemptCount: 1,
+        startedAt: new Date()
+      },
+      update: {
+        status: "waiting_approval",
+        error: null,
+        errorCategory: null
+      }
+    });
     const taskUpdate = await tx.agentTask.updateMany({
       where: {
         id: input.context.taskId,
-        status: { in: ["running", "waiting_approval"] }
+        status: { in: ["running", "waiting_approval"] },
+        attemptId: input.context.lease?.attemptId,
+        workerId: input.context.lease?.workerId
       },
-      data: { status: "waiting_approval" }
+      data: {
+        status: "waiting_approval",
+        currentStepKey: input.stepKey,
+        workerId: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null
+      }
     });
     if (taskUpdate.count !== 1) {
       throw new ToolApprovalConflictError("Task is not running or waiting for approval.");
@@ -129,6 +179,26 @@ export async function decideToolApproval(input: {
     }
 
     const taskStatus = input.decision === "approve" ? "pending" : "cancelled";
+    await tx.agentStep.updateMany({
+      where: {
+        taskId: input.taskId,
+        stepKey: approval.stepKey,
+        status: "waiting_approval"
+      },
+      data: input.decision === "approve"
+        ? {
+            status: "pending",
+            error: null,
+            errorCategory: null,
+            completedAt: null
+          }
+        : {
+            status: "failed",
+            error: "High-risk Tool request rejected by user.",
+            errorCategory: "permission",
+            completedAt: new Date()
+          }
+    });
     const taskUpdate = await tx.agentTask.updateMany({
       where: {
         id: input.taskId,
@@ -137,7 +207,11 @@ export async function decideToolApproval(input: {
       data: {
         status: taskStatus,
         completedAt: input.decision === "reject" ? new Date() : null,
-        error: input.decision === "reject" ? "High-risk Tool request rejected by user." : null
+        error: input.decision === "reject" ? "High-risk Tool request rejected by user." : null,
+        currentStepKey: null,
+        workerId: null,
+        heartbeatAt: null,
+        leaseExpiresAt: null
       }
     });
     if (taskUpdate.count !== 1) {

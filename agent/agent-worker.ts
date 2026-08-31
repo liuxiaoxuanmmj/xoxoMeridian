@@ -1,4 +1,5 @@
 import { dispatchPendingAgentTasks } from "@/agent/task-dispatcher";
+import { getRuntimeWorkerId } from "@/agent/task-claim";
 import { schedulerTick, clearAllTimers } from "@/agent/scheduler-tick";
 import { cleanupExpiredSessions } from "@/lib/auth";
 import { cleanupExpiredResetTokens } from "@/lib/password-reset";
@@ -10,6 +11,7 @@ const DISPATCH_MAX_BACKOFF_MS = 60_000;
 const SESSION_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
 let stopped = false;
+const workerId = getRuntimeWorkerId();
 
 process.on("SIGINT", () => { stopped = true; clearAllTimers(); });
 process.on("SIGTERM", () => { stopped = true; clearAllTimers(); });
@@ -22,7 +24,7 @@ async function dispatchLoop() {
 
   while (!stopped) {
     try {
-      const results = await dispatchPendingAgentTasks(3);
+      const results = await dispatchPendingAgentTasks(3, { workerId });
       if (results.length > 0) console.log(`[worker] processed ${results.length} task(s)`);
       consecutiveErrors = 0;
     } catch (error) {

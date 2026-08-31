@@ -1,4 +1,5 @@
 import type { AgentTool } from "@/agent/types";
+import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 
 type MemoInput = {
   title?: string;
@@ -12,6 +13,7 @@ export function createMemoListTool(): AgentTool<MemoListInput> {
   return {
     name: "memo.list",
     risk: "low",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "List all memos in this room. Call this when the user asks about existing memos or wants to review them, before creating new ones.",
     schema: { type: "object", properties: {} },
@@ -46,6 +48,7 @@ export function createMemoTool(): AgentTool<MemoInput> {
   return {
     name: "memo.create",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description: "Create a persistent memo in the room side panel.",
     effect: "database-write",
     schema: {
@@ -94,6 +97,7 @@ export function createMemoUpdateTool(): AgentTool<MemoUpdateInput> {
   return {
     name: "memo.update",
     risk: "medium",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Update an existing memo in place. Use this when the user wants to change a memo's title, content, or pinned status. " +
       "Only provide the fields you want to change; omitted fields keep their current value. " +
@@ -144,6 +148,7 @@ export function createMemoDeleteTool(): AgentTool<MemoDeleteInput> {
   return {
     name: "memo.delete",
     risk: "high",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Delete a memo by its memoId. Use this when the user wants to remove a memo entirely. " +
       "Call memo.list first if you don't know the memoId.",

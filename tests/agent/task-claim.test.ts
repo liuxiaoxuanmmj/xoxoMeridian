@@ -9,12 +9,33 @@ const mocks = vi.hoisted(() => ({
   updateTask: vi.fn(),
   createMessage: vi.fn(),
   markRunning: vi.fn(),
-  markCompleted: vi.fn(),
+  completeWithMessage: vi.fn(),
+  failWithMessage: vi.fn(),
+  heartbeatAssertActive: vi.fn(),
+  heartbeatStop: vi.fn(),
+  withAgentTaskLease: vi.fn(),
+  beginAgentStep: vi.fn(),
+  completeAgentStep: vi.fn(),
+  executeDurableToolStep: vi.fn(),
   tracerEvent: vi.fn()
 }));
 
+vi.mock("@/agent/durable-step", () => ({
+  AgentStepConflictError: class extends Error {},
+  beginAgentStep: mocks.beginAgentStep,
+  completeAgentStep: mocks.completeAgentStep,
+  executeDurableToolStep: mocks.executeDurableToolStep
+}));
+
 vi.mock("@/agent/task-claim", () => ({
-  claimAgentTask: mocks.claimAgentTask
+  AgentTaskLeaseLostError: class extends Error {},
+  claimAgentTask: mocks.claimAgentTask,
+  getRuntimeWorkerId: () => "test-worker",
+  startAgentTaskHeartbeat: () => ({
+    assertActive: mocks.heartbeatAssertActive,
+    stop: mocks.heartbeatStop
+  }),
+  withAgentTaskLease: mocks.withAgentTaskLease
 }));
 
 vi.mock("@/agent/llm-provider", () => ({
@@ -29,7 +50,8 @@ vi.mock("@/agent/execution-tracer", () => ({
   ExecutionTracer: class {
     event = mocks.tracerEvent;
     markRunning = mocks.markRunning;
-    markCompleted = mocks.markCompleted;
+    completeWithMessage = mocks.completeWithMessage;
+    failWithMessage = mocks.failWithMessage;
   }
 }));
 
@@ -59,6 +81,11 @@ import { runAgentTask } from "@/agent/agent-runtime";
 describe("runAgentTask claim handling", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.withAgentTaskLease.mockImplementation(
+      async (_taskId, _lease, operation) => operation({
+        agentTask: { update: mocks.updateTask }
+      })
+    );
   });
 
   it("does not enter planning when another caller owns the task", async () => {
@@ -70,7 +97,10 @@ describe("runAgentTask claim handling", () => {
     };
     mocks.claimAgentTask.mockResolvedValue({
       claimed: false,
-      claimedAt: new Date("2026-08-30T00:00:00.000Z")
+      claimedAt: new Date("2026-08-30T00:00:00.000Z"),
+      attemptId: "attempt-1",
+      workerId: "worker-1",
+      leaseDurationMs: 60_000
     });
     mocks.findUnique.mockResolvedValue(runningTask);
 
@@ -102,7 +132,10 @@ describe("runAgentTask claim handling", () => {
     const completedTask = { ...task, status: "completed" };
     mocks.claimAgentTask.mockResolvedValue({
       claimed: true,
-      claimedAt: new Date("2026-08-30T00:00:00.000Z")
+      claimedAt: new Date("2026-08-30T00:00:00.000Z"),
+      attemptId: "attempt-2",
+      workerId: "worker-1",
+      leaseDurationMs: 60_000
     });
     mocks.findUnique.mockResolvedValue(task);
     mocks.buildAgentContext.mockResolvedValue({
@@ -119,11 +152,20 @@ describe("runAgentTask claim handling", () => {
         summaries: { global: null, recent: [] }
       }
     });
-    mocks.createMessage.mockResolvedValue({
+    mocks.completeWithMessage.mockResolvedValue({
       id: "message-1",
       content: persistedPlan.finalResponseText,
       createdAt: new Date("2026-08-30T00:00:01.000Z")
     });
+    mocks.beginAgentStep
+      .mockResolvedValueOnce({
+        step: { status: "completed", output: persistedPlan },
+        resumed: true
+      })
+      .mockResolvedValueOnce({
+        step: { status: "running", output: null },
+        resumed: false
+      });
     mocks.findUniqueOrThrow.mockResolvedValue(completedTask);
 
     await expect(runAgentTask(task.id)).resolves.toBe(completedTask);

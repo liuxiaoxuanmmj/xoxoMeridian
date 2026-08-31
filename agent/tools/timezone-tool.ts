@@ -1,4 +1,5 @@
 import type { AgentTool } from "@/agent/types";
+import { NO_TOOL_RETRY } from "@/agent/tool-errors";
 
 type TimezoneInput = {
   fromLabel?: string;
@@ -11,6 +12,7 @@ export function createTimezoneTool(): AgentTool<TimezoneInput> {
   return {
     name: "timezone.compare",
     risk: "low",
+    retry: NO_TOOL_RETRY,
     description: "Compare the current local time for two timezones and return a contact suggestion.",
     schema: {
       type: "object",

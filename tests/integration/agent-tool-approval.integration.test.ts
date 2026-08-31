@@ -65,7 +65,7 @@ describe("high-risk Tool approval", () => {
       decision: "approve",
       decidedById: fixture.user.id
     });
-    await expect(claimAgentTask(fixture.task.id, prisma)).resolves.toMatchObject({
+    await expect(claimAgentTask(fixture.task.id, {}, prisma)).resolves.toMatchObject({
       claimed: true
     });
 
@@ -142,7 +142,7 @@ describe("high-risk Tool approval", () => {
       status: "cancelled",
       error: "High-risk Tool request rejected by user."
     });
-    await expect(claimAgentTask(fixture.task.id, prisma)).resolves.toMatchObject({
+    await expect(claimAgentTask(fixture.task.id, {}, prisma)).resolves.toMatchObject({
       claimed: false
     });
   });

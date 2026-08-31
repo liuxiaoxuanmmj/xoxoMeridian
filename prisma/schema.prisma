@@ -57,6 +57,20 @@ enum AgentToolApprovalStatus {
   rejected
 }
 
+enum AgentStepKind {
+  plan
+  tool
+  final
+}
+
+enum AgentStepStatus {
+  pending
+  running
+  waiting_approval
+  completed
+  failed
+}
+
 model User {
   id             String            @id @default(cuid())
   email          String            @unique
@@ -213,6 +227,12 @@ model AgentTask {
   result          Json?
   error           String?
   retryCount      Int                 @default(0)
+  attemptCount    Int                 @default(0)
+  attemptId       String?
+  workerId        String?
+  heartbeatAt     DateTime?
+  leaseExpiresAt  DateTime?
+  currentStepKey  String?
   startedAt       DateTime?
   completedAt     DateTime?
   finalMessageId  String?             @unique
@@ -228,10 +248,33 @@ model AgentTask {
   eventLogs       EventLog[]
   memos           Memo[]
   toolApprovals   AgentToolApproval[]
+  steps           AgentStep[]
 
   @@index([status, createdAt])
+  @@index([status, leaseExpiresAt, createdAt])
   @@index([roomId])
   @@index([agentId])
+}
+
+model AgentStep {
+  id           String          @id @default(cuid())
+  taskId       String
+  stepKey      String
+  kind         AgentStepKind
+  status       AgentStepStatus @default(pending)
+  input        Json?
+  output       Json?
+  error        String?
+  errorCategory String?
+  attemptCount Int             @default(0)
+  startedAt    DateTime?
+  completedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  task         AgentTask       @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@unique([taskId, stepKey])
+  @@index([taskId, status])
 }
 
 model ToolCall {

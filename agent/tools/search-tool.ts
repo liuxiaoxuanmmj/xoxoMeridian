@@ -1,4 +1,5 @@
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
+import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 
 type SearchInput = {
   query: string;
@@ -46,7 +47,8 @@ const TAVILY_API_URL = "https://api.tavily.com/search";
 export async function fetchSearchResults(
   query: string,
   maxResults = 5,
-  searchDepth: "basic" | "advanced" = "basic"
+  searchDepth: "basic" | "advanced" = "basic",
+  signal?: AbortSignal
 ): Promise<SearchOutput> {
   let trimmedQuery = query.trim();
   if (!trimmedQuery) {
@@ -66,8 +68,15 @@ export async function fetchSearchResults(
   }
 
   try {
-    return await callTavilyAPI(trimmedQuery, Math.min(maxResults, 10), searchDepth, apiKey);
+    return await callTavilyAPI(
+      trimmedQuery,
+      Math.min(maxResults, 10),
+      searchDepth,
+      apiKey,
+      signal
+    );
   } catch (error) {
+    if (signal?.aborted) throw signal.reason ?? error;
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`[web.search] Tavily API call failed, falling back to mock: ${reason}`);
     return mockSearch(trimmedQuery, reason);
@@ -78,6 +87,7 @@ export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
   return {
     name: "web.search",
     risk: "low",
+    retry: TRANSIENT_TOOL_RETRY,
     description:
       "Search the web for real-time information using Tavily API. " +
       "**Use for**: breaking news, local recommendations (restaurants/events/attractions), " +
@@ -115,7 +125,7 @@ export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
       const maxResults = input.maxResults ?? 5;
       const searchDepth = input.searchDepth ?? "basic";
 
-      return fetchSearchResults(query, maxResults, searchDepth);
+      return fetchSearchResults(query, maxResults, searchDepth, context.signal);
     }
   };
 }
@@ -157,10 +167,13 @@ async function callTavilyAPI(
   query: string,
   maxResults: number,
   searchDepth: "basic" | "advanced",
-  apiKey: string
+  apiKey: string,
+  signal?: AbortSignal
 ): Promise<SearchOutput> {
-  const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const controller = signal ? null : new AbortController();
+  const timeoutId = controller
+    ? setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS)
+    : null;
 
   try {
     const startTime = Date.now();
@@ -169,7 +182,7 @@ async function callTavilyAPI(
       headers: {
         "Content-Type": "application/json"
       },
-      signal: controller.signal,
+      signal: signal ?? controller?.signal,
       body: JSON.stringify({
         api_key: apiKey,
         query,
@@ -181,7 +194,7 @@ async function callTavilyAPI(
       })
     });
 
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
 
     if (!response.ok) {
       const errorText = await response.text().catch(() => "");
@@ -218,7 +231,9 @@ async function callTavilyAPI(
       }
     };
   } catch (error) {
-    clearTimeout(timeoutId);
+    if (timeoutId) clearTimeout(timeoutId);
+
+    if (signal?.aborted) throw signal.reason ?? error;
 
     if (error instanceof Error && error.name === "AbortError") {
       throw new Error(`Request timeout after ${FETCH_TIMEOUT_MS}ms`);
