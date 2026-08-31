@@ -289,6 +289,19 @@
         "将 Compose config 校验与该烟雾测试作为独立、可在 CI/发布候选环境运行的命令；不在本 feature 内混入镜像标签策略、container_name 重构或 Worker 健康探针实现"
       ],
       "evidence": "新增 docker-compose.smoke.yml 与 TypeScript harness；npm run check:compose-config 通过隔离配置断言，sudo -n -g docker -u dadalv npm run test:compose-smoke 退出 0，实际构建 production web/agent-worker，完成 init、Web health/standalone、Worker 消费 AgentTask、durable plan/final 与房间可见消息验证，并清理随机 Compose project 的容器、网络、卷和测试镜像；npm run check:quick 58 文件/344 项通过。"
+    },
+    {
+      "id": "feat-023",
+      "name": "固化会话退出检查清单",
+      "description": "将构建、测试、进度、临时工件和启动路径五项条件固化为 AGENTS.md 的清洁退出检查清单。",
+      "status": "blocked",
+      "dependencies": ["feat-022"],
+      "acceptanceCriteria": [
+        "AGENTS.md 新增五项会话退出检查清单，并明确未满足时不得称为完成",
+        "清单兼容保留既有用户改动的约束，且明确失败诊断工件不是清洁退出",
+        "AGENTS.md 保持 50-200 行且 harness 结构性验证通过"
+      ],
+      "evidence": "AGENTS.md 已新增五项清洁退出检查清单；wc -l 为 92，符合 50-200 行标准且硬约束仍为 15 条；harness-creator validate-harness.mjs 为 100/100；./init.sh 通过（58 文件/344 项 Vitest），但 npm run check 在 Next.js 16.3.3 生产构建阶段失败：Could not parse output from TypeScript's --showConfig。"
     }
   ]
 }

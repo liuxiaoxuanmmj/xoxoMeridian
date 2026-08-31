@@ -2,7 +2,27 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-08-31。feat-022「建立 Compose 部署烟雾验证」已完成，当前没有 `in-progress` feature。现在可用独立的静态 Compose 配置门禁与真实 Docker 部署 smoke test 覆盖发布镜像、init、Web healthcheck/standalone 和独立 Worker 消费；它们不替代应用的 `check:full`。Trace 隐私治理、Tool 隔离/HITL Edit 与未来外部副作用幂等仍是独立 P2。
+Last Updated：2026-08-31。feat-023「固化会话退出检查清单」已写入 `AGENTS.md`，但因 `npm run check` 的生产构建失败而为 `blocked`；当前没有 `in-progress` feature。现在可用独立的静态 Compose 配置门禁与真实 Docker 部署 smoke test 覆盖发布镜像、init、Web healthcheck/standalone 和独立 Worker 消费；它们不替代应用的 `check:full`。Trace 隐私治理、Tool 隔离/HITL Edit 与未来外部副作用幂等仍是独立 P2。
+
+## 2026-08-31 — feat-023 固化会话退出检查清单
+
+### 已完成
+
+- 在 `AGENTS.md` 新增“会话退出检查清单”，将构建、测试、进度、临时工件和启动路径五项全部满足定义为“完成”或“清洁退出”的前提。
+- 清单规定未运行、失败或环境阻塞必须原样记录，失败诊断工件只能对应 `blocked` 交接；同时要求 `git diff --check` 与 `git status --short`，但不允许删除既有用户改动。
+- 使用 `harness-creator` 审查：`AGENTS.md` 为 92 行，符合 feat-005 的 50-200 行标准；硬约束仍为 15 条，结构性验证为 100/100。
+
+### 验证证据
+
+- `./init.sh`：通过；Prisma Client 生成、TypeScript、ESLint、58 个文件/344 项 Vitest 测试全部通过。
+- `node /home/dadalv/.agents/skills/harness-creator/scripts/validate-harness.mjs --target /home/dadalv/projects/xoxoMeridian`：100/100，五个 Harness 子系统均为 5/5。
+- `wc -l AGENTS.md`：92，符合 50-200 行标准。
+- `git diff --check`：通过；`git status --short` 仅显示本 feature 的 `AGENTS.md` 与 `feature_list.json`，随后会话记录也将成为预期改动。
+- `npm run check`：失败；`typecheck`、`lint`、58 个文件/344 项 Vitest 通过，但 `npm run build` 在 Next.js 16.3.3 阶段以 `Could not parse output from TypeScript's --showConfig.` 退出 1，因此本 feature 不得标记为完成或清洁退出。
+
+### 阻塞与下一步
+
+- 阻塞：先独立复现并定位 `npm run build` 的 TypeScript `--showConfig` 解析失败；在构建通过前不得将 feat-023 由 `blocked` 改为 `done`。
 
 ## 2026-08-31 — feat-022 建立 Compose 部署烟雾验证
 

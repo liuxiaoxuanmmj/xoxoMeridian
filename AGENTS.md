@@ -42,6 +42,16 @@ XOXO Meridian 是一个面向私密双人空间的 Next.js 15 全栈应用，提
 - Before ending，更新 `feature_list.json`、`progress.md` 和 `session-handoff.md`，记录状态、改动文件、验证、阻塞与一个推荐下一步。
 - 保持仓库 restartable：不得留下半写入状态；交接中的 clean restart 路径必须能由下一会话直接执行。
 
+## 会话退出检查清单
+
+只有以下五项全部满足，才可将本次会话或 feature 称为“完成”或“清洁退出”；未运行、失败或因环境受阻的项目必须在 `progress.md` 和 `session-handoff.md` 中记录原始命令、结果与原因，并不得称为完成。
+
+- [ ] 构建通过：至少执行 `npm run check`；涉及数据库、认证、关键旅程或部署时执行风险匹配的 `npm run check:full` 或 `npm run test:compose-smoke`。
+- [ ] 测试通过：相关 Node、组件、集成和 E2E 测试均已通过；不得以低层 mock 替代应有的真实 PostgreSQL 或浏览器验证。
+- [ ] 进度已记录：`feature_list.json`、`progress.md` 和 `session-handoff.md` 已写入状态、改动、验证证据、阻塞与唯一推荐下一步。
+- [ ] 临时工件已清理：清除本会话创建且不需交接的临时目录、测试数据、隔离容器/网络/卷/镜像和测试报告；运行 `git diff --check` 并检查 `git status --short`，但不得删除既有用户改动。为诊断保留的失败日志意味着会话应标为 `blocked`，不属于清洁退出。
+- [ ] 启动路径可用：`./init.sh` 成功建立快速基线；如改动启动或部署路径，还须验证相应的 `npm run dev` 健康端点或 Compose 启动路径。
+
 ## 硬约束
 
 1. 所有仓库相关的助手回复、进度记录和交接说明必须使用中文；代码标识符、协议字段和第三方专有名词除外。

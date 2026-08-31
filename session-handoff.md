@@ -6,7 +6,7 @@
 
 ## Current Objective（当前目标）
 
-feat-022「建立 Compose 部署烟雾验证」已完成，当前没有 `in-progress` feature。新增 `npm run check:compose-config`：只用临时非敏感环境变量渲染并校验隔离 Compose 配置，不访问 Docker daemon；新增 `npm run test:compose-smoke`：实际构建 production Web/Worker 镜像，在随机 Compose project 中验证 init、Web healthcheck/standalone、独立 Worker 消费 AgentTask，并清理所有测试资源。
+feat-023「固化会话退出检查清单」已完成文档改动，但因 `npm run check` 的生产构建失败处于 `blocked`；当前没有 `in-progress` feature。`AGENTS.md` 已将构建、测试、进度、临时工件和启动路径五项全部满足定义为“完成”或“清洁退出”的前提，并要求失败原文进入交接。新增 `npm run check:compose-config`：只用临时非敏感环境变量渲染并校验隔离 Compose 配置，不访问 Docker daemon；新增 `npm run test:compose-smoke`：实际构建 production Web/Worker 镜像，在随机 Compose project 中验证 init、Web healthcheck/standalone、独立 Worker 消费 AgentTask，并清理所有测试资源。
 
 该 smoke 补足了 `check:full` 的部署缺口：后者仍是应用级门禁，使用 Testcontainer 与本机 `next dev`；新命令专门验证 Dockerfile production runner、init 容器、Compose healthcheck 及 agent-worker 协作，两者互补且不互相替代。
 
@@ -29,6 +29,7 @@ feat-016 至 feat-022 均为 `done`，当前没有 `in-progress` feature。先�
 - feat-020：Prisma schema 与迁移 `20260831111500_add_agent_runtime_budget`；`agent/runtime-budget.ts`、Runtime、LLM provider、Tool executor、Tracer、任务创建路径、环境 schema/示例与 Agent 状态 UI；新增 Runtime Budget 单元和真实 PostgreSQL 集成测试。
 - feat-021：`app/api/agent/tasks/[taskId]/run/route.ts` 的生产排队/inline 限流边界、`docker-compose.yml` 全量 Runtime Budget 环境透传，以及 `tests/server/agent-task-run-route.test.ts` 回归测试。
 - feat-022：新增 `docker-compose.smoke.yml`、`scripts/compose-deployment-smoke.ts`、两个 npm 命令和测试文档；测试 override 隔离 project、端口、卷、bind directory 与镜像，生产 `docker-compose.yml`、Dockerfile、镜像策略和 Worker healthcheck 均未修改。
+- feat-023：`AGENTS.md` 新增五项会话退出检查清单；`feature_list.json`、`progress.md` 和本文件登记结构性审查、验证与构建阻塞。
 - 审查与状态：`docs/optimization/agent-runtime-review.md`、`feature_list.json`、`progress.md` 和本文件。
 - 工作树中的其他既有用户改动均被保留，没有执行破坏性 Git 操作或覆盖无关内容。
 
@@ -49,13 +50,16 @@ feat-016 至 feat-022 均为 `done`，当前没有 `in-progress` feature。先�
 - `npm run check:quick`：TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
 - `git diff --check`：通过。
 - `harness-creator` 结构性验证：100/100；仓库中未发现受版本控制的 GitHub Actions、GitLab CI、Jenkins 等 CI 配置。
+- `./init.sh`：Prisma Client 生成、TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
+- `wc -l AGENTS.md`：92，符合 feat-005 的 50-200 行标准；`node /home/dadalv/.agents/skills/harness-creator/scripts/validate-harness.mjs --target /home/dadalv/projects/xoxoMeridian`：100/100。
+- `npm run check`：退出 1。`typecheck`、`lint`、58 个文件/344 项 Vitest 通过；`npm run build` 在 Next.js 16.3.3 阶段失败，原文为 `Could not parse output from TypeScript's --showConfig.`。
 
 ## Next Session Startup（恢复步骤）
 
 1. 依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件。
 2. 确认 Node.js 22 与锁定依赖；需要重装时运行 `npm ci`。本轮新增三条迁移，本地数据库尚未应用时运行 `npm run db:deploy`，再运行 `npm run db:generate`。
 3. 运行 `./init.sh` 建立快速基线。
-4. feat-016 至 feat-022 均已完成；不要重复实现。需要部署配置验证时先运行 `npm run check:compose-config`，需要真实部署 smoke 时在 Docker 可用环境运行 `sudo -n -g docker -u dadalv npm run test:compose-smoke`。
+4. feat-016 至 feat-022 均已完成；feat-023 因生产构建失败而 `blocked`，不要将其标为完成。需要部署配置验证时先运行 `npm run check:compose-config`，需要真实部署 smoke 时在 Docker 可用环境运行 `sudo -n -g docker -u dadalv npm run test:compose-smoke`。
 5. 需要完整应用验证时确保 Docker 可用，并运行 `sudo -n -g docker -u dadalv npm run check:full`；部署 smoke 是独立补充，不替代此命令。
 
 ## Blockers / Risks（阻塞与风险）
@@ -68,8 +72,9 @@ feat-016 至 feat-022 均为 `done`，当前没有 `in-progress` feature。先�
 - `check:full` 仍不等同于 Compose 上线保证；`test:compose-smoke` 覆盖当前 production 容器路径，但不是性能、滚动升级、镜像签名或外部供应商验收。
 - Compose 使用固定 `container_name` 与 `latest` Worker 镜像标签，暂不阻止单机部署；smoke 通过 test-only override 隔离，若未来需要生产并行部署、可回滚发布或 Worker healthcheck，应分别作为独立运维 feature 处理。
 - 当前 Node.js 22.22.1 下 `check:full` 的 Prisma Client 生成已正常通过；没有依赖或锁文件变更。
+- 当前 `npm run check` 在生产构建阶段失败：`Could not parse output from TypeScript's --showConfig.`；快速基线仍通过，但按新增会话退出检查清单不得称为清洁退出。
 - 本轮没有依赖变更；既有审计记录为 production high/critical 0。不得提交本地 `.env`。
 
 ## Recommended Next Step（唯一推荐下一步）
 
-当前没有已登记的未完成 feature。确定下一项产品优先级后，先登记依赖与验收标准；Runtime 方向优先考虑 Trace 隐私治理，保持与 Tool 隔离和外部副作用协议分离。
+先独立复现并定位 `npm run build` 的 TypeScript `--showConfig` 解析失败；构建恢复通过后再完成 feat-023，并按新增检查清单确认清洁退出。
