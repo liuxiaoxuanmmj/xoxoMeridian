@@ -38,7 +38,7 @@ export type ChatMessage = {
   } | null;
   finalTask?: {
     id: string;
-    status: "pending" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+    status: "pending" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled" | "limit_exceeded";
     toolCalls?: Array<{
       id: string;
       toolName: string;
@@ -111,7 +111,7 @@ export type RoomSnapshot = {
     runningTasks: number;
     recentTasks: Array<{
       id: string;
-      status: "pending" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
+      status: "pending" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled" | "limit_exceeded";
       createdAt: string;
       error?: string | null;
     }>;

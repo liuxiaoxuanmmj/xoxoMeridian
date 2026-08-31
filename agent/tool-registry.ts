@@ -12,6 +12,7 @@ import {
   ToolTimeoutError,
   ToolValidationError
 } from "@/agent/tool-errors";
+import { AgentRuntimeBudgetExceededError } from "@/agent/runtime-budget";
 import type { AgentTool, ToolExecutionContext, ToolResult } from "@/agent/types";
 import { createMemoDeleteTool, createMemoListTool, createMemoTool, createMemoUpdateTool } from "@/agent/tools/memo-tool";
 import { createMemorySetTool, createMemoryRecallTool } from "@/agent/tools/memory-tool";
@@ -122,6 +123,11 @@ export class ToolRegistry {
     const timeoutMs = this.options.defaultTimeoutMs ?? env.AGENT_TOOL_TIMEOUT_MS;
     for (let attempt = 1; attempt <= tool.retry.maxAttempts; attempt += 1) {
       try {
+        await context.reserveToolCall?.({
+          toolName: tool.name,
+          stepKey: options.stepKey,
+          attempt
+        });
         if (tool.effect === "database-write") {
           return await this.executeDatabaseWrite(
             tool,
@@ -134,6 +140,7 @@ export class ToolRegistry {
         return await this.executeNonWrite(tool, validatedInput, context, timeoutMs);
       } catch (error) {
         if (error instanceof AgentTaskLeaseLostError) throw error;
+        if (error instanceof AgentRuntimeBudgetExceededError) throw error;
         const classified = classifyToolError(error);
         const retryable = classified.retryable
           && tool.retry.retryOn.includes(classified.category)
@@ -183,6 +190,15 @@ export class ToolRegistry {
       };
     } catch (error) {
       if (error instanceof AgentTaskLeaseLostError) throw error;
+      if (error instanceof AgentRuntimeBudgetExceededError) {
+        await context.tracer.failToolCall(
+          call.id,
+          call.startedAt,
+          error.message,
+          "runtime"
+        );
+        throw error;
+      }
       const classified = classifyToolError(error);
       await context.tracer.failToolCall(
         call.id,
@@ -392,6 +408,7 @@ async function recordFailedDatabaseWrite(input: {
   error: unknown;
 }) {
   if (input.error instanceof AgentTaskLeaseLostError) return;
+  if (input.error instanceof AgentRuntimeBudgetExceededError) return;
   if (input.context.lease) {
     try {
       await assertAgentTaskLease(input.context.taskId, input.context.lease);
@@ -476,11 +493,23 @@ async function runToolWithDeadline(
       reject(timeoutError);
     }, timeoutMs);
   });
+  const aborted = new Promise<never>((_resolve, reject) => {
+    const rejectAbort = () => {
+      const reason = controller.signal.reason;
+      reject(reason instanceof Error ? reason : new Error("Tool execution aborted."));
+    };
+    if (controller.signal.aborted) {
+      rejectAbort();
+    } else {
+      controller.signal.addEventListener("abort", rejectAbort, { once: true });
+    }
+  });
 
   try {
     return await Promise.race([
       tool.execute(input, { ...context, signal: controller.signal }),
-      timeout
+      timeout,
+      aborted
     ]);
   } finally {
     if (timer) clearTimeout(timer);

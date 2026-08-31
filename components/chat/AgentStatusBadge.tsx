@@ -6,6 +6,8 @@ export function AgentStatusBadge({ isWorking, latestStatus }: { isWorking: boole
     ? `${AGENT_DISPLAY_NAME}等待你的确认`
     : latestStatus === "cancelled"
       ? `${AGENT_DISPLAY_NAME}操作已取消`
+      : latestStatus === "limit_exceeded"
+        ? `${AGENT_DISPLAY_NAME}已达到运行预算上限`
       : isWorking
     ? latestStatus === "pending"
       ? `${AGENT_DISPLAY_NAME}正在理解任务`

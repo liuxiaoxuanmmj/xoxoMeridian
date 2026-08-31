@@ -58,6 +58,14 @@ const baseSchema = z.object({
   AGENT_TASK_LEASE_MS: z.coerce.number().int().min(1000).default(60000),
   AGENT_TASK_HEARTBEAT_MS: z.coerce.number().int().min(250).default(15000),
   AGENT_TOOL_TIMEOUT_MS: z.coerce.number().int().min(100).default(12000),
+  AGENT_MAX_TURNS: z.coerce.number().int().positive().default(16),
+  AGENT_MAX_TOOL_CALLS: z.coerce.number().int().positive().default(64),
+  AGENT_MAX_RUNTIME_MS: z.coerce.number().int().min(1000).max(2_147_483_647).default(86_400_000),
+  AGENT_MAX_TOKENS: z.coerce.number().int().positive().default(1_000_000),
+  AGENT_MAX_COST_MICROS: z.coerce.number().int().positive().default(20_000_000),
+  AGENT_LLM_MAX_COMPLETION_TOKENS: z.coerce.number().int().positive().default(8192),
+  AGENT_LLM_INPUT_COST_MICROS_PER_MILLION_TOKENS: z.coerce.number().int().nonnegative().default(1_000_000),
+  AGENT_LLM_OUTPUT_COST_MICROS_PER_MILLION_TOKENS: z.coerce.number().int().nonnegative().default(4_000_000),
   AGENT_TASK_INLINE_RUN: z
     .enum(["true", "false"])
     .default("false")

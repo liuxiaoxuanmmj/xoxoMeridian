@@ -32,6 +32,15 @@ enum AgentTaskStatus {
   completed
   failed
   cancelled
+  limit_exceeded
+}
+
+enum AgentTaskLimitReason {
+  max_turns
+  max_tool_calls
+  max_runtime
+  max_tokens
+  max_cost
 }
 
 enum ToolCallStatus {
@@ -41,6 +50,7 @@ enum ToolCallStatus {
 }
 
 enum LLMCallStatus {
+  running
   completed
   failed
 }
@@ -227,6 +237,20 @@ model AgentTask {
   result          Json?
   error           String?
   retryCount      Int                 @default(0)
+  maxTurns        Int                 @default(16)
+  maxToolCalls    Int                 @default(64)
+  maxRuntimeMs    Int                 @default(86400000)
+  maxTokens       Int                 @default(1000000)
+  maxCostMicros   Int                 @default(20000000)
+  maxCompletionTokens Int             @default(8192)
+  inputCostMicrosPerMillionTokens Int  @default(1000000)
+  outputCostMicrosPerMillionTokens Int @default(4000000)
+  turnsUsed       Int                 @default(0)
+  toolCallsUsed   Int                 @default(0)
+  tokensUsed      Int                 @default(0)
+  costUsedMicros  Int                 @default(0)
+  deadlineAt      DateTime?
+  limitReason     AgentTaskLimitReason?
   attemptCount    Int                 @default(0)
   attemptId       String?
   workerId        String?
@@ -321,18 +345,23 @@ model LLMCall {
   taskId           String
   provider         String
   model            String
+  turnIndex        Int?
   inputSummary     String
   requestPayload   Json?
   responsePayload  Json?
   promptTokens     Int?
   completionTokens Int?
   totalTokens      Int?
+  reservedTokens   Int           @default(0)
+  reservedCostMicros Int         @default(0)
+  costMicros       Int?
   status           LLMCallStatus
   error            String?
   durationMs       Int?
   createdAt        DateTime      @default(now())
   task             AgentTask     @relation(fields: [taskId], references: [id], onDelete: Cascade)
 
+  @@unique([taskId, turnIndex])
   @@index([taskId])
 }
 

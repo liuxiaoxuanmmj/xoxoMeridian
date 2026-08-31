@@ -1,4 +1,8 @@
-import type { Prisma, PrismaClient } from "@prisma/client";
+import type {
+  AgentTaskLimitReason,
+  Prisma,
+  PrismaClient
+} from "@prisma/client";
 
 import { withAgentTaskLease } from "@/agent/task-claim";
 import type { AgentTaskLeaseOwnership } from "@/agent/types";
@@ -179,6 +183,71 @@ export class ExecutionTracer {
               finalMessageId: finalMessage.id,
               attemptId: this.lease?.attemptId
             }
+          }
+        });
+        return finalMessage;
+      },
+      this.prisma
+    );
+  }
+
+  async limitExceededWithMessage(
+    messageData: Prisma.MessageUncheckedCreateInput,
+    reason: AgentTaskLimitReason,
+    details: Record<string, unknown>
+  ) {
+    if (!this.lease) {
+      throw new Error("Agent task limit completion requires lease ownership.");
+    }
+    return withAgentTaskLease(
+      this.taskId,
+      this.lease,
+      async (tx) => {
+        const finalMessage = await tx.message.create({ data: messageData });
+        const task = await tx.agentTask.findUniqueOrThrow({
+          where: { id: this.taskId },
+          select: { currentStepKey: true }
+        });
+        if (task.currentStepKey) {
+          await tx.agentStep.updateMany({
+            where: {
+              taskId: this.taskId,
+              stepKey: task.currentStepKey,
+              status: { not: "completed" }
+            },
+            data: {
+              status: "failed",
+              error: `Runtime budget exceeded: ${reason}`,
+              errorCategory: "limit",
+              completedAt: new Date()
+            }
+          });
+        }
+        await tx.agentTask.update({
+          where: { id: this.taskId },
+          data: {
+            status: "limit_exceeded",
+            limitReason: reason,
+            completedAt: new Date(),
+            finalMessageId: finalMessage.id,
+            error: `Runtime budget exceeded: ${reason}`,
+            currentStepKey: null,
+            workerId: null,
+            heartbeatAt: null,
+            leaseExpiresAt: null
+          }
+        });
+        await tx.eventLog.create({
+          data: {
+            roomId: this.roomId,
+            agentTaskId: this.taskId,
+            type: "agent.task.limit_exceeded",
+            payload: {
+              reason,
+              details,
+              finalMessageId: finalMessage.id,
+              attemptId: this.lease?.attemptId
+            } as Prisma.InputJsonObject
           }
         });
         return finalMessage;

@@ -52,6 +52,8 @@ export type LLMPlanRequest = {
   roomContext: StructuredRoomContext;
   availableTools: LLMToolDescriptor[];
   agentSystemPrompt?: string | null;
+  maxCompletionTokens?: number;
+  signal?: AbortSignal;
   validationFeedback?: {
     previousPlan: AgentPlan;
     issues: string;
@@ -91,6 +93,11 @@ export type ToolExecutionContext = {
   tracer: ExecutionTracer;
   lease?: AgentTaskLeaseOwnership;
   signal?: AbortSignal;
+  reserveToolCall?: (input: {
+    toolName: string;
+    stepKey: string;
+    attempt: number;
+  }) => Promise<void>;
 };
 
 export type ToolRisk = "low" | "medium" | "high";

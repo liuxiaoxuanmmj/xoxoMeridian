@@ -248,6 +248,33 @@
         "真实 PostgreSQL 恢复测试证明已完成 Plan 与读取 Tool 不会重跑，审批可继续，Final/副作用不会重复提交"
       ],
       "evidence": "prisma/migrations/20260831083000_add_agent_steps 新增 AgentStep kind/status、taskId+stepKey 唯一约束、attempt/时间/checkpoint 字段及 AgentTask.currentStepKey；agent/durable-step.ts 统一 Plan、全部读取/写入 Tool、审批与 Final 的开始/完成/失败/恢复语义，Runtime 重启后校验并复用 completed output，最终消息、Final Step 与任务终态原子提交；tests/integration/agent-durable-step.integration.test.ts 通过 2 项真实 PostgreSQL 测试，证明 Plan/read Tool 不重跑、审批继续、Final 与删除副作用不重复；全部 PostgreSQL 集成测试 6 文件/14 项通过；npm run check:quick 通过 56 文件/338 项 Vitest；最终 sudo -n -g docker -u dadalv npm run check:full 退出 0，生产构建、覆盖率、14 项集成与 9 项 Playwright E2E 全部通过"
+    },
+    {
+      "id": "feat-020",
+      "name": "实现持久化 Runtime Budget",
+      "description": "为每个 Agent Run 持久化高默认值预算与累计用量，并在 Runtime 中强制 turn、Tool 调用、总时限、token 和 cost 上限及稳定超限终态。",
+      "status": "done",
+      "dependencies": ["feat-019"],
+      "acceptanceCriteria": [
+        "AgentTask 持久化不可变的 maxTurns、maxToolCalls、deadlineAt、maxTokens、maxCost 与累计 turns、Tool calls、tokens、cost，默认值足够高且可由受校验的配置覆盖",
+        "Runtime 在 Model、Tool 与 Final 边界原子预留或累计预算；任一上限耗尽时停止后续执行并以稳定 limit_exceeded 终态和可识别原因完成，旧 attempt 或重复恢复不能覆盖该终态",
+        "行为测试与真实 PostgreSQL 测试覆盖各类预算耗尽、Crash Recovery 后继续计数、并发/终态幂等，并通过风险匹配门禁"
+      ],
+      "evidence": "prisma/migrations/20260831111500_add_agent_runtime_budget 新增不可变预算、使用量、deadline、limitReason 与 LLM turn reservation/cost 字段；agent/runtime-budget.ts 在 Model 调用前原子预留 token/cost、每次 Tool retry attempt 原子计数，并在恢复后保守保留未结算调用，agent-runtime.ts/execution-tracer.ts 以不可 claim 的 limit_exceeded 终态原子结束；tests/agent/runtime-budget.test.ts 通过高默认值、估算与稳定提示测试，tests/integration/agent-runtime-budget.integration.test.ts 通过 3 项真实 PostgreSQL 测试，覆盖 turns/Tool attempt、token/cost、Crash Recovery 与终态幂等；npm run check:quick 通过 57 文件/341 项 Vitest；sudo -n -g docker -u dadalv npm run check:full 退出 0，生产构建、覆盖率、7 文件/17 项集成与 9 项 Playwright E2E 全部通过"
+    },
+    {
+      "id": "feat-021",
+      "name": "收紧生产 Agent 执行边界与预算部署配置",
+      "description": "禁止生产 Web 路由直接执行 Agent Runtime，并让 Docker Compose 实际传递全部 Runtime Budget 配置。",
+      "status": "done",
+      "dependencies": ["feat-020"],
+      "acceptanceCriteria": [
+        "当 AGENT_TASK_INLINE_RUN=false 时，手动运行 API 不导入或调用 Runtime，并返回任务将由 Worker 消费的明确响应",
+        "仅本地 inline 模式允许手动执行，且该执行入口具有按用户/IP 限流",
+        "Docker Compose 将全部 AGENT_MAX_*、completion token 和价格快照变量传给 Web 与 Agent Worker",
+        "Route Handler 回归测试与快速门禁通过"
+      ],
+      "evidence": "app/api/agent/tasks/[taskId]/run/route.ts 在 AGENT_TASK_INLINE_RUN=false 时返回 202 queued 且不导入 Runtime；inline 模式按用户/IP 10 次/分钟限流。tests/server/agent-task-run-route.test.ts 覆盖生产排队、inline 执行与限流拒绝；docker compose config 使用覆盖值验证 web、agent-worker 与 init 均收到八项预算变量；./init.sh 与 npm run check:quick 通过，58 文件/344 项 Vitest。"
     }
   ]
 }

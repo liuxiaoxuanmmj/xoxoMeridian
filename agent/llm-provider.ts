@@ -152,6 +152,12 @@ function createOpenAICompatibleProvider(config: {
     async plan(request: LLMPlanRequest): Promise<LLMPlanResult> {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), config.timeoutMs);
+      const forwardAbort = () => controller.abort(request.signal?.reason);
+      if (request.signal?.aborted) {
+        forwardAbort();
+      } else {
+        request.signal?.addEventListener("abort", forwardAbort, { once: true });
+      }
 
       const personaSegment = request.agentSystemPrompt?.trim()
         ? request.agentSystemPrompt.trim()
@@ -176,6 +182,7 @@ function createOpenAICompatibleProvider(config: {
           body: JSON.stringify({
             model: config.model,
             temperature: 0.2,
+            max_completion_tokens: request.maxCompletionTokens,
             response_format: { type: "json_object" },
             messages: [
               {
@@ -274,8 +281,14 @@ function createOpenAICompatibleProvider(config: {
             totalTokens: payload.usage?.total_tokens
           }
         };
+      } catch (error) {
+        if (request.signal?.aborted && request.signal.reason !== undefined) {
+          throw request.signal.reason;
+        }
+        throw error;
       } finally {
         clearTimeout(timeout);
+        request.signal?.removeEventListener("abort", forwardAbort);
       }
     }
   };

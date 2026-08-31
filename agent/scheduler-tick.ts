@@ -2,6 +2,7 @@ import { CronExpressionParser } from "cron-parser";
 import type { Prisma, ScheduledJob } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
+import { getAgentRuntimeBudgetCreateData } from "@/agent/runtime-budget";
 
 const MISSED_WINDOW_MS = 60 * 60 * 1000;
 const MAX_FAIL_COUNT = 3;
@@ -127,6 +128,7 @@ async function dispatchScheduledJobTask(
     data: {
       roomId: job.roomId,
       agentId: job.agentId,
+      ...getAgentRuntimeBudgetCreateData(),
       input: {
         rawContent: action,
         normalizedContent: prompt,

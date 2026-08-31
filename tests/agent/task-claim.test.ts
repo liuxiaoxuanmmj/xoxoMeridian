@@ -17,7 +17,11 @@ const mocks = vi.hoisted(() => ({
   beginAgentStep: vi.fn(),
   completeAgentStep: vi.fn(),
   executeDurableToolStep: vi.fn(),
-  tracerEvent: vi.fn()
+  tracerEvent: vi.fn(),
+  budgetAssertWithinDeadline: vi.fn(),
+  budgetAssertCanFinalize: vi.fn(),
+  budgetDispose: vi.fn(),
+  budgetReserveToolCall: vi.fn()
 }));
 
 vi.mock("@/agent/durable-step", () => ({
@@ -40,6 +44,19 @@ vi.mock("@/agent/task-claim", () => ({
 
 vi.mock("@/agent/llm-provider", () => ({
   createLLMProvider: mocks.createLLMProvider
+}));
+
+vi.mock("@/agent/runtime-budget", () => ({
+  AgentRuntimeBudget: class {},
+  AgentRuntimeBudgetExceededError: class extends Error {},
+  getBudgetLimitMessage: () => "limit reached",
+  openAgentRuntimeBudget: vi.fn(async () => ({
+    signal: new AbortController().signal,
+    assertWithinDeadline: mocks.budgetAssertWithinDeadline,
+    assertCanFinalize: mocks.budgetAssertCanFinalize,
+    reserveToolCall: mocks.budgetReserveToolCall,
+    dispose: mocks.budgetDispose
+  }))
 }));
 
 vi.mock("@/agent/context-builder", () => ({

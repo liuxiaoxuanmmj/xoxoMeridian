@@ -6,6 +6,7 @@ import { createHumanMessage } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
 import { agentDispatchSchema, readJsonBody } from "@/lib/validation";
+import { getAgentRuntimeBudgetCreateData } from "@/agent/runtime-budget";
 
 export async function POST(request: Request) {
   try {
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
         agentId: agent.id,
         sourceMessageId,
         requestedById: user.id,
+        ...getAgentRuntimeBudgetCreateData(),
         input: {
           rawContent: sourceMessage.content,
           normalizedContent: sourceMessage.content,

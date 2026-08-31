@@ -13,6 +13,12 @@ import { createLLMProvider } from "@/agent/llm-provider";
 import { buildClarifyPlan, repairPlan } from "@/agent/plan-repair";
 import { formatIssuesForLLM, validatePlan } from "@/agent/plan-validator";
 import {
+  AgentRuntimeBudget,
+  AgentRuntimeBudgetExceededError,
+  getBudgetLimitMessage,
+  openAgentRuntimeBudget
+} from "@/agent/runtime-budget";
+import {
   SCHEDULER_BLOCKED_TOOLS,
   TRIGGER_SCHEDULED_JOB,
 } from "@/agent/scheduler-tick";
@@ -24,7 +30,14 @@ import {
 } from "@/agent/task-claim";
 import { ToolApprovalRequiredError } from "@/agent/tool-approval";
 import { createToolRegistry } from "@/agent/tool-registry";
-import type { AgentPlan, AgentTaskLeaseOwnership, ToolResult } from "@/agent/types";
+import type {
+  AgentPlan,
+  AgentTaskLeaseOwnership,
+  LLMPlanRequest,
+  LLMPlanResult,
+  LLMProvider,
+  ToolResult
+} from "@/agent/types";
 import { appendChatLog } from "@/lib/chat-log-file";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -70,11 +83,20 @@ export async function runAgentTask(
     intervalMs: options.heartbeatIntervalMs ?? env.AGENT_TASK_HEARTBEAT_MS
   });
   const tracer = new ExecutionTracer(prisma, task.id, task.roomId, lease);
+  let budget: AgentRuntimeBudget | null = null;
 
   try {
     await tracer.markRunning(claim.claimedAt);
+    budget = await openAgentRuntimeBudget({
+      taskId: task.id,
+      roomId: task.roomId,
+      lease
+    });
+    const runtimeBudget = budget;
+    runtimeBudget.assertWithinDeadline();
     const runtimeContext = await buildAgentContext(task.roomId);
     await heartbeat.assertActive();
+    runtimeBudget.assertWithinDeadline();
     await tracer.event("agent.context.built", {
       recentMessageCount: runtimeContext.recentMessages.length,
       memoCount: runtimeContext.memos.length
@@ -125,91 +147,36 @@ export async function runAgentTask(
       }
     } else {
       const provider = createLLMProvider();
-      const llmStartedAt = Date.now();
       await tracer.event("agent.llm.started", {
         provider: provider.name,
         model: provider.model,
         availableTools: availableToolNames
       });
-
-      try {
-        const planResult = await provider.plan({
+      const planRequest: LLMPlanRequest = {
+        prompt,
+        roomContext: runtimeContext.roomContext,
+        availableTools,
+        agentSystemPrompt: task.agent.systemPrompt
+      };
+      const planResult = await runBudgetedPlanCall({
+        budget: runtimeBudget,
+        provider,
+        request: planRequest,
+        inputSummary: prompt.slice(0, 240),
+        requestPayload: {
           prompt,
           roomContext: runtimeContext.roomContext,
-          availableTools,
-          agentSystemPrompt: task.agent.systemPrompt
-        });
-
-        await heartbeat.assertActive();
-        plan = planResult;
-        await prisma.lLMCall.create({
-          data: {
-            taskId: task.id,
-            provider: provider.name,
-            model: provider.model,
-            inputSummary: prompt.slice(0, 240),
-            requestPayload: {
-              prompt,
-              roomContext: runtimeContext.roomContext,
-              availableTools: availableToolNames
-            } as unknown as Prisma.InputJsonObject,
-            responsePayload: planResult.rawResponse ?? planResult,
-            promptTokens: planResult.usage?.promptTokens,
-            completionTokens: planResult.usage?.completionTokens,
-            totalTokens: planResult.usage?.totalTokens,
-            status: "completed",
-            durationMs: Date.now() - llmStartedAt
-          }
-        });
-        await appendChatLog(task.roomId, {
-          kind: "llm.call",
-          taskId: task.id,
-          provider: provider.name,
-          model: provider.model,
-          status: "completed",
-          durationMs: Date.now() - llmStartedAt,
-          requestPayload: {
-            prompt,
-            roomContext: runtimeContext.roomContext,
-            availableTools: availableToolNames
-          },
-          responsePayload: planResult.rawResponse ?? planResult,
-          tokens: {
-            prompt: planResult.usage?.promptTokens,
-            completion: planResult.usage?.completionTokens,
-            total: planResult.usage?.totalTokens
-          }
-        });
-        await tracer.event("agent.llm.completed", {
-          intent: plan.intent,
-          requiredTools: plan.requiredTools
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "LLM planning failed";
-        await prisma.lLMCall.create({
-          data: {
-            taskId: task.id,
-            provider: provider.name,
-            model: provider.model,
-            inputSummary: prompt.slice(0, 240),
-            requestPayload: { prompt, availableTools: availableToolNames } as unknown as Prisma.InputJsonObject,
-            status: "failed",
-            error: message,
-            durationMs: Date.now() - llmStartedAt
-          }
-        });
-        await appendChatLog(task.roomId, {
-          kind: "llm.call",
-          taskId: task.id,
-          provider: provider.name,
-          model: provider.model,
-          status: "failed",
-          durationMs: Date.now() - llmStartedAt,
-          requestPayload: { prompt, availableTools: availableToolNames },
-          error: message
-        });
-        throw error;
-      }
+          availableTools: availableToolNames
+        },
+        roomId: task.roomId,
+        taskId: task.id,
+        assertLease: heartbeat.assertActive
+      });
+      plan = planResult;
+      await tracer.event("agent.llm.completed", {
+        intent: plan.intent,
+        requiredTools: plan.requiredTools
+      });
 
       // --- Plan consistency check -------------------------------------------
       // The LLM sometimes produces a final_response_text that does not match its
@@ -225,9 +192,8 @@ export async function runAgentTask(
           issues: planIssues
         });
 
-        const retryStartedAt = Date.now();
         try {
-          const retryResult = await provider.plan({
+          const retryRequest: LLMPlanRequest = {
             prompt,
             roomContext: runtimeContext.roomContext,
             availableTools,
@@ -236,38 +202,12 @@ export async function runAgentTask(
               previousPlan: plan,
               issues: formatIssuesForLLM(planIssues)
             }
-          });
-          await heartbeat.assertActive();
-          await prisma.lLMCall.create({
-            data: {
-              taskId: task.id,
-              provider: provider.name,
-              model: provider.model,
-              inputSummary: `[retry] ${prompt.slice(0, 230)}`,
-              requestPayload: {
-                prompt,
-                roomContext: runtimeContext.roomContext,
-                availableTools: availableToolNames,
-                validationFeedback: {
-                  previousPlan: plan,
-                  issues: planIssues
-                }
-              } as unknown as Prisma.InputJsonObject,
-              responsePayload: retryResult.rawResponse ?? retryResult,
-              promptTokens: retryResult.usage?.promptTokens,
-              completionTokens: retryResult.usage?.completionTokens,
-              totalTokens: retryResult.usage?.totalTokens,
-              status: "completed",
-              durationMs: Date.now() - retryStartedAt
-            }
-          });
-          await appendChatLog(task.roomId, {
-            kind: "llm.call",
-            taskId: task.id,
-            provider: provider.name,
-            model: provider.model,
-            status: "completed",
-            durationMs: Date.now() - retryStartedAt,
+          };
+          const retryResult = await runBudgetedPlanCall({
+            budget: runtimeBudget,
+            provider,
+            request: retryRequest,
+            inputSummary: `[retry] ${prompt.slice(0, 230)}`,
             requestPayload: {
               prompt,
               roomContext: runtimeContext.roomContext,
@@ -277,12 +217,9 @@ export async function runAgentTask(
                 issues: planIssues
               }
             },
-            responsePayload: retryResult.rawResponse ?? retryResult,
-            tokens: {
-              prompt: retryResult.usage?.promptTokens,
-              completion: retryResult.usage?.completionTokens,
-              total: retryResult.usage?.totalTokens
-            }
+            roomId: task.roomId,
+            taskId: task.id,
+            assertLease: heartbeat.assertActive
           });
           plan = retryResult;
           await tracer.event("agent.plan.validation.retry.completed", {
@@ -290,6 +227,7 @@ export async function runAgentTask(
             requiredTools: plan.requiredTools
           });
         } catch (error) {
+          if (error instanceof AgentRuntimeBudgetExceededError) throw error;
           const message = error instanceof Error ? error.message : "LLM retry failed";
           await tracer.event("agent.plan.validation.retry.failed", { error: message });
         }
@@ -348,7 +286,9 @@ export async function runAgentTask(
             requestedById: task.requestedById,
             runtimeContext,
             tracer,
-            lease
+            lease,
+            signal: runtimeBudget.signal,
+            reserveToolCall: (reservation) => runtimeBudget.reserveToolCall(reservation)
           }
         });
         toolResults.push(output);
@@ -356,6 +296,7 @@ export async function runAgentTask(
     }
 
     await heartbeat.assertActive();
+    await runtimeBudget.assertCanFinalize();
     const content = renderAgentReply(plan, toolResults);
     const result = { plan, toolResults };
     const finalCheckpoint = await beginAgentStep({
@@ -415,6 +356,44 @@ export async function runAgentTask(
       }
     });
   } catch (error) {
+    if (error instanceof AgentRuntimeBudgetExceededError) {
+      let finalMessage;
+      try {
+        const content = getBudgetLimitMessage(error.reason);
+        finalMessage = await tracer.limitExceededWithMessage(
+          {
+            roomId: task.roomId,
+            senderType: "agent",
+            senderAgentId: task.agentId,
+            content,
+            targetType: "all",
+            status: "failed",
+            metadata: {
+              taskId: task.id,
+              limitReason: error.reason,
+              details: error.details
+            } as Prisma.InputJsonObject
+          },
+          error.reason,
+          error.details
+        );
+      } catch (failureError) {
+        if (failureError instanceof AgentTaskLeaseLostError) {
+          return findAgentTaskWithTrace(task.id);
+        }
+        throw failureError;
+      }
+      await appendChatLog(task.roomId, {
+        kind: "message.agent",
+        messageId: finalMessage.id,
+        senderAgentId: task.agentId,
+        taskId: task.id,
+        status: "failed",
+        content: finalMessage.content,
+        createdAt: finalMessage.createdAt
+      });
+      return findAgentTaskWithTrace(task.id);
+    }
     if (error instanceof ToolApprovalRequiredError) {
       return prisma.agentTask.findUniqueOrThrow({
         where: { id: task.id },
@@ -495,8 +474,120 @@ export async function runAgentTask(
       }
     });
   } finally {
+    budget?.dispose();
     await heartbeat.stop();
   }
+}
+
+async function runBudgetedPlanCall(input: {
+  budget: AgentRuntimeBudget;
+  provider: LLMProvider;
+  request: LLMPlanRequest;
+  inputSummary: string;
+  requestPayload: unknown;
+  roomId: string;
+  taskId: string;
+  assertLease: () => Promise<void>;
+}): Promise<LLMPlanResult> {
+  const reservation = await input.budget.reserveModelTurn({
+    provider: input.provider.name,
+    model: input.provider.model,
+    inputSummary: input.inputSummary,
+    request: input.request,
+    requestPayload: input.requestPayload
+  });
+  const startedAt = Date.now();
+  let result: LLMPlanResult | null = null;
+  let completedLogAttempted = false;
+  try {
+    result = await input.provider.plan({
+      ...input.request,
+      maxCompletionTokens: reservation.maxCompletionTokens,
+      signal: input.budget.signal
+    });
+    await input.assertLease();
+    await input.budget.completeModelTurn(
+      reservation,
+      result,
+      Date.now() - startedAt
+    );
+    completedLogAttempted = true;
+    await appendCompletedLLMLog(input, result, startedAt);
+    return result;
+  } catch (error) {
+    if (!(error instanceof AgentTaskLeaseLostError)) {
+      try {
+        await input.budget.failModelTurn(
+          reservation,
+          error,
+          Date.now() - startedAt
+        );
+      } catch (traceError) {
+        if (traceError instanceof AgentTaskLeaseLostError) throw traceError;
+        console.error("[agent-runtime] failed to persist budgeted LLM failure", traceError);
+      }
+    }
+    if (result) {
+      if (!completedLogAttempted) {
+        completedLogAttempted = true;
+        await appendCompletedLLMLog(input, result, startedAt);
+      }
+    } else {
+      const message = error instanceof Error ? error.message : "LLM planning failed";
+      await appendChatLog(input.roomId, {
+        kind: "llm.call",
+        taskId: input.taskId,
+        provider: input.provider.name,
+        model: input.provider.model,
+        status: "failed",
+        durationMs: Date.now() - startedAt,
+        requestPayload: input.requestPayload,
+        error: message
+      });
+    }
+    throw error;
+  }
+}
+
+async function appendCompletedLLMLog(
+  input: {
+    provider: LLMProvider;
+    requestPayload: unknown;
+    roomId: string;
+    taskId: string;
+  },
+  result: LLMPlanResult,
+  startedAt: number
+) {
+  await appendChatLog(input.roomId, {
+    kind: "llm.call",
+    taskId: input.taskId,
+    provider: input.provider.name,
+    model: input.provider.model,
+    status: "completed",
+    durationMs: Date.now() - startedAt,
+    requestPayload: input.requestPayload,
+    responsePayload: result.rawResponse ?? result,
+    tokens: {
+      prompt: result.usage?.promptTokens,
+      completion: result.usage?.completionTokens,
+      total: result.usage?.totalTokens
+    }
+  });
+}
+
+function findAgentTaskWithTrace(taskId: string) {
+  return prisma.agentTask.findUniqueOrThrow({
+    where: { id: taskId },
+    include: {
+      steps: true,
+      toolCalls: true,
+      llmCalls: true,
+      finalMessage: true,
+      eventLogs: true,
+      toolApprovals: true
+    }
+  });
 }
 
 export function readPersistedAgentPlan(value: unknown): AgentPlan | null {

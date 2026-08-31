@@ -2,7 +2,60 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-08-31。feat-016 至 feat-019 已严格按一次一个 feature 的顺序完成；Agent Runtime 审查中的四项 P1——Worker Crash Recovery、统一 Tool deadline/Retry、Zod 输入输出契约与通用 Durable Step——均已关闭，当前没有 `in-progress` feature。复评分为 88/100；分数属于 L3，但 Runtime Budget 硬门槛缺失，最终等级为 L2。
+Last Updated：2026-08-31。feat-021「收紧生产 Agent 执行边界与预算部署配置」已完成。重新审查发现的生产 Web 直跑 P1 已关闭；Docker Compose Runtime Budget 变量遗漏 P2 已关闭。当前没有 `in-progress` feature；Trace 隐私治理、Tool 隔离/HITL Edit 与未来外部副作用幂等仍是独立 P2。
+
+## 2026-08-31 — feat-021 收紧生产 Agent 执行边界与预算部署配置
+
+### 已完成
+
+- `POST /api/agent/tasks/[taskId]/run` 在 `AGENT_TASK_INLINE_RUN=false` 时只返回 `202 queued`，不会导入或调用 `runAgentTask`；Docker Compose 生产环境因此只能由 `agent-worker` 消费任务。
+- 手动执行仅在明确启用 inline 的本地开发/测试模式可用，并在执行前按用户与 IP 使用 10 次/分钟限流，避免该调试入口绕过入口保护后无界触发。
+- Compose 的共享应用环境新增全部 Runtime Budget 配置：turn、Tool 调用、总时限、token、cost、completion token 与输入/输出价格快照；`web`、`agent-worker` 与 `init` 都继承该环境。
+- 新增 Route Handler 行为测试，覆盖生产只排队、inline 执行、限流拒绝；测试先发现并修复了新限流代码对旧 `_request` 参数名的引用错误。
+
+### 验证证据
+
+- `./init.sh`：修改前基线通过，57 个文件/341 项 Vitest。
+- `npm run test:unit -- tests/server/agent-task-run-route.test.ts`：1 个文件/3 项通过。
+- `env ... docker compose config --quiet`：Compose 配置有效；用无敏感测试值渲染确认 web、agent-worker 与 init 均接收 8 项 Runtime Budget 覆盖变量。
+- `npm run check:quick`：TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
+
+### 风险与后续
+
+- 当前审查未发现开放 P0，因此本 feature 没有 P0 代码改动。
+- 生产路径的 Worker 专属执行边界已恢复；inline 限流是进程内保护，仅面向本地开发/测试，生产仍应保持 `AGENT_TASK_INLINE_RUN=false`。
+- Trace 隐私治理、Tool 隔离与未来外部副作用的供应商幂等/Outbox 协议不属于本 feature，必须单独登记。
+
+### 下一步
+
+登记并单独启动 Trace 隐私治理 P2 feature，先实现字段级脱敏、敏感数据分级、保留/删除策略、Run 总耗时与全局顺序号。
+
+## 2026-08-31 — feat-020 持久化 Runtime Budget 与 L3 Gate
+
+### 已完成
+
+- 新增时间戳迁移 `20260831111500_add_agent_runtime_budget`：`AgentTask` 冻结 `maxTurns`、`maxToolCalls`、`maxRuntimeMs`、`maxTokens`、`maxCostMicros`、单次完成 token 上限和输入/输出价格快照，并累计 turns、Tool attempts、tokens 与 cost；新增 `deadlineAt`、`limitReason` 和不可重新 claim 的 `limit_exceeded` 终态。`LLMCall` 以 `(taskId, turnIndex)` 唯一记录 reservation、实际用量与 cost。
+- 新增 `agent/runtime-budget.ts`。Run 首次执行才初始化 deadline；Model 在调用供应商前于 lease 栅栏事务内预留 turn、token/cost，未知用量或崩溃遗留的 running call 保持保守 reservation；成功后按供应商 usage 与每 Run 价格快照结算。Tool 的每次 retry attempt 在执行前原子累计，避免重试绕开 `maxToolCalls`。
+- Runtime 将同一 deadline `AbortSignal` 传给 LLM 与 Tool，并在 Plan、Tool 与 Final 边界检查预算。任一上限耗尽由 tracer 以稳定中文提示、明确 `limitReason`、失败 final step 和 `agent.task.limit_exceeded` Event 原子提交，重复恢复或失权 attempt 不能覆盖该终态。
+- 环境配置经 Zod 校验，采用避免过早触发终态的高默认值：16 turns、64 Tool attempts、24 小时、1,000,000 tokens 和 20 USD；创建消息、Scheduler 和 dispatch API 均在创建任务时冻结配置。Chat 状态类型与徽章同步识别 `limit_exceeded`。
+- 使用 `agent-runtime-review` Skill 复审：Runtime Budget 从 0/8 提升到 8/8，总分由 88 提升到 97；L3 预算门槛通过，最终等级由 L2 提升到 L3。
+
+### 验证证据
+
+- `./init.sh`：feat-020 修改前基线通过，56 个文件/338 项 Vitest。
+- `npm run test:unit -- tests/agent/runtime-budget.test.ts tests/agent/task-claim.test.ts tests/agent/agent-runtime.test.ts tests/agent/tool-registry-reliability.test.ts`：4 个文件/24 项测试通过。
+- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-runtime-budget.integration.test.ts`：1 个文件/3 项真实 PostgreSQL 测试通过，覆盖用量累计、Crash Recovery、token/cost 结算、deadline 终态与不可重复执行。
+- `npm run check:quick`：TypeScript、ESLint、57 个文件/341 项 Vitest 全部通过。
+- `sudo -n -g docker -u dadalv npm run check:full`：退出 0；Prisma Client 生成与 Next.js 16.3.3 生产构建通过，覆盖率 statements 41.77%、branches 35.90%、functions 46.21%、lines 42.44%，7 个文件/17 项 PostgreSQL 集成测试及 9 项 Playwright E2E 全部通过。
+
+### 风险与后续
+
+- 预算累计为 crash-safe 而保守：供应商未返回 usage 或 Worker 在调用后崩溃时 reservation 不释放，可能较早耗尽预算，但不会低估消耗并继续执行。
+- 本 feature 只关闭 Runtime Budget；Trace 仍需字段脱敏、敏感数据分级、保留/删除、全局顺序号和 Run 总耗时。Tool 仍无独立资源沙箱与 HITL Edit；未来邮件、支付、外部发布等副作用仍需供应商幂等键或 Outbox/relay。
+
+### 下一步
+
+登记并单独启动 Trace 隐私治理 P2 feature，先实现字段级脱敏、敏感数据分级、保留/删除策略、Run 总耗时与全局顺序号；不要与 Tool 隔离或外部副作用协议合并。
 
 ## 2026-08-31 — feat-019 通用 Durable Step 恢复模型与 P1 汇总复审
 

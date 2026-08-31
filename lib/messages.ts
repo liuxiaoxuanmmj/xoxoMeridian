@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { detectAgentTarget } from "@/lib/agent-detection";
 import { appendChatLog } from "@/lib/chat-log-file";
+import { getAgentRuntimeBudgetCreateData } from "@/agent/runtime-budget";
 
 const messageInclude = {
   sender: { select: { id: true, displayName: true, avatarLabel: true } },
@@ -45,6 +46,7 @@ export async function createHumanMessage(input: {
           sourceMessageId: message.id,
           requestedById: input.userId,
           status: "pending",
+          ...getAgentRuntimeBudgetCreateData(),
           input: {
             rawContent: input.content,
             normalizedContent: detection.normalizedContent,

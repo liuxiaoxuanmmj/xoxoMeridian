@@ -10,6 +10,7 @@ import {
 } from "@/agent/task-claim";
 import { ToolApprovalRequiredError } from "@/agent/tool-approval";
 import { ToolExecutionError } from "@/agent/tool-errors";
+import { AgentRuntimeBudgetExceededError } from "@/agent/runtime-budget";
 import type { ToolRegistry } from "@/agent/tool-registry";
 import type {
   AgentTaskLeaseOwnership,
@@ -167,9 +168,11 @@ export async function failAgentStep(input: {
 }) {
   if (input.error instanceof AgentTaskLeaseLostError) throw input.error;
   const error = input.error instanceof Error ? input.error.message : "Agent step failed.";
-  const errorCategory = input.error instanceof ToolExecutionError
-    ? input.error.category
-    : "runtime";
+  const errorCategory = input.error instanceof AgentRuntimeBudgetExceededError
+    ? "limit"
+    : input.error instanceof ToolExecutionError
+      ? input.error.category
+      : "runtime";
 
   return withAgentTaskLease(input.taskId, input.lease, async (tx) => {
     const updated = await tx.agentStep.updateMany({
