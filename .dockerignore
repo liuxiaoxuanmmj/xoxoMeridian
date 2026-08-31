@@ -22,3 +22,4 @@ tsconfig.tsbuildinfo
 .DS_Store
 .eslintrc.json
 vitest.config.ts
+vitest.integration.config.ts
