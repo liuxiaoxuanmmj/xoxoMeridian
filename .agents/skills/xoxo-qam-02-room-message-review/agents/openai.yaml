@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-02 房间消息质量审查"
+  short_description: "审查房间授权、消息一致性、SSE 与聊天状态质量"
+  default_prompt: "使用 $xoxo-qam-02-room-message-review 审查 QAM-02 当前实现并更新持续质量报告。"

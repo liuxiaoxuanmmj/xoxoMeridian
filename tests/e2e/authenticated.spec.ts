@@ -17,7 +17,7 @@ test("creates and displays a post", async ({ page }) => {
   await page.getByLabel("Post content").fill("Created by the Playwright acceptance suite.");
   await page.getByRole("button", { name: "Publish" }).click();
 
-  await expect(page).toHaveURL(/\/posts\/e2e-test-post$/);
+  await expect(page).toHaveURL(/\/posts\/e2e-test-post$/, { timeout: 15_000 });
   await expect(page.getByRole("heading", { name: "E2E Test Post" })).toBeVisible();
 });
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-07 专注学习质量审查"
+  short_description: "审查 Focus 状态机、统计、presence 与 timer 生命周期"
+  default_prompt: "使用 $xoxo-qam-07-study-review 审查 QAM-07 当前实现并更新持续质量报告。"

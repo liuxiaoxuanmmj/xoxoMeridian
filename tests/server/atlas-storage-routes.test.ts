@@ -14,7 +14,9 @@ const mockPrisma = {
     count: vi.fn(),
     create: vi.fn(),
     findMany: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
+    updateMany: vi.fn(),
     delete: vi.fn(),
     deleteMany: vi.fn(),
   },
@@ -29,6 +31,7 @@ vi.mock("@/lib/auth", () => ({
 }));
 
 vi.mock("@/lib/atlas-board", () => ({
+  ATLAS_GLOBAL_BOARD_ID: "atlas-global-board",
   getOrCreateBoard: vi.fn(async () => mockBoard),
 }));
 
@@ -62,7 +65,9 @@ beforeEach(() => {
     ...data,
   }));
   mockPrisma.atlasElement.findMany.mockResolvedValue([]);
+  mockPrisma.atlasElement.findFirst.mockResolvedValue(null);
   mockPrisma.atlasElement.findUnique.mockResolvedValue(null);
+  mockPrisma.atlasElement.updateMany.mockResolvedValue({ count: 0 });
   mockPrisma.atlasElement.delete.mockResolvedValue({});
   mockPrisma.atlasElement.deleteMany.mockResolvedValue({ count: 0 });
   mockPrisma.atlasConnection.deleteMany.mockResolvedValue({ count: 0 });
@@ -162,14 +167,14 @@ describe("atlas upload storage routes", () => {
   });
 
   it("deletes an element record before best-effort storage cleanup", async () => {
-    mockPrisma.atlasElement.findUnique.mockResolvedValue({
+    mockPrisma.atlasElement.findFirst.mockResolvedValueOnce({
       id: "element-1",
       type: "photo",
       imageUrl: "/api/atlas/uploads/atlas%2Fphoto.jpg",
     });
-    mockPrisma.atlasElement.delete.mockImplementationOnce(async () => {
+    mockPrisma.atlasElement.deleteMany.mockImplementationOnce(async () => {
       expect(mockStorage.delete).not.toHaveBeenCalled();
-      return { id: "element-1" };
+      return { count: 1 };
     });
     const { DELETE } = await import("@/app/api/atlas/elements/[elementId]/route");
 
@@ -179,7 +184,13 @@ describe("atlas upload storage routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockPrisma.atlasElement.delete).toHaveBeenCalledWith({ where: { id: "element-1" } });
+    expect(mockPrisma.atlasElement.deleteMany).toHaveBeenCalledWith({
+      where: {
+        id: "element-1",
+        boardId: "atlas-global-board",
+        postId: null,
+      },
+    });
     expect(mockStorage.delete).toHaveBeenCalledTimes(1);
     expect(mockStorage.delete).toHaveBeenCalledWith("atlas/photo.jpg");
   });

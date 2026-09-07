@@ -2,79 +2,55 @@
 
 ## Last Updated
 
-2026-08-31
+2026-09-07
 
 ## Current Objective（当前目标）
 
-feat-023「固化会话退出检查清单」已完成文档改动，但因 `npm run check` 的生产构建失败处于 `blocked`；当前没有 `in-progress` feature。`AGENTS.md` 已将构建、测试、进度、临时工件和启动路径五项全部满足定义为“完成”或“清洁退出”的前提，并要求失败原文进入交接。新增 `npm run check:compose-config`：只用临时非敏感环境变量渲染并校验隔离 Compose 配置，不访问 Docker daemon；新增 `npm run test:compose-smoke`：实际构建 production Web/Worker 镜像，在随机 Compose project 中验证 init、Web healthcheck/standalone、独立 Worker 消费 AgentTask，并清理所有测试资源。
+feat-030「修复密码重置 token 存储与原子消费」已完成，当前没有 `in-progress` 或 `blocked` feature。feat-001 至 feat-030 全部为 `done`。
 
-该 smoke 补足了 `check:full` 的部署缺口：后者仍是应用级门禁，使用 Testcontainer 与本机 `next dev`；新命令专门验证 Dockerfile production runner、init 容器、Compose healthcheck 及 agent-worker 协作，两者互补且不互相替代。
-
-此前 `docs/optimization/agent-runtime-review.md` 中原有四项 P1 与最高优先级 Runtime Budget P2 已严格按一次一个 feature 的顺序完成：
-
-- feat-016：AgentTask lease、heartbeat 与 Worker Crash Recovery。
-- feat-017：全部 Tool 的统一 deadline、AbortSignal、错误分类与受控 Retry。
-- feat-018：13 个内置 Tool 的同源 Zod input/output 运行时契约。
-- feat-019：覆盖 Plan、全部 Tool、审批与 Final 的通用 Durable Step 恢复模型。
-- feat-020：持久化 Runtime Budget、crash-safe 用量累计与 `limit_exceeded` 终态。
-
-feat-016 至 feat-022 均为 `done`，当前没有 `in-progress` feature。先前的 97/100 结论不可直接采信；本轮修复前的独立源码审查为 92/100、最终 L3，修复完成后尚未重新进行完整评分。
+密码恢复数据库现在只保存带版本契约的不可逆 digest；未过期 token 的单次 claim、密码更新和全部 Session 失效在同一 PostgreSQL 事务内完成。QAM-01-002/003 已解决，QAM-01 当前为 76 分、Score L2、Gate/Final L1；组合开放问题为 P1×13/P2×31，模块平均分为 71.1。
 
 ## Files Changed（当前未提交改动范围）
 
-- feat-016：Prisma schema 与迁移 `20260830215000_add_agent_task_lease`；`agent/task-claim.ts`、Dispatcher、Worker、Runtime、Tracer、审批栅栏、lease 环境配置与 Worker 强制退出测试。
-- feat-017：`agent/tool-errors.ts`、`agent/tool-registry.ts`、Tool 类型与全部内置 Tool；统一 deadline/AbortSignal/Retry，新增可靠性单元测试和数据库超时回滚测试。
-- feat-018：`agent/tool-contracts.ts`、Registry 与内置 Tool；统一 Zod input/output 校验，新增无效输入、无效输出和数据库事务回滚测试。
-- feat-019：Prisma schema 与迁移 `20260831083000_add_agent_steps`、`agent/durable-step.ts`、Runtime、Tracer、审批与任务/Trace API；新增 Durable Step PostgreSQL 恢复测试，并让 `memory.recall.updatedAt` 使用可持久化的 ISO 字符串。
-- feat-020：Prisma schema 与迁移 `20260831111500_add_agent_runtime_budget`；`agent/runtime-budget.ts`、Runtime、LLM provider、Tool executor、Tracer、任务创建路径、环境 schema/示例与 Agent 状态 UI；新增 Runtime Budget 单元和真实 PostgreSQL 集成测试。
-- feat-021：`app/api/agent/tasks/[taskId]/run/route.ts` 的生产排队/inline 限流边界、`docker-compose.yml` 全量 Runtime Budget 环境透传，以及 `tests/server/agent-task-run-route.test.ts` 回归测试。
-- feat-022：新增 `docker-compose.smoke.yml`、`scripts/compose-deployment-smoke.ts`、两个 npm 命令和测试文档；测试 override 隔离 project、端口、卷、bind directory 与镜像，生产 `docker-compose.yml`、Dockerfile、镜像策略和 Worker healthcheck 均未修改。
-- feat-023：`AGENTS.md` 新增五项会话退出检查清单；`feature_list.json`、`progress.md` 和本文件登记结构性审查、验证与构建阻塞。
-- 审查与状态：`docs/optimization/agent-runtime-review.md`、`feature_list.json`、`progress.md` 和本文件。
-- 工作树中的其他既有用户改动均被保留，没有执行破坏性 Git 操作或覆盖无关内容。
+- `prisma/schema.prisma`、`prisma/migrations/20260907195500_secure_password_reset_tokens/migration.sql`：将 `PasswordResetToken.token` 改为 `tokenDigest`；迁移先使所有既有 bearer token 失效，再重命名列和唯一索引。
+- `lib/password-reset.ts`：集中版本化 SHA-256 digest，并以单一 Prisma transaction 完成 token 条件 claim、密码更新和 Session 删除；创建时只返回原 token。
+- `app/api/auth/reset-password/route.ts`：保留请求校验和响应契约，把状态变更委托给原子领域服务。
+- `tests/integration/password-reset-security.integration.test.ts`：4 项真实 PostgreSQL Route Handler 回归，覆盖 digest、并发单消费、Session 失效、过期/未知/重放拒绝和故障回滚。
+- `docs/optimization/qam-01-identity-quality-review.md`、`docs/optimization/module-quality-overview.md`：QAM-01-002/003 标为 resolved；QAM-01 更新为 76/Score L2/Gate L1/Final L1，总览同步为平均 71.1、P1×13/P2×31。
+- `feature_list.json`、`progress.md`、本文件：登记并完成 feat-030，记录验证例外、清理和唯一下一步。
+- `components/home/HomeTimelineBoard.tsx`、Atlas routes/helper、对应组件/集成/Node 测试，以及 QAM-06 报告是 feat-027/029 的既有未提交改动，全部保留。
+- `.node-version`、`.npmrc`、`scripts/run-node22.sh`、`init.sh`、`package.json`、`package-lock.json`、`AGENTS.md`、`docs/testing-standards.md` 是 Node/测试 Harness 的前序改动；本轮没有改变依赖版本。
+- `.agents/`、`PROJECT_VIEW.md`、其余 `docs/optimization/` 报告和 `tests/e2e/authenticated.spec.ts` 是更早 feature 的既有未提交改动，均未删除或恢复。
 
 ## Verification（最终验证）
 
-- `./init.sh`：feat-020 开始前基线通过，56 个文件/338 项 Vitest。
-- `npm run test:unit -- tests/agent/runtime-budget.test.ts tests/agent/task-claim.test.ts tests/agent/agent-runtime.test.ts tests/agent/tool-registry-reliability.test.ts`：4 个文件/24 项测试通过。
-- `sudo -n -g docker -u dadalv npm run test:integration -- tests/integration/agent-runtime-budget.integration.test.ts`：1 个文件/3 项真实 PostgreSQL 测试通过。
-- `npm run check:quick`：TypeScript、ESLint、57 个文件/341 项 Vitest 全部通过。
-- `sudo -n -g docker -u dadalv npm run check:full`：退出 0；快速门禁、Prisma Client 生成、Next.js 16.3.3 生产构建、覆盖率基线、7 个文件/17 项 PostgreSQL 集成测试与 9 项 Playwright E2E 全部通过。
-- `./init.sh`：feat-021 修改前基线通过，57 个文件/341 项 Vitest。
-- `npm run test:unit -- tests/server/agent-task-run-route.test.ts`：1 个文件/3 项通过。
-- `env ... docker compose config --quiet`：无敏感测试值下 Compose 配置有效；渲染结果确认 web、agent-worker 与 init 均获得 8 项 Runtime Budget 覆盖变量。
-- `npm run check:quick`：TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
-- `docker compose config -q`：退出 0；仅验证 Compose 配置可渲染，不等同于构建、启动或部署测试。
-- `npm run check:compose-config`：退出 0；以临时 env 渲染并断言隔离 Compose config，未访问 Docker daemon。
-- `sudo -n -g docker -u dadalv npm run test:compose-smoke`：退出 0；真实构建 production Web/Worker，init exit 0，Web healthcheck 与 `/api/health` 通过，Web 命令为 `/sbin/tini -- node server.js` 而非 `next dev`；实际 AgentTask 由 Worker 容器对应 hostname 完成，final message、durable plan/final steps 与房间消息均可观察，清理后无该 project 的容器、网络、卷和测试镜像。
-- `npm run check:quick`：TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
-- `git diff --check`：通过。
-- `harness-creator` 结构性验证：100/100；仓库中未发现受版本控制的 GitHub Actions、GitLab CI、Jenkins 等 CI 配置。
-- `./init.sh`：Prisma Client 生成、TypeScript、ESLint、58 个文件/344 项 Vitest 全部通过。
-- `wc -l AGENTS.md`：92，符合 feat-005 的 50-200 行标准；`node /home/dadalv/.agents/skills/harness-creator/scripts/validate-harness.mjs --target /home/dadalv/projects/xoxoMeridian`：100/100。
-- `npm run check`：退出 1。`typecheck`、`lint`、58 个文件/344 项 Vitest 通过；`npm run build` 在 Next.js 16.3.3 阶段失败，原文为 `Could not parse output from TypeScript's --showConfig.`。
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、59 文件/346 项 Vitest 全部通过。
+- 修复前定向真实 PostgreSQL 测试为 3/3 失败：数据库保存原 token、同 token 并发得到 200/200、Session 删除故障后密码仍提交。
+- 修复后 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/password-reset-security.integration.test.ts` 为 4/4 通过，覆盖 digest、并发 200/400、密码更新、旧 Session 删除、过期/未知/重放拒绝和数据库 trigger 故障整体回滚。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 的标准门禁阶段通过：59 文件/346 项 Vitest、Next.js 16.3.3 production build、覆盖率均通过；全量真实 PostgreSQL 集成为 10 文件/24 项通过。
+- 上述组合命令进入 Playwright 时因用户既有 `next dev` 持有仓库 `.next` 锁而失败，原始错误为 `Another next dev server is already running`，因此没有将 `check:full` 虚记为单次退出 0，也没有终止用户进程或复用其数据库。
+- 不携带 `.env`、`.git`、`.next` 和生成报告的 `/tmp` 隔离副本首次 E2E 为 8/9；唯一失败是无关 Study 旅程在冷路由编译时等待 `/专注中 ·/` 5 秒超时。缓存预热后同一副本全量 E2E 明确退出 0，9/9 通过；密码恢复入口通过，未修改 Study。
+- 覆盖率为 statements 42.05%、branches 36.07%、functions 46.45%、lines 42.72%，均高于门槛。
+- `harness-creator` 结构验证为 100/100；`feature_list.json` 可解析，30 个 feature 全部为 `done`，活动/阻塞为 0；QAM 总览算术复核为总分 640、平均 71.1、开放 P1×13/P2×31；`git diff --check` 通过。
+- 本轮 `/tmp/xoxo-meridian-e2e-copy.M0qKrS`、`coverage/`、`playwright-report/`、`test-results/` 已删除，Docker 无残留 Testcontainers 容器；既有用户改动未删除。
 
 ## Next Session Startup（恢复步骤）
 
 1. 依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件。
-2. 确认 Node.js 22 与锁定依赖；需要重装时运行 `npm ci`。本轮新增三条迁移，本地数据库尚未应用时运行 `npm run db:deploy`，再运行 `npm run db:generate`。
-3. 运行 `./init.sh` 建立快速基线。
-4. feat-016 至 feat-022 均已完成；feat-023 因生产构建失败而 `blocked`，不要将其标为完成。需要部署配置验证时先运行 `npm run check:compose-config`，需要真实部署 smoke 时在 Docker 可用环境运行 `sudo -n -g docker -u dadalv npm run test:compose-smoke`。
-5. 需要完整应用验证时确保 Docker 可用，并运行 `sudo -n -g docker -u dadalv npm run check:full`；部署 smoke 是独立补充，不替代此命令。
+2. 运行 `node --version && npm --version`，期望 v22.23.2 / 10.9.8；PATH 被权限切换清理时使用 `./scripts/run-node22.sh <command>`，Docker 组命令使用 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm ...`。
+3. 阅读 `docs/optimization/qam-01-identity-quality-review.md` 的 `QAM-01-001`；确认 feat-030 为 `done` 后，只把新 Session 原子签发 feature 标为 `in-progress`。
+4. 运行 `./init.sh` 建立快速基线；修改 Next.js Route Handler 前阅读 `node_modules/next/dist/docs/` 中当前版本对应指南。
+5. 先补真实 PostgreSQL 并发登录和旧 Cookie 访问受保护端点的失败回归，并覆盖注册后的 Session 签发入口；再实施统一、原子的 Session 签发语义。
+6. 完成后运行风险匹配门禁、最终 `./init.sh`，清理生成物并更新三个状态文件；不要同时处理注册容量 `QAM-01-004` 或 P2。
 
 ## Blockers / Risks（阻塞与风险）
 
-- 当前没有阻塞项，也没有开放 P0/P1；生产 Web 直跑 Runtime 的路径已关闭。
-- Runtime Budget 已关闭：Run 会冻结高默认值的 turns、Tool attempts、deadline、token/cost 上限与价格快照，并以 `limit_exceeded` 终态收敛；crash 后未结算 reservation 保守保留，避免低估消耗。
-- Trace 仍缺字段级脱敏、敏感数据分级、保留/删除策略、Run 总耗时与全局顺序号；本轮已完成成本聚合与价格快照。
-- Tool 共享 Runtime 进程和应用权限，尚无每 Tool 的 CPU、内存、文件系统和网络沙箱；HITL 只支持 Approve/Reject，不支持 Edit。
-- Durable Step 已覆盖当前同库副作用；未来非数据库外部写操作必须使用供应商幂等键或 Outbox/relay。
-- `check:full` 仍不等同于 Compose 上线保证；`test:compose-smoke` 覆盖当前 production 容器路径，但不是性能、滚动升级、镜像签名或外部供应商验收。
-- Compose 使用固定 `container_name` 与 `latest` Worker 镜像标签，暂不阻止单机部署；smoke 通过 test-only override 隔离，若未来需要生产并行部署、可回滚发布或 Worker healthcheck，应分别作为独立运维 feature 处理。
-- 当前 Node.js 22.22.1 下 `check:full` 的 Prisma Client 生成已正常通过；没有依赖或锁文件变更。
-- 当前 `npm run check` 在生产构建阶段失败：`Could not parse output from TypeScript's --showConfig.`；快速基线仍通过，但按新增会话退出检查清单不得称为清洁退出。
-- 本轮没有依赖变更；既有审计记录为 production high/critical 0。不得提交本地 `.env`。
+- 当前没有 feature 阻塞项，也没有开放 P0。
+- 本轮完整门禁时用户既有 `next dev --webpack --hostname 0.0.0.0` 进程（当时 PID 140196）持有仓库 `.next` 锁；最终复核时该 PID 已不存在，本轮未主动终止。后续若再次存在用户开发服务器，不得擅自停服；完整 Playwright 应使用不含本地 `.env` 的隔离副本，或由用户决定何时停服。
+- QAM-01 仍有 `QAM-01-001`、`QAM-01-004` 两个 P1。下一 feature 只处理 `QAM-01-001`；注册路径仅覆盖共用 Session 签发，不得顺带修复容量竞态。
+- 密码 reset 迁移会主动删除部署时尚未使用的旧恢复 token；这是避免保留既有 bearer secret 的预期安全行为，需要用户重新发起恢复请求。
+- 本轮没有依赖变更；既有审计记录为 production high/critical 0。Node 22 系统入口属于开发机状态且不受 Git 管理，不得提交本地 `.env`。
 
 ## Recommended Next Step（唯一推荐下一步）
 
-先独立复现并定位 `npm run build` 的 TypeScript `--showConfig` 解析失败；构建恢复通过后再完成 feat-023，并按新增检查清单确认清洁退出。
+另行登记并只修复 `QAM-01-001`：把旧 Session 失效与新 Session 创建收敛为统一的原子签发语义，并以真实 PostgreSQL 并发登录、旧 Cookie 访问受保护端点及注册签发路径回归验证；不要与注册容量 `QAM-01-004` 合并。

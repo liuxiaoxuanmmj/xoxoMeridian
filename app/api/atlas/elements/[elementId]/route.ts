@@ -1,4 +1,5 @@
 import { jsonOk, jsonError, errorToResponse } from "@/lib/api";
+import { ATLAS_GLOBAL_BOARD_ID } from "@/lib/atlas-board";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readJsonBody, atlasElementPatchSchema } from "@/lib/validation";
@@ -11,21 +12,30 @@ export async function PATCH(
   try {
     await requireCurrentUser();
     const { elementId } = await params;
+    const body = await readJsonBody(request, atlasElementPatchSchema);
 
-    const element = await prisma.atlasElement.findUnique({
-      where: { id: elementId },
+    const result = await prisma.atlasElement.updateMany({
+      where: {
+        id: elementId,
+        boardId: ATLAS_GLOBAL_BOARD_ID,
+        postId: null,
+      },
+      data: body,
     });
-
-    if (!element) {
+    if (result.count !== 1) {
       return jsonError("Element not found", 404);
     }
 
-    const body = await readJsonBody(request, atlasElementPatchSchema);
-
-    const updated = await prisma.atlasElement.update({
-      where: { id: elementId },
-      data: body,
+    const updated = await prisma.atlasElement.findFirst({
+      where: {
+        id: elementId,
+        boardId: ATLAS_GLOBAL_BOARD_ID,
+        postId: null,
+      },
     });
+    if (!updated) {
+      return jsonError("Element not found", 404);
+    }
 
     return jsonOk({ element: updated });
   } catch (error) {
@@ -41,15 +51,27 @@ export async function DELETE(
     await requireCurrentUser();
     const { elementId } = await params;
 
-    const element = await prisma.atlasElement.findUnique({
-      where: { id: elementId },
+    const element = await prisma.atlasElement.findFirst({
+      where: {
+        id: elementId,
+        boardId: ATLAS_GLOBAL_BOARD_ID,
+        postId: null,
+      },
     });
-
     if (!element) {
       return jsonError("Element not found", 404);
     }
 
-    await prisma.atlasElement.delete({ where: { id: elementId } });
+    const result = await prisma.atlasElement.deleteMany({
+      where: {
+        id: elementId,
+        boardId: ATLAS_GLOBAL_BOARD_ID,
+        postId: null,
+      },
+    });
+    if (result.count !== 1) {
+      return jsonError("Element not found", 404);
+    }
 
     if (element.type === "photo" && element.imageUrl) {
       const key = extractAtlasStorageKey(element.imageUrl);

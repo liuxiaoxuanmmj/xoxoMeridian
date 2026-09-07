@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-04 调度质量审查"
+  short_description: "审查调度 CAS、原子派生、时间语义与生命周期"
+  default_prompt: "使用 $xoxo-qam-04-scheduler-review 审查 QAM-04 当前实现并更新持续质量报告。"

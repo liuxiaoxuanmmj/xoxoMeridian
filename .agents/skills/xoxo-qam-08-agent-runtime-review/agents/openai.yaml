@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-08 Agent Runtime 质量审查"
+  short_description: "审查任务恢复、Tool 治理、预算、审批与 Trace"
+  default_prompt: "使用 $xoxo-qam-08-agent-runtime-review 审查 QAM-08 当前实现并更新持续质量报告。"

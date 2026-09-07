@@ -1,8 +1,15 @@
+import { createHash } from "node:crypto";
+
 import { prisma } from "@/lib/prisma";
 import { generateSecureToken } from "@/lib/crypto-utils";
 import { ONE_HOUR_MS } from "@/lib/constants";
 
 const RESET_TOKEN_EXPIRY_MS = ONE_HOUR_MS;
+const RESET_TOKEN_DIGEST_PREFIX = "v1:sha256:";
+
+function digestResetToken(token: string): string {
+  return `${RESET_TOKEN_DIGEST_PREFIX}${createHash("sha256").update(token, "utf8").digest("hex")}`;
+}
 
 // Generate a cryptographically secure random reset token
 export function generateResetToken(): string {
@@ -22,7 +29,7 @@ export async function createPasswordResetToken(userId: string): Promise<string> 
   await prisma.passwordResetToken.create({
     data: {
       userId,
-      token,
+      tokenDigest: digestResetToken(token),
       expiresAt,
     },
   });
@@ -30,31 +37,43 @@ export async function createPasswordResetToken(userId: string): Promise<string> 
   return token;
 }
 
-// Verify and consume a password reset token
-export async function verifyPasswordResetToken(
-  token: string
-): Promise<{ userId: string } | null> {
-  const resetToken = await prisma.passwordResetToken.findUnique({
-    where: { token },
-    select: { userId: true, expiresAt: true },
+export async function resetPasswordWithToken(
+  token: string,
+  passwordHash: string,
+): Promise<boolean> {
+  const tokenDigest = digestResetToken(token);
+  const now = new Date();
+
+  return prisma.$transaction(async (tx) => {
+    const resetToken = await tx.passwordResetToken.findUnique({
+      where: { tokenDigest },
+      select: { id: true, userId: true },
+    });
+    if (!resetToken) {
+      return false;
+    }
+
+    const claimed = await tx.passwordResetToken.deleteMany({
+      where: {
+        id: resetToken.id,
+        tokenDigest,
+        expiresAt: { gt: now },
+      },
+    });
+    if (claimed.count !== 1) {
+      return false;
+    }
+
+    await tx.user.update({
+      where: { id: resetToken.userId },
+      data: { passwordHash },
+    });
+    await tx.session.deleteMany({
+      where: { userId: resetToken.userId },
+    });
+
+    return true;
   });
-
-  if (!resetToken) {
-    return null;
-  }
-
-  if (resetToken.expiresAt < new Date()) {
-    // Token expired, delete it
-    await prisma.passwordResetToken.delete({ where: { token } }).catch(() => {});
-    return null;
-  }
-
-  return { userId: resetToken.userId };
-}
-
-// Delete a password reset token after use
-export async function deletePasswordResetToken(token: string): Promise<void> {
-  await prisma.passwordResetToken.delete({ where: { token } }).catch(() => {});
 }
 
 // Clean up expired password reset tokens (should be called periodically)

@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-06 空间媒体质量审查"
+  short_description: "审查画布同步、拖动状态、上传安全与资源生命周期"
+  default_prompt: "使用 $xoxo-qam-06-spatial-media-review 审查 QAM-06 当前实现并更新持续质量报告。"

@@ -10,6 +10,7 @@ XOXO Meridian 是一个面向私密双人空间的 Next.js 15 全栈应用，提
 ### Startup Workflow（首次运行）
 
 - 前置环境：Node.js 22、npm、Docker 与 Docker Compose。
+- 版本契约：`.node-version` 固定 Node.js 22.23.2，`package.json` 固定 npm 10.9.8；PATH 被权限边界清理时通过 `./scripts/run-node22.sh <command>` 恢复并校验工具链。
 - 安装锁定依赖：`npm ci`
 - 创建本地配置：`cp .env.example .env`，填写必需配置且不得保留生产用占位密钥。
 - 启动数据库：`docker compose up -d postgres`
@@ -25,6 +26,8 @@ XOXO Meridian 是一个面向私密双人空间的 Next.js 15 全栈应用，提
 - 快速门禁：`npm run check:quick`（类型、lint、Node/组件测试）。
 - 标准门禁：`npm run check`（快速门禁、生产构建、覆盖率基线）。
 - 完整门禁：`npm run check:full`（标准门禁、真实 PostgreSQL 集成测试、Playwright E2E；要求 Docker）。
+- 权限型复核：若受限沙箱中的 Node 子进程出现 `EPERM`、空 stdout 或 Next.js `Could not parse output from TypeScript's --showConfig`，须用同一 Node 版本在获准的正常权限边界重跑原命令；仅当对照仍失败时才视为代码阻塞，并记录两次原始结果。
+- Docker 组复核：需通过临时 `docker` group 执行 npm 命令时使用 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm ...`，不得依赖 sudo 的 `secure_path` 或逐次手写 PATH。
 - 部署重启：先运行 `docker compose build web agent-worker init`，再运行 `docker compose up -d`。
 
 ### Stay in Scope（范围边界）
@@ -73,6 +76,7 @@ XOXO Meridian 是一个面向私密双人空间的 Next.js 15 全栈应用，提
 ## 专题入口
 
 - [产品与总体架构](README.md) — 首次理解产品边界、主要数据流或本地运行方式时阅读；若与代码冲突，以当前代码和配置为准。
+- [项目模块视图](PROJECT_VIEW.md) — 划分 QAM 模块质量责任边界、定位代码归属或审查跨模块耦合与边界不确定项时必读。
 - [脚本与依赖](package.json) — 运行命令、添加依赖或调整 Node 工具链时查阅。
 - [环境变量模板](.env.example) — 新增配置、接入外部服务或准备本地/生产环境时必读。
 - [Docker Compose 拓扑](docker-compose.yml) — 修改 PostgreSQL、初始化器、Web、Worker、卷或部署顺序时必读。
@@ -90,3 +94,13 @@ XOXO Meridian 是一个面向私密双人空间的 Next.js 15 全栈应用，提
 - [功能状态](feature_list.json) — 开始工作前选择一个未完成特性并核对依赖与验收标准。
 - [进度日志](progress.md) — 交接前记录改动、验证证据和阻塞项。
 - [会话交接](session-handoff.md) — 恢复工作时查看当前状态、可复现命令和唯一推荐下一步。
+
+<!-- BEGIN:nextjs-agent-rules -->
+
+# This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->

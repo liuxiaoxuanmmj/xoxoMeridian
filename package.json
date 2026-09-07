@@ -2,6 +2,11 @@
   "name": "xoxo-meridian",
   "version": "0.1.0",
   "private": true,
+  "packageManager": "npm@10.9.8",
+  "engines": {
+    "node": "22.x",
+    "npm": "10.x"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev --webpack --hostname 0.0.0.0",

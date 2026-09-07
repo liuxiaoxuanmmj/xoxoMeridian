@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-03 生活计划质量审查"
+  short_description: "审查 Memo、计划、时区、天气与双入口规则一致性"
+  default_prompt: "使用 $xoxo-qam-03-life-plan-review 审查 QAM-03 当前实现并更新持续质量报告。"

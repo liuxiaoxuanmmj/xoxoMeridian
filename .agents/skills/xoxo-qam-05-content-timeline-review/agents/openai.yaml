@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-05 内容时间线质量审查"
+  short_description: "审查 Post 所有权、检索、Markdown 与投影生命周期"
+  default_prompt: "使用 $xoxo-qam-05-content-timeline-review 审查 QAM-05 当前实现并更新持续质量报告。"

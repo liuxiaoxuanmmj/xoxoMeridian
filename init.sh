@@ -4,11 +4,8 @@ set -euo pipefail
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$repo_root"
 
-node_major="$(node -p 'process.versions.node.split(".")[0]')"
-if [[ "$node_major" != "22" ]]; then
-  echo "需要 Node.js 22，当前为 $(node --version)。" >&2
-  exit 1
-fi
+source "$repo_root/scripts/run-node22.sh"
+xoxo_configure_node22_path
 
 if [[ ! -d node_modules ]]; then
   npm ci

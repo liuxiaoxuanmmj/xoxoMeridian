@@ -9,6 +9,11 @@ import { HomeSpatialLayer } from "@/components/home/HomeSpatialLayer";
 import { HomeUploadModal } from "@/components/home/HomeUploadModal";
 import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData, HomeSpatialElementData } from "@/components/home/types";
 import { isHomeBlankTarget } from "@/lib/home-spatial";
+
+type PhotoMove = { x: number; y: number };
+type PhotoMoveQueue = { pending: PhotoMove | null; running: boolean };
+type PhotoMoveSaveState = PhotoMove & { status: "saving" | "failed" };
+
 export function HomeTimelineBoard({
   posts,
   currentUserId,
@@ -27,6 +32,8 @@ export function HomeTimelineBoard({
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [contextMenu, setContextMenu] = useState<HomeContextMenuState | null>(null);
   const [uploadPosition, setUploadPosition] = useState<{ x: number; y: number } | null>(null);
+  const [photoMoveSaveStates, setPhotoMoveSaveStates] = useState<Record<string, PhotoMoveSaveState>>({});
+  const photoMoveQueuesRef = useRef(new Map<string, PhotoMoveQueue>());
 
   // Search state
   const searchParams = useSearchParams();
@@ -188,6 +195,68 @@ export function HomeTimelineBoard({
     setElements((prev) => prev.map((element) => element.id === id ? { ...element, ...patch } as HomeSpatialElementData : element));
   }, []);
 
+  const runPhotoMoveQueue = useCallback(async (id: string) => {
+    const queue = photoMoveQueuesRef.current.get(id);
+    if (!queue || queue.running) return;
+
+    queue.running = true;
+    try {
+      while (queue.pending) {
+        const target = queue.pending;
+        queue.pending = null;
+        setPhotoMoveSaveStates((current) => ({
+          ...current,
+          [id]: { ...target, status: "saving" },
+        }));
+
+        let saved = false;
+        try {
+          const response = await fetch(`/api/home-board/elements/${id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(target),
+          });
+          saved = response.ok;
+        } catch {
+          saved = false;
+        }
+
+        if (!saved) {
+          if (queue.pending) continue;
+
+          queue.pending = target;
+          setPhotoMoveSaveStates((current) => ({
+            ...current,
+            [id]: { ...target, status: "failed" },
+          }));
+          return;
+        }
+
+        if (queue.pending) continue;
+
+        photoMoveQueuesRef.current.delete(id);
+        setPhotoMoveSaveStates((current) => {
+          const next = { ...current };
+          delete next[id];
+          return next;
+        });
+      }
+    } finally {
+      queue.running = false;
+    }
+  }, []);
+
+  const savePhotoMove = useCallback((id: string, x: number, y: number) => {
+    const queue = photoMoveQueuesRef.current.get(id) ?? { pending: null, running: false };
+    queue.pending = { x, y };
+    photoMoveQueuesRef.current.set(id, queue);
+    setPhotoMoveSaveStates((current) => ({
+      ...current,
+      [id]: { x, y, status: "saving" },
+    }));
+    void runPhotoMoveQueue(id);
+  }, [runPhotoMoveQueue]);
+
   return (
     <div
       ref={boardRef}
@@ -218,7 +287,7 @@ export function HomeTimelineBoard({
         onMovePhoto={(id, x, y) => updatePhoto(id, { x, y })}
         onMovePhotoEnd={(id, x, y) => {
           updatePhoto(id, { x, y });
-          void patchElement(id, { x, y });
+          savePhotoMove(id, x, y);
         }}
         onResizePhotoEnd={(id, width, height) => {
           updatePhoto(id, { width, height });
@@ -244,6 +313,33 @@ export function HomeTimelineBoard({
         }}
         registerPhotoAnchor={registerPhotoAnchor}
       />
+
+      {Object.keys(photoMoveSaveStates).length > 0 ? (
+        <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2">
+          {Object.entries(photoMoveSaveStates).map(([id, state]) => (
+            <div
+              key={id}
+              className="flex items-center gap-3 rounded-lg border border-black/10 bg-white px-4 py-3 text-sm text-black/70 shadow-lg"
+            >
+              {state.status === "saving" ? (
+                <span role="status">正在保存照片位置…</span>
+              ) : (
+                <>
+                  <span role="alert">照片位置保存失败。</span>
+                  <button
+                    type="button"
+                    className="rounded-md bg-sage-700 px-3 py-1.5 font-medium text-white hover:bg-sage-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-700"
+                    aria-label="重试保存照片位置"
+                    onClick={() => void runPhotoMoveQueue(id)}
+                  >
+                    重试
+                  </button>
+                </>
+              )}
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       <main className="relative z-20 mx-auto max-w-3xl px-6 py-12">
         <Timeline

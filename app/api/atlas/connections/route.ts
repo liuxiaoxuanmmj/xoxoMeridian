@@ -2,7 +2,7 @@ import { jsonOk, jsonError, errorToResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { readJsonBody, atlasConnectionCreateSchema } from "@/lib/validation";
-import { getOrCreateBoard } from "@/lib/atlas-board";
+import { ATLAS_GLOBAL_BOARD_ID, getOrCreateBoard } from "@/lib/atlas-board";
 
 export async function POST(request: Request) {
   try {
@@ -48,15 +48,15 @@ export async function DELETE(request: Request) {
     const connectionId = url.searchParams.get("id");
     if (!connectionId) return jsonError("Missing connection id", 400);
 
-    const connection = await prisma.atlasConnection.findUnique({
-      where: { id: connectionId },
+    const result = await prisma.atlasConnection.deleteMany({
+      where: {
+        id: connectionId,
+        boardId: ATLAS_GLOBAL_BOARD_ID,
+      },
     });
-
-    if (!connection) {
+    if (result.count !== 1) {
       return jsonError("Connection not found", 404);
     }
-
-    await prisma.atlasConnection.delete({ where: { id: connectionId } });
 
     return jsonOk({ deleted: true });
   } catch (error) {

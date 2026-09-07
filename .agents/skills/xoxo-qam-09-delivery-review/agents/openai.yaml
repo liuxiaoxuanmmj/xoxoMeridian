@@ -1,0 +1,4 @@
+interface:
+  display_name: "QAM-09 交付拓扑质量审查"
+  short_description: "审查构建、配置、初始化、进程拓扑与部署验证"
+  default_prompt: "使用 $xoxo-qam-09-delivery-review 审查 QAM-09 当前实现并更新持续质量报告。"

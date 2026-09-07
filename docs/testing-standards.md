@@ -24,6 +24,14 @@ Jest、Cypress、AVA、Mocha 都能完成部分工作，但引入它们会造成
 
 ## 命令与门禁
 
+项目以 `.node-version` 固定 Node.js 22.23.2，并以 `package.json#packageManager` 固定 npm 10.9.8；`.npmrc` 的 `engine-strict=true` 会拒绝不匹配的 npm 安装环境。常规 shell 可直接运行下列命令；若 `sudo -u`/临时 Docker group 清除了用户 PATH，统一使用：
+
+```bash
+sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration
+```
+
+`run-node22.sh` 本身不调用 sudo，也不扩大权限；它只从仓库版本契约恢复并校验 Node/npm PATH，再执行传入命令。
+
 - `npm run test:unit`：Node 项目。
 - `npm run test:component`：jsdom 组件项目。
 - `npm test`：Node 与组件项目，共享默认快速反馈。
@@ -39,6 +47,21 @@ Jest、Cypress、AVA、Mocha 都能完成部分工作，但引入它们会造成
 - `npm run check:full`：标准门禁、集成测试和 E2E。
 
 集成测试和本地 E2E 要求 Docker daemon 可用；缺少运行时必须失败并明确提示，不得自动 skip。若验证已在外部环境运行，可通过 `PLAYWRIGHT_BASE_URL` 让 Playwright 连接指定服务，此时服务的数据准备与隔离由该环境负责。
+
+Linux/WSL 首次运行或 Playwright 浏览器版本升级后，应先以当前项目用户安装 Chromium，再通过 Playwright 官方入口安装系统运行库：
+
+```bash
+npx playwright install chromium
+npx playwright install-deps chromium
+```
+
+第二条命令会在需要时自行请求 `sudo` 权限；不要用 root 身份执行第一条命令，否则浏览器会安装到 root 的缓存而不是当前项目用户的缓存。
+
+精简系统若出现 `libnspr4.so`、NSS、ALSA 等动态库错误，不要逐个复制 `.so` 文件或把本机路径写入测试配置。用 `npx playwright install-deps --dry-run chromium` 检查完整依赖集合；安装后该命令应报告 `All system dependencies are installed.`。最后用不依赖应用服务的最小探针验证 Chromium 本身：
+
+```bash
+node --input-type=module -e 'import { chromium } from "@playwright/test"; const browser = await chromium.launch({ headless: true }); console.log(await browser.version()); await browser.close();'
+```
 
 ## 如何选择测试层级
 
