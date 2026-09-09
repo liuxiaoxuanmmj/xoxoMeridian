@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-07",
+  "updatedAt": "2026-09-09",
   "features": [
     {
       "id": "feat-001",
@@ -400,6 +400,76 @@
         "不扩展到 Session 签发、注册容量、代理头或日志 P1/P2；风险匹配门禁、QAM-01 复审和会话状态记录完整"
       ],
       "evidence": "PasswordResetToken 改为只存 v1:sha256: 版本化 digest；迁移删除既有 bearer token 后重命名列和唯一索引，创建流程只把原 token 返回给邮件链接。resetPasswordWithToken 在同一 Prisma transaction 内按 digest 与 expiresAt 条件 claim、更新 bcrypt 密码并删除该用户全部 Session，任一步失败整体回滚。修复前真实 PostgreSQL 回归分别证明原 token 明文落库、同一 token 并发出现 200/200、Session 删除故障仍提交密码；修复后 tests/integration/password-reset-security.integration.test.ts 4/4 通过，覆盖 digest、并发恰一成功、旧 Session 失效、过期/未知拒绝、不可重放和 trigger 故障回滚。npm run check 通过（59 文件/346 项 Vitest、Next.js 生产构建、覆盖率），全量 PostgreSQL 集成 10 文件/24 项通过；仓库内 E2E 因既有 next dev 持有 .next 锁无法启动，隔离副本首次 8/9（Study 冷编译超时）、缓存预热后全量 9/9 通过。最终 ./init.sh 退出 0；QAM-01-002/003 resolved，QAM-01 更新为 76 分、Score L2、Gate/Final L1。"
+    },
+    {
+      "id": "feat-031",
+      "name": "修复 Session 原子签发与单活跃语义",
+      "description": "关闭 QAM-01-001：将旧 Session 失效与新 Session 创建收敛为统一的原子签发边界，并覆盖登录与注册入口。",
+      "status": "done",
+      "dependencies": ["feat-030"],
+      "acceptanceCriteria": [
+        "登录与注册统一复用可重试的 PostgreSQL 原子 Session 签发语义，旧 Session 失效与新 Session 创建不存在部分提交窗口",
+        "真实 PostgreSQL 并发登录回归证明最终每个用户只有一个 Session，只有最终签发的 Cookie 能访问受保护端点，旧 Cookie 返回 401",
+        "注册成功后的 Session 签发路径使用同一领域边界并具有真实 PostgreSQL 回归；不修改注册容量、认证产品策略或 Cookie 响应契约",
+        "风险匹配门禁、QAM-01 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/auth.ts 的 replaceActiveSession 按受影响 userId 固定顺序执行 PostgreSQL SELECT ... FOR UPDATE，并在同一 Prisma transaction 内删除旧 Session、删除目标用户 Session 和创建新 Session；P2034 事务冲突最多重试 3 次，登录、注册与 setSessionCookie 统一复用 createSessionCookie。tests/integration/session-issuance.integration.test.ts 修复前 2/3 失败：并发登录留下 2 条 Session，插入故障后旧 Session 被删空；修复后 3/3 通过，覆盖两个登录均 200、最终 Session=1、Cookie 访问 /api/auth/me 为 200/401、故障回滚及注册签发。npm run check 通过（59 文件/346 项 Vitest、Next.js 生产构建、覆盖率），全量 PostgreSQL 11 文件/27 项通过；check:full 的 E2E 因用户既有 PID 140196 持有 .next 失败，隔离副本首次 8/9（既有 Study 冷编译超时）、缓存预热后全量 9/9 通过。最终 ./init.sh 退出 0；QAM-01-001 resolved，QAM-01 更新为 83 分、Score L3、Gate/Final L1。"
+    },
+    {
+      "id": "feat-032",
+      "name": "修复并发注册房间容量竞态",
+      "description": "关闭 QAM-01-004：在注册事务中锁定默认 Room 容量事实源，阻止并发注册突破 maxHumanUsers，并保证失败请求不留下身份孤儿数据。",
+      "status": "done",
+      "dependencies": ["feat-031"],
+      "acceptanceCriteria": [
+        "注册在同一 PostgreSQL 事务内锁定默认 Room、重新计算占用并创建 User、UserProfile 与 RoomParticipant，保留现有邀请码、默认房间、角色和 HTTP 响应契约",
+        "真实 PostgreSQL 并发回归证明已有 1 名成员时两个不同邮箱同时注册最多一个成功，Participant 不超过 maxHumanUsers，失败请求不留下 User、UserProfile 或 Session",
+        "数据库故障回归证明 Participant 写入失败时 User 与 UserProfile 一并回滚，且合法单次注册和 Session 签发保持可用",
+        "不扩展到代理头、日志、旧认证工件或其他 QAM；风险匹配门禁、QAM-01 复审和会话状态记录完整"
+      ],
+      "evidence": "app/api/auth/register/route.ts 在注册 Prisma transaction 内按 DEMO_ROOM_SLUG 对 Room 执行 SELECT ... FOR UPDATE，再基于锁内 maxHumanUsers 计数并创建 User、UserProfile 与 RoomParticipant；满员仍返回 409，Participant 写入失败整体回滚。tests/integration/registration-capacity.integration.test.ts 修复前 1/2 通过且并发实际为 200/200，修复后 2/2 通过，覆盖已有 1 名成员时并发恰为 200/409、Participant=2、loser 无 User/Profile/Session，以及 trigger 故障回滚和同邮箱成功重试。sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：59 文件/346 项 Vitest、Next.js 生产构建、覆盖率、12 文件/29 项 PostgreSQL 和 9/9 Playwright 全部通过；最终 ./init.sh 退出 0。QAM-01-004 resolved，QAM-01 更新为 87 分、Score L3、Gate L4、Final L3。"
+    },
+    {
+      "id": "feat-033",
+      "name": "修复 Agent log 跨房间读取边界",
+      "description": "关闭 QAM-05-005：为 Post 列表、搜索、详情和首页建立统一可见性条件，阻止非成员读取 room-scoped Agent log。",
+      "status": "done",
+      "dependencies": ["feat-032"],
+      "acceptanceCriteria": [
+        "Post 读取统一保留 user_post 的既有全局语义，并仅向当前 Room 成员返回 room-scoped agent_log",
+        "列表、搜索、详情和首页使用同一可见性条件；非成员详情稳定返回 404，Room 删除后 SetNull 的孤儿 agent_log 不会转为全局可见",
+        "真实 PostgreSQL 跨房间回归覆盖非成员不可见、成员可见、user_post 保持可见与 Room 删除后的孤儿语义",
+        "不扩展到 slug、cursor、durable projection 或其他 P2；风险匹配门禁、QAM-05 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/post-visibility.ts 以统一 Prisma relation filter 保留全局 user_post，并只向 RoomParticipant 成员返回仍有关联 Room 的 agent_log；列表/搜索、API/页面详情和首页全部复用，非成员及 Room 删除后的 SetNull 孤儿日志稳定隐藏。tests/integration/post-visibility.integration.test.ts 修复前 0/1 且 A 实际读到 B 房间与孤儿日志，修复后 1/1 覆盖列表/type/搜索/详情/首页、成员切换、user_post 全局语义和孤儿 404；全量 PostgreSQL 13 文件/30 项通过。sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：59 文件/346 项 Vitest、Next.js 生产构建、覆盖率、13 文件/30 项 PostgreSQL 和 9/9 Playwright 全部通过。QAM-05-005 resolved，QAM-05 更新为 73 分、Score/Gate/Final L2。"
+    },
+    {
+      "id": "feat-034",
+      "name": "修复 Focus 状态转移与原子结算",
+      "description": "关闭 QAM-07-001：将 Focus start/pause/resume/stop 状态转移与完成 Session 结算收敛为使用 currentSessionKey 的原子、幂等事务。",
+      "status": "done",
+      "dependencies": ["feat-033"],
+      "acceptanceCriteria": [
+        "start 为每次 Focus 生成并持久化 currentSessionKey，pause/resume/stop 通过统一 Study transition service 执行条件状态转移",
+        "stop 在同一 PostgreSQL 事务内最多创建一条对应 currentSessionKey 的 completed FocusSession 并将 FocusState 结算为 idle，重放返回稳定结果",
+        "真实 PostgreSQL 回归覆盖并发 stop、pause/stop 交错和结算中途故障回滚，FocusState 与 FocusSession 事实始终一致",
+        "不扩展到 QAM-07-002 到期 reconciliation、DST 统计、Goal 排序或其他 QAM；风险匹配门禁、QAM-07 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/study-transitions.ts 将 start/pause/resume/stop 收敛到按 User 行锁线性化的 Prisma interactive transaction，状态写入同时校验 prior status 与 currentSessionKey；客户端从 start/GET 接收 sessionKey，并在 pause/resume/stop 提交同一 key，旧标签页命令稳定 409。prisma/migrations/20260908152000_add_focus_session_key 为 FocusSession 回填并新增非空 sessionKey，(userId, sessionKey) 唯一约束保证 stop upsert 至多一条；Session 完成记录与 FocusState idle 在同一事务提交，重放返回既有 Session，故障整体回滚。tests/integration/study-focus-transitions.integration.test.ts 修复前 0/3，观察到并发 stop 返回不同 Session、pause/stop 状态倒退及故障后遗留 Session；修复后扩展为 5/5，另有服务行为 8/8。最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：60 文件/355 项 Vitest、Next.js 生产构建、覆盖率、14 文件/35 项真实 PostgreSQL 和 9/9 Playwright 全部通过。QAM-07-001 resolved，QAM-07 更新为 77 分、Score L2、Gate/Final L1。"
+    },
+    {
+      "id": "feat-035",
+      "name": "修复 Focus 到期状态的服务端幂等结算",
+      "description": "关闭 QAM-07-002：复用 keyed transition service，在服务端入口原子 reconciliation 已过 expectedEndAt 的 running Focus，避免页面离开或网络失败导致漏记 Session。",
+      "status": "done",
+      "dependencies": ["feat-034"],
+      "acceptanceCriteria": [
+        "Study GET、start 与 stop 入口复用同一 reconciliation 语义：已到期 running state 在单一 PostgreSQL 事务内最多创建一条 completed FocusSession 并返回 idle 或稳定结算结果",
+        "重复入口、并发请求、刷新与旧 sessionKey stop 重放不会重复创建 Session，未到期 running 与 paused state 不会被错误结算",
+        "真实 PostgreSQL 回归覆盖到期 GET/start/stop、并发幂等和结算故障回滚，Playwright 覆盖离开或刷新后的可观察恢复",
+        "不扩展到 DST 统计、Goal 排序、Room snapshot 或其他 QAM；风险匹配门禁、QAM-07 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/study-transitions.ts 抽取统一 settlement helper，并由 reconcileExpiredFocusTimer、startFocusTimer 与 stopFocusTimer 在同一用户行锁事务中复用：过期 running state 以持久化 expectedEndAt 结算 FocusSession 与 idle，GET/服务端页面在读取前恢复，过期后 start 同事务开启新 key，未到期 running 与 paused 不变；legacy 活动状态会先修复独立旧 key。tests/integration/study-focus-transitions.integration.test.ts 修复前 6/10 通过（4 项失败：GET 不结算、start 保留旧 key、stop 完成时间偏移、GET 故障路径未触发），修复后 10/10，覆盖重复 GET、GET/start 并发、stop 重放与 trigger 故障回滚；Study 定向 Node 4 文件/31 项通过。Playwright 新旅程离开 Study、推进隔离数据库 deadline、重访并刷新，UI 与数据库均证明同 key 恰一条 Session。受限边界 npm run check 的 quick 通过后 build 因 TypeScript --showConfig 输出解析失败；按权限复核规则在获准正常边界重跑同命令通过。最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、14 文件/40 项 PostgreSQL 和 10/10 Playwright 全部通过；QAM-07-002 resolved，QAM-07 更新为 85 分、Score L3、Gate/Final L2。"
     }
   ]
 }

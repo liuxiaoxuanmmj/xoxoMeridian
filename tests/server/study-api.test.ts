@@ -7,9 +7,6 @@ const { mockRequireCurrentUser } = vi.hoisted(() => ({
 const {
   mockFocusStateFindUnique,
   mockFocusSessionFindMany,
-  mockFocusStateUpsert,
-  mockFocusStateUpdate,
-  mockFocusSessionCreate,
   mockRoomParticipantFindFirst,
   mockRoomParticipantFindMany,
   mockStudyGoalFindMany,
@@ -18,15 +15,27 @@ const {
 } = vi.hoisted(() => ({
   mockFocusStateFindUnique: vi.fn(),
   mockFocusSessionFindMany: vi.fn(),
-  mockFocusStateUpsert: vi.fn(),
-  mockFocusStateUpdate: vi.fn(),
-  mockFocusSessionCreate: vi.fn(),
   mockRoomParticipantFindFirst: vi.fn(),
   mockRoomParticipantFindMany: vi.fn(),
   mockStudyGoalFindMany: vi.fn(),
   mockFocusStateFindMany: vi.fn(),
   mockGetRoomSnapshot: vi.fn(),
 }));
+
+const {
+  MockStudyTransitionConflictError,
+  mockReconcileExpiredFocusTimer,
+  mockStartFocusTimer,
+  mockStopFocusTimer,
+} = vi.hoisted(() => {
+  class MockStudyTransitionConflictError extends Error {}
+  return {
+    MockStudyTransitionConflictError,
+    mockReconcileExpiredFocusTimer: vi.fn(),
+    mockStartFocusTimer: vi.fn(),
+    mockStopFocusTimer: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/auth", () => ({
   requireCurrentUser: mockRequireCurrentUser,
@@ -36,17 +45,21 @@ vi.mock("@/lib/room-snapshot", () => ({
   getRoomSnapshot: mockGetRoomSnapshot,
 }));
 
+vi.mock("@/lib/study-transitions", () => ({
+  StudyTransitionConflictError: MockStudyTransitionConflictError,
+  reconcileExpiredFocusTimer: mockReconcileExpiredFocusTimer,
+  startFocusTimer: mockStartFocusTimer,
+  stopFocusTimer: mockStopFocusTimer,
+}));
+
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     focusState: {
       findUnique: mockFocusStateFindUnique,
       findMany: mockFocusStateFindMany,
-      upsert: mockFocusStateUpsert,
-      update: mockFocusStateUpdate,
     },
     focusSession: {
       findMany: mockFocusSessionFindMany,
-      create: mockFocusSessionCreate,
     },
     roomParticipant: {
       findFirst: mockRoomParticipantFindFirst,
@@ -68,6 +81,7 @@ beforeEach(() => {
     id: "user-1",
     profile: { timezone: "Asia/Shanghai" },
   });
+  mockReconcileExpiredFocusTimer.mockResolvedValue(null);
   mockRoomParticipantFindFirst.mockResolvedValue({
     roomId: "room-1",
     room: { id: "room-1", slug: "room-1", name: "Room 1" },
@@ -113,18 +127,19 @@ describe("GET /api/study", () => {
     expect(data.currentState.status).toBe("idle");
     expect(data.recentSessions).toHaveLength(1);
     expect(data.stats.todayCount).toBeGreaterThanOrEqual(1);
+    expect(mockReconcileExpiredFocusTimer).toHaveBeenCalledWith("user-1", expect.any(Date));
   });
 });
 
 describe("POST /api/study/start", () => {
   it("starts focus with a 25 minute default", async () => {
-    mockFocusStateFindUnique.mockResolvedValue(null);
-    mockFocusStateUpsert.mockResolvedValue({
+    mockStartFocusTimer.mockResolvedValue({
       status: "running",
       mode: "focus",
       plannedMinutes: 25,
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
+      currentSessionKey: "focus-key",
     });
 
     const response = await START(
@@ -139,15 +154,23 @@ describe("POST /api/study/start", () => {
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("running");
     expect(data.state.plannedMinutes).toBe(25);
+    expect(data.state.sessionKey).toBe("focus-key");
+    expect(mockStartFocusTimer).toHaveBeenCalledWith({
+      userId: "user-1",
+      roomId: "room-1",
+      mode: "focus",
+      plannedMinutes: 25,
+    });
   });
 
   it("returns the existing state when focus is already running", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
+    mockStartFocusTimer.mockResolvedValue({
       status: "running",
       mode: "focus",
       plannedMinutes: 25,
       startedAt: new Date("2026-06-29T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
+      currentSessionKey: "focus-key",
     });
 
     const response = await START(
@@ -161,31 +184,37 @@ describe("POST /api/study/start", () => {
 
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("running");
-    expect(mockFocusStateUpsert).not.toHaveBeenCalled();
   });
 });
 
 describe("POST /api/study/stop", () => {
   it("stops focus and writes a completed session", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
-      userId: "user-1",
-      status: "running",
-      mode: "focus",
-      plannedMinutes: 25,
-      startedAt: new Date("2026-06-29T01:00:00.000Z"),
-      expectedEndAt: new Date("2026-06-29T01:25:00.000Z"),
-      roomId: "room-1",
-    });
-    mockFocusSessionCreate.mockResolvedValue({
-      id: "session-1",
-      mode: "focus",
-      startedAt: new Date("2026-06-29T01:00:00.000Z"),
-      endedAt: new Date("2026-06-29T01:25:00.000Z"),
-      actualMinutes: 25,
+    mockStopFocusTimer.mockResolvedValue({
+      session: {
+        id: "session-1",
+        mode: "focus",
+        startedAt: new Date("2026-06-29T01:00:00.000Z"),
+        endedAt: new Date("2026-06-29T01:25:00.000Z"),
+        actualMinutes: 25,
+      },
+      state: {
+        status: "idle",
+        mode: "focus",
+        plannedMinutes: 25,
+        remainingSeconds: null,
+        startedAt: null,
+        expectedEndAt: null,
+        pausedAt: null,
+      },
+      replayed: false,
     });
 
     const response = await STOP(
-      new Request("http://localhost/api/study/stop", { method: "POST" })
+      new Request("http://localhost/api/study/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionKey: "focus-key" }),
+      })
     );
     const data = await response.json();
 
@@ -193,25 +222,20 @@ describe("POST /api/study/stop", () => {
     expect(data.session.actualMinutes).toBe(25);
     expect(data.state.status).toBe("idle");
     expect(response.headers.get("Cache-Control")).toContain("no-store");
-    expect(mockFocusSessionCreate).toHaveBeenCalledWith({
-      data: expect.objectContaining({
-        userId: "user-1",
-        status: "completed",
-        mode: "focus",
-        plannedMinutes: 25,
-        actualMinutes: 25,
-        roomId: "room-1",
-      }),
-      select: expect.any(Object),
-    });
-    expect(mockFocusStateUpdate).toHaveBeenCalled();
+    expect(mockStopFocusTimer).toHaveBeenCalledWith("user-1", "focus-key");
   });
 
   it("returns 409 when no focus session is active", async () => {
-    mockFocusStateFindUnique.mockResolvedValueOnce(null);
+    mockStopFocusTimer.mockRejectedValueOnce(
+      new MockStudyTransitionConflictError("No active focus session."),
+    );
 
     const response = await STOP(
-      new Request("http://localhost/api/study/stop", { method: "POST" })
+      new Request("http://localhost/api/study/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionKey: "focus-key" }),
+      })
     );
     const data = await response.json();
 

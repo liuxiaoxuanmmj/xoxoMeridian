@@ -2,7 +2,139 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-09-07。feat-030「修复密码重置 token 存储与原子消费」已完成，当前没有 `in-progress` 或 `blocked` feature。密码恢复现在只持久化版本化 SHA-256 digest，并在单一 PostgreSQL 事务内完成未过期 token claim、密码更新和全部 Session 失效；并发请求恰有一个成功，故障会整体回滚。QAM-01-002/003 已解决，QAM-01 当前为 76 分、Score L2、Gate/Final L1；组合开放问题为 P1×13/P2×31，模块平均分为 71.1。
+Last Updated：2026-09-09。feat-035「修复 Focus 到期状态的服务端幂等结算」已完成，当前没有 `in-progress` 或 `blocked` feature。Study GET/服务端页面、start 与 stop 现在复用 keyed transition service 的到期 reconciliation：页面离开后，首次重访会按持久化 deadline 原子结算恰一条 FocusSession，刷新或并发入口不会重复，过期后 start 可直接开启新计时。QAM-07-002 已解决，QAM-07 当前为 85 分、Score L3、Gate/Final L2；组合开放问题为 P1×8/P2×31，模块平均分为 75.9。
+
+## 2026-09-09 — feat-035 Focus 到期状态服务端幂等结算修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-07-002`；没有修改 DST 统计、Goal 排序、Room snapshot、通知、离线学习或其他 QAM。
+- `lib/study-transitions.ts` 抽取手动 stop 与到期恢复共用的 settlement helper；`reconcileExpiredFocusTimer()` 在 Prisma interactive transaction 中先锁定当前 `User`，仅处理 `running/focusing` 且 `expectedEndAt <= now` 的状态，以持久化 deadline 作为 `endedAt`，用 `(userId, sessionKey)` upsert completed Session 并将 state 写为 idle。
+- `getStudyPageData()` 在读取 FocusState、Session 统计和 Room 数据前执行 reconciliation，因此 `/api/study` GET 与服务端 `/study` 页面共享恢复语义。`startFocusTimer()` 在同一事务先结算过期旧 key 再开启请求的新 key，`stopFocusTimer()` 对过期 running state 同样使用计划截止时间；未到期 running 和 paused 不会被误结算。
+- 活动 legacy state 缺少 `currentSessionKey` 时先条件修复独立旧 key；过期后 start 的新 key 与旧完成记录不会混用。既有客户端 auto-stop 保留为及时 UI 路径，但不再是完成事实的唯一提交者。
+- 新增 5 项真实 PostgreSQL 到期回归，覆盖重复 GET/刷新、GET 与新 start 并发、过期 stop 重放、未到期/paused 不变和 trigger 故障回滚；原有 5 项 keyed transition 回归保持通过。Playwright 在离开 Study 后直接推进隔离测试数据库中的 deadline，重访并刷新，从 UI 与数据库同时验证同 key 恰一条 completed Session。
+- E2E 启动器只在本地 Testcontainers 模式下将隔离数据库 URL 以 `0600` 写入 `test-results/.e2e-database-url`，结束时删除；外部 `PLAYWRIGHT_BASE_URL` 必须显式提供匹配的隔离 `E2E_DATABASE_URL`。该测试桥接约束已写入 `docs/testing-standards.md`，不会读取开发、预发或生产数据库。
+- 使用 `xoxo-qam-07-study-review` 只重算 reconciliation 直接影响的维度：`QAM-07-002` 转为 `resolved`，QAM-07 从 77 提升到 85、Score L2→L3、Gate/Final L1→L2；当前只剩 P2×2。使用 `harness-creator` 维持 feat-035 为唯一活动 feature，并同步验收、失败/通过证据和唯一下一步。
+
+### 验证证据
+
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/study-focus-transitions.integration.test.ts` 为 6/10 通过：到期 GET 实际仍为 running；到期后 start 实际保留旧 key；过期 stop 的 `endedAt` 使用请求时间而非 deadline；GET settlement 故障用例预期 500、实际 200。修复后同一套测试为 10/10。
+- Study 定向 Node 回归为 4 文件/31 项通过；`npm run check:quick` 为 60 文件/360 项通过；独立全量 `npm run test:integration` 为 14 文件/40 项通过；独立全量 `npm run test:e2e` 为 10/10，通过离开/重访/刷新到期恢复旅程。
+- 受限权限边界直接执行 `npm run check` 时 quick 全通过，production build 原始失败为 `Error: Could not parse output from TypeScript's --showConfig.`；依 AGENTS.md 使用相同 Node.js 22 命令在获准正常权限边界复核后退出 0，不能将受限边界假失败记作代码阻塞。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：TypeScript、ESLint、60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、14 文件/40 项真实 PostgreSQL integration 和 10/10 Playwright 全部通过。覆盖率为 statements 42.67%、branches 36.71%、functions 48.17%、lines 43.40%，均高于门槛；故障注入用例中的 Prisma `P0001` 为预期回滚证据。
+- `harness-creator` 校验为 100/100；`feature_list.json` 可解析，35 个 feature 全部为 `done`、活动/阻塞为 0；`git diff --check` 通过，`next-env.d.ts` 已恢复到会话开始时的 production types 引用。
+
+### 范围、清理与下一步
+
+- 未新增 npm 依赖、修改锁文件、Prisma schema/migration 或部署配置；本轮复用 feat-034 已有的 key、唯一约束和行锁事实源。前序 QAM-01/QAM-05/QAM-07-001 的未提交改动全部保留。
+- 本轮生成的 `coverage/`、`playwright-report/` 和 `test-results/` 在最终状态检查前移入系统回收站，可恢复；E2E 数据库 URL 文件已由启动器删除，Docker 只保留既有 `xoxo-meridian-postgres`，无 Testcontainers 残留，`.next` 构建缓存保留。
+- 唯一推荐下一步：另行登记并只处理 `QAM-02-001`，让 Room snapshot 使用 Prisma `select` 与显式公开字段 allow-list，阻止 `lastGeoIp`、`preferences`、未公开 `profileNote` 等私有 UserProfile 字段进入聊天/Study 浏览器载荷，并补真实页面或 Playwright 隐私回归；不要与消息 trace、dispatch、房间删除或 SSE 问题合并。
+
+## 2026-09-08 — feat-034 Focus 状态转移与原子结算修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-07-001`；没有实现到期自动 reconciliation `QAM-07-002`，也没有修改 DST 统计、Goal 排序、Room snapshot 或其他 QAM。
+- 新增 `lib/study-transitions.ts`，start/pause/resume/stop 均在 Prisma interactive transaction 中先锁定当前 `User` 行，再以 prior status 与 `currentSessionKey` 条件写入。start 为新计时生成 UUID；pause/resume/stop 必须提交当前 key，旧标签页或延迟请求无法作用于后来启动的 Session。
+- `FocusSession` 新增非空 `sessionKey` 和 `(userId, sessionKey)` 唯一约束；时间戳迁移为既有 Session 与活动 FocusState 回填稳定 legacy key。stop 以复合唯一键 upsert completed Session，并在同一事务内将 FocusState 写为 idle；重复 stop 返回既有 Session，任一步骤失败会整体回滚。
+- 四个 Study 状态 Route 收敛为认证、Zod 输入校验、领域服务调用与响应映射；`serializeFocusState`、Study GET 和 `StudyDashboard` 贯穿公开 `sessionKey`。pause/resume/stop 的状态冲突统一返回 409。
+- 新增 8 项 transition service 行为测试和 5 项真实 PostgreSQL 回归；后者覆盖 start→刷新→pause→resume→stop→重放、旧 key 隔离、并发 stop、确定性 pause/stop 交错和数据库 trigger 故障回滚。Playwright 停止旅程明确等待并校验 stop 响应，避免 Next.js 冷编译时在请求完成前提前断言 UI。
+- 使用 `xoxo-qam-07-study-review` 只重算 QAM-07-001 直接影响的维度：问题转为 `resolved`，QAM-07 从 62 提升到 77、Score L1→L2；到期 reconciliation P1 仍开放，因此 Gate/Final 保持 L1。总览同步为平均 75.0、开放 P1×9/P2×31。
+- 使用 `harness-creator` 保持 feat-034 为唯一活动 feature，并同步 feature 验收、失败/通过证据、清理与唯一下一步；该 Skill 没有扩大业务修改范围。
+
+### 验证证据
+
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、60 文件/355 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/study-focus-transitions.integration.test.ts` 为 0/3：并发 stop 返回不同 Session ID；stop/pause 交错中的 pause 实际为 200（期望 409）；state settlement 故障后 Session count 为 1（期望 0）。
+- 修复后同一定向真实 PostgreSQL 测试扩展为 5/5；全量 integration 为 14 文件/35 项通过。Study 定向 Node 回归 6 文件/36 项通过，新增 transition service 行为 8/8，`npm run check:quick` 最终为 60 文件/355 项通过。
+- 第一次完整门禁在生产构建与 347 项测试后失败于覆盖率 branches `34.61% < 35%`；补齐服务行为测试后四项覆盖率均过线。随后一次完整门禁进入 Playwright 后为 8/9：stop 请求在冷编译中仍 pending，旧 5 秒 UI 断言提前超时；修正等待边界后定向 Playwright 2/2 通过。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：TypeScript、ESLint、60 文件/355 项 Vitest、Next.js 16.3.3 production build、覆盖率、14 文件/35 项真实 PostgreSQL integration 和 9/9 Playwright 全部通过。
+- 最终覆盖率为 statements 42.42%、branches 36.38%、functions 47.68%、lines 43.17%，均高于门槛。故障注入用例中的 Prisma `P0001` 日志是预期响应/回滚证据，测试结果为通过。
+
+### 范围、清理与下一步
+
+- 未新增 npm 依赖或修改锁文件；schema 变更只增加 FocusSession 幂等键及时间戳迁移，不修改既有迁移。用户此前的 QAM-01/QAM-05 源码、测试与报告改动全部保留。
+- 本轮生成的 `coverage/`、`playwright-report/` 和 `test-results/` 在最终状态检查前移入系统回收站，可恢复；`.next` 构建缓存保留。
+- 唯一推荐下一步：另行登记并只处理 `QAM-07-002`，复用 keyed transition service，在 Study GET/start/stop 入口对已过 `expectedEndAt` 的 running state 做单事务 reconciliation，并用真实 PostgreSQL 与 Playwright 覆盖刷新/离开后的单次结算；不要与 DST 或 Goal P2 合并。
+
+## 2026-09-08 — feat-033 Agent log 跨房间读取边界修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-05-005`；没有修改 Post 写入、slug、cursor、Agent log durable projection、搜索失败 UI、Post/Atlas 生命周期或其他 QAM。
+- 新增 `lib/post-visibility.ts` 的统一 `getPostVisibilityWhere(userId)`：`user_post` 保持既有全局可见语义；`agent_log` 必须仍有关联 Room，且该 Room 的 `participants` 中存在当前用户。`roomId=null` 的孤儿 Agent log 不会因 Room 删除而变成全局内容。
+- `GET /api/posts` 将该条件作为 type、author、cursor 和搜索过滤之外的强制 `AND`；`GET /api/posts/:slug`、`/posts/:slug` 页面和 `/home` 首页复用同一条件。详情查询把 slug 与可见性放在同一数据库查询中，非成员稳定得到 404，不先泄漏记录存在性。
+- 新增真实 PostgreSQL 回归：建立 A/B 两个用户与相互隔离的 Room、一个带 B roomId 的全局 `user_post`、双方 Agent log 及删除 Room 后 `SetNull` 的孤儿日志；覆盖列表、type、搜索、详情、首页投影和切换当前用户后的成员可见性。
+- 使用 `xoxo-qam-05-content-timeline-review` 只重算读取授权直接影响的架构/复用、数据流、接口、安全与验证维度：`QAM-05-005` 转为 `resolved`，QAM-05 从 64/L1 提升到 73/L2；总览同步为平均 73.3、开放 P1×10/P2×31。
+- 使用 `harness-creator` 保持 feat-033 为唯一活动 feature，并同步验收证据、验证、清理和唯一下一步；该 Skill 没有扩大业务修改范围。
+
+### 验证证据
+
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、59 文件/346 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/post-visibility.integration.test.ts` 为 0/1：用户 A 的列表实际返回 `global-user-post`、A/B 双方 Agent log 和 `orphan-agent-log`，期望只返回前者与 A 房间日志。
+- 修复后同一定向真实 PostgreSQL 测试为 1/1：A/B 各只看到全局文章和自己 Room 的 Agent log；`type=agent_log` 与 `q` 搜索不能绕过成员条件；成员详情 200，非成员/孤儿详情 404；首页可见 Post 集合与 API 一致，数据库确认孤儿记录仍存在且 `roomId=null`。
+- `npm run check:quick` 退出 0：TypeScript、ESLint、59 文件/346 项 Vitest 通过；旧 Post mock 测试已同步验证新增可见性条件与既有 type/search 组合。
+- 独立全量 `npm run test:integration` 为 13 文件/30 项通过；`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 随后单次退出 0：快速门禁、Next.js 16.3.3 production build、覆盖率、13 文件/30 项 PostgreSQL 和 9/9 Playwright 全部通过。
+- 覆盖率为 statements 41.94%、branches 35.92%、functions 46.39%、lines 42.62%，均高于门槛。
+
+### 范围、清理与下一步
+
+- 未新增依赖、修改锁文件、Prisma schema/migration、Agent Runtime、Room 写入或部署配置；关系过滤复用既有 `RoomParticipant(userId)` 与 `(roomId,userId)` 索引，未引入第二套成员事实源。
+- 本轮生成的 `coverage/`、`playwright-report/` 和 `test-results/` 已移入系统回收站，可恢复；`.next` 构建缓存及所有前序未提交改动保持不变。
+- 唯一推荐下一步：另行登记并只处理 `QAM-07-001`，把 Focus start/pause/resume/stop 状态转移与 Session 结算收敛为使用 `currentSessionKey` 的原子、幂等事务，并用真实 PostgreSQL 覆盖并发 stop、pause/stop 交错与故障回滚；不要与到期自动 reconciliation `QAM-07-002` 或 DST/Goal P2 合并。
+
+## 2026-09-08 — feat-032 并发注册房间容量竞态修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-01-004`；没有修改已通过 E3 的 Session 签发或密码恢复，也没有处理代理头、日志、旧认证工件和其他 QAM。
+- `POST /api/auth/register` 不再在事务外读取默认 Room。注册 Prisma transaction 现在先按 `DEMO_ROOM_SLUG` 执行 `SELECT ... FOR UPDATE`，再使用锁内 `maxHumanUsers` 重新统计 Participant；后到事务必须等先到事务提交后再判断剩余容量。
+- Room 锁、容量判断、User + 嵌套 UserProfile 和 RoomParticipant 写入保持在同一事务。默认 Room 不存在仍返回 500，已满仍返回 409，首位/后续注册仍分别得到 owner/member，邀请码、响应体与 Session 签发契约不变。
+- 新增真实 PostgreSQL Route Handler 回归：Participant insert delay trigger 稳定制造两个注册同时越过旧 count 窗口；insert failure trigger 验证跨写中途失败不会留下 User/Profile/Participant/Session，并证明移除故障后同一邮箱可重试成功。
+- 使用 `xoxo-qam-01-identity-review` 只重算直接受影响的状态一致性、并发生命周期和验证可信度：`QAM-01-004` 转为 `resolved`，QAM-01 从 83 提升到 87，Gate/Final 从 L1 提升到 L4/L3。总览同步为平均 72.3、开放 P1×11/P2×31。
+- 使用 `harness-creator` 保持 feat-032 为唯一活动 feature，并同步验收证据、清理和唯一下一步；该 Skill 没有扩大业务修改范围。
+
+### 验证证据
+
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、59 文件/346 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/registration-capacity.integration.test.ts` 为 1/2 通过、1/2 失败：两个并发注册实际均返回 200（期望 200/409），稳定证明最终槽位被重复消费；Participant 故障回滚对照通过。
+- 受限沙箱内首次执行上述 Docker 命令退出 1，原始错误为 `sudo: The "no new privileges" flag is set`；在获准的正常权限边界使用同一 Node.js 22 命令后完成修复前后对照。
+- 修复后同一定向真实 PostgreSQL 测试为 2/2 通过：已有 1 名成员时两个不同邮箱恰为 200/409、Participant 保持 2，loser 没有 User/Profile/Session；Participant insert trigger 故障返回 500 且全部跨写回滚，移除故障后同一邮箱成功注册为 owner 并获得 Session。
+- `npm run check:quick` 退出 0：TypeScript、ESLint、59 文件/346 项 Vitest 通过；随后全量 `npm run test:integration` 为 12 文件/29 项通过，既有 Session、密码恢复、权限和 Agent/画布事务语义保持可用。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：快速门禁、Next.js 16.3.3 production build、覆盖率、12 文件/29 项 PostgreSQL 和 9/9 Playwright 全部通过。覆盖率为 statements 41.87%、branches 35.88%、functions 46.30%、lines 42.60%，均高于门槛。
+
+### 范围、清理与下一步
+
+- 未新增依赖、修改锁文件、Prisma schema/migration 或部署配置；Room 行锁只串行同一默认房间的注册容量临界区，不改变其他房间或注册后的 Session 事务。
+- 已清理本轮生成的 `coverage/`、`playwright-report/` 和 `test-results/`；`.next` 作为启动/构建缓存保留，既有未提交改动和数据均未删除。
+- 唯一推荐下一步：另行登记并只处理 `QAM-05-005`，为 room-scoped `agent_log` 的列表、搜索、详情和首页读取建立统一成员可见性条件，并用真实 PostgreSQL 跨房间回归证明非成员不可见；不要与 slug、cursor 或 durable projection P2 合并。
+
+## 2026-09-07 — feat-031 Session 原子签发与单活跃语义修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-01-001`；没有修改注册容量 `QAM-01-004`、代理头、日志、旧认证工件、认证产品策略或 Cookie 响应契约。
+- `createSessionCookie()` 将当前浏览器可能切换出的旧用户与目标用户 ID 排序，并委托 `replaceActiveSession()` 在固定顺序取得 PostgreSQL `User` 行锁；相关旧 Session 删除、目标用户 Session 全量失效和新 Session 创建均在同一 Prisma transaction 内完成。
+- 事务只对 Prisma `P2034` 冲突/死锁最多重试 3 次；普通业务或数据库错误直接上抛。登录、注册和 `setSessionCookie()` 均继续复用该统一签发入口，没有形成第二套 Session 状态事实源。
+- 新增真实 PostgreSQL Route Handler 回归：insert delay trigger 强制两个登录同时越过旧实现的删除窗口；insert failure trigger 验证新记录创建失败时旧 Session 回滚保留；注册正向路径验证签发 Cookie 可访问 `/api/auth/me`。
+- 使用 `xoxo-qam-01-identity-review` 只重算直接受影响的状态一致性、并发生命周期和验证可信度：`QAM-01-001` 转为 `resolved`，QAM-01 从 76 提升到 83、Score L2→L3；注册容量 P1 仍开放，因此 Gate/Final 保持 L1。总览同步为平均 71.9、开放 P1×12/P2×31。
+- 使用 `harness-creator` 保持 feat-031 为唯一活动 feature，并同步验收证据、环境例外、清理与唯一下一步；该 Skill 没有扩大业务修改范围。
+
+### 验证证据
+
+- 开始与最终 `./init.sh` 均退出 0；最终结果为 Prisma Client、TypeScript、ESLint、59 文件/346 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/session-issuance.integration.test.ts` 为 1/3 通过、2/3 失败：并发登录后的 Session count 实际为 2（期望 1），替换插入故障后的 Session 实际为 `[]`（期望保留旧记录）；注册签发正向对照通过。
+- 修复后同一定向真实 PostgreSQL测试为 3/3 通过：两个登录响应均为 200、最终 Session count 为 1，两个响应 Cookie 请求 `/api/auth/me` 恰为 200/401；插入故障返回 500 且旧 Session 保留；注册 Cookie 请求受保护端点为 200。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 没有虚记为单次退出 0：其中 `npm run check` 已通过 59 文件/346 项 Vitest、Next.js 16.3.3 production build与覆盖率，全量真实 PostgreSQL 为 11 文件/27 项通过；进入 Playwright 时用户既有 PID 140196 持有仓库 `.next`，原始错误为 `Another next dev server is already running`。
+- 为避免终止或复用用户服务，在不包含 `.env`、`.git`、`.next` 和生成报告的 `/tmp/xoxo-meridian-e2e-copy.g8j6n5` 隔离副本运行完整 E2E。首次为 8/9，唯一失败仍是无关 Study 在冷编译时等待 `/专注中 ·/` 5 秒超时；同一副本缓存预热后完整复跑明确退出 0，9/9 通过。没有修改 Study。
+- 覆盖率为 statements 41.93%、branches 35.92%、functions 46.30%、lines 42.60%，均高于门槛。
+
+### 范围、清理与下一步
+
+- 未新增依赖、修改锁文件或 Prisma schema/migration；PostgreSQL 行锁限定到本次签发涉及的用户，并按 ID 固定顺序获取，避免把不同账号登录全局串行化。
+- 完整门禁生成的 `coverage/`、`playwright-report/`、`test-results/` 与 `/tmp/xoxo-meridian-e2e-copy.g8j6n5` 已清理，Docker 无 Testcontainers 残留；用户 PID 140196 与仓库 `.next` 未删除，所有既有数据保持不动。
+- 唯一推荐下一步：另行登记并只处理 `QAM-01-004`，在注册事务中锁定默认 Room 容量事实源，用真实 PostgreSQL 并发注册证明 Participant 不超过 `maxHumanUsers` 且失败请求不留下 User/Profile 孤儿；不要与 P2 合并。
 
 ## 2026-09-07 — feat-030 密码重置 token 存储与原子消费修复
 

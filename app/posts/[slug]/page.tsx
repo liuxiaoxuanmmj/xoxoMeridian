@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { requirePageUser } from "@/lib/auth";
+import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { prisma } from "@/lib/prisma";
 import { PostDetail } from "@/components/blog/PostDetail";
 import { BackToBlog } from "@/components/blog/BackToBlog";
@@ -16,8 +17,11 @@ export default async function PostDetailPage({
   const user = await requirePageUser();
   const { slug } = await params;
 
-  const post = await prisma.post.findUnique({
-    where: { slug },
+  const post = await prisma.post.findFirst({
+    where: {
+      slug,
+      AND: [getPostVisibilityWhere(user.id)],
+    },
     include: {
       author: {
         select: {

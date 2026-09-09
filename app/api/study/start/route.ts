@@ -1,7 +1,7 @@
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { getStudyRoomForUser, serializeFocusState } from "@/lib/study";
+import { startFocusTimer } from "@/lib/study-transitions";
 import { readJsonBody, studyStartSchema } from "@/lib/validation";
 
 const DEFAULT_DURATIONS: Record<string, number> = {
@@ -17,46 +17,12 @@ export async function POST(request: Request) {
     const mode = body.mode ?? "focus";
     const plannedMinutes = body.plannedMinutes ?? DEFAULT_DURATIONS[mode] ?? 25;
 
-    const existing = await prisma.focusState.findUnique({
-      where: { userId: user.id },
-    });
-
-    if (existing && (existing.status === "running" || existing.status === "paused")) {
-      const response = jsonOk({ state: serializeFocusState(existing) });
-      applyNoStoreHeaders(response.headers);
-      return response;
-    }
-
     const room = await getStudyRoomForUser(user.id);
-
-    const startedAt = new Date();
-    const expectedEndAt = new Date(startedAt.getTime() + plannedMinutes * 60_000);
-
-    const state = await prisma.focusState.upsert({
-      where: { userId: user.id },
-      update: {
-        status: "running",
-        mode,
-        plannedMinutes,
-        startedAt,
-        expectedEndAt,
-        remainingSeconds: null,
-        pausedAt: null,
-        lastStudySeenAt: new Date(),
-        roomId: room.id,
-      },
-      create: {
-        userId: user.id,
-        status: "running",
-        mode,
-        plannedMinutes,
-        startedAt,
-        expectedEndAt,
-        remainingSeconds: null,
-        pausedAt: null,
-        lastStudySeenAt: new Date(),
-        roomId: room.id,
-      },
+    const state = await startFocusTimer({
+      userId: user.id,
+      roomId: room.id,
+      mode,
+      plannedMinutes,
     });
 
     const response = jsonOk({ state: serializeFocusState(state) });

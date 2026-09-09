@@ -8,6 +8,7 @@ const {
   mockFocusSessionFindMany,
   mockStudyGoalFindMany,
   mockGetRoomSnapshot,
+  mockReconcileExpiredFocusTimer,
 } = vi.hoisted(() => ({
   mockRoomParticipantFindFirst: vi.fn(),
   mockRoomParticipantFindMany: vi.fn(),
@@ -16,6 +17,7 @@ const {
   mockFocusSessionFindMany: vi.fn(),
   mockStudyGoalFindMany: vi.fn(),
   mockGetRoomSnapshot: vi.fn(),
+  mockReconcileExpiredFocusTimer: vi.fn(),
 }));
 
 vi.mock("@/lib/prisma", () => ({
@@ -34,11 +36,15 @@ vi.mock("@/lib/prisma", () => ({
 }));
 
 vi.mock("@/lib/room-snapshot", () => ({ getRoomSnapshot: mockGetRoomSnapshot }));
+vi.mock("@/lib/study-transitions", () => ({
+  reconcileExpiredFocusTimer: mockReconcileExpiredFocusTimer,
+}));
 
 import { getStudyPageData } from "@/lib/study";
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockReconcileExpiredFocusTimer.mockResolvedValue(null);
 });
 
 describe("getStudyPageData productized payload", () => {
@@ -73,6 +79,7 @@ describe("getStudyPageData productized payload", () => {
     expect(data.room.id).toBe("room-1");
     expect(data).toHaveProperty("chatSnapshot");
     expect(data.stats).toHaveProperty("streakDays");
+    expect(mockReconcileExpiredFocusTimer).toHaveBeenCalledWith("user-1", expect.any(Date));
   });
 
   it("marks members offline when lastStudySeenAt is null", async () => {

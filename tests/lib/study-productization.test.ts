@@ -11,6 +11,7 @@ import {
   studyGoalPatchSchema,
   studyGoalPostSchema,
   studyStartSchema,
+  studyTransitionSchema,
 } from "@/lib/validation";
 
 describe("study room Prisma contract", () => {
@@ -61,6 +62,7 @@ describe("productized study helpers", () => {
         startedAt: new Date("2026-06-30T01:00:00.000Z"),
         expectedEndAt: null,
         pausedAt: new Date("2026-06-30T01:10:00.000Z"),
+        currentSessionKey: "focus-key",
       })
     ).toEqual({
       status: "paused",
@@ -70,6 +72,7 @@ describe("productized study helpers", () => {
       startedAt: "2026-06-30T01:00:00.000Z",
       expectedEndAt: null,
       pausedAt: "2026-06-30T01:10:00.000Z",
+      sessionKey: "focus-key",
     });
   });
 
@@ -89,6 +92,13 @@ describe("study validation schemas", () => {
       mode: "short",
       plannedMinutes: 5,
     });
+  });
+
+  it("requires a bounded session key for focus transitions", () => {
+    expect(parseBody(studyTransitionSchema, { sessionKey: "focus-key" })).toEqual({
+      sessionKey: "focus-key",
+    });
+    expect(() => parseBody(studyTransitionSchema, {})).toThrow("Validation failed");
   });
 
   it("trims new study goals", () => {

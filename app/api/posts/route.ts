@@ -1,8 +1,10 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 
 import { requireCurrentUser } from "@/lib/auth";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
+import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { prisma } from "@/lib/prisma";
 import { ensureUniqueSlug, generateSlug, snapshotProfileLocation } from "@/lib/posts";
 
@@ -16,7 +18,9 @@ export async function GET(request: Request) {
     const cursor = searchParams.get("cursor");
     const q = searchParams.get("q")?.trim();
 
-    const where: Record<string, unknown> = {};
+    const where: Prisma.PostWhereInput = {
+      AND: [getPostVisibilityWhere(user.id)],
+    };
     if (type) where.type = type;
     if (authorId) where.authorId = authorId;
     if (cursor) {

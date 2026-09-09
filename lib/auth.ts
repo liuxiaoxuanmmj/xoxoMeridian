@@ -1,5 +1,6 @@
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { isIP } from "node:net";
+import { Prisma } from "@prisma/client";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -245,6 +246,77 @@ export async function appendSessionCookieHeaders(responseHeaders: Headers, cooki
   responseHeaders.append("Set-Cookie", serializeSessionCookie(cookie));
 }
 
+const SESSION_ISSUANCE_MAX_ATTEMPTS = 3;
+
+function isRetryableSessionTransactionError(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034";
+}
+
+async function replaceActiveSession({
+  userId,
+  previousSession,
+  clientIp,
+  userAgent,
+  expiresAt,
+}: {
+  userId: string;
+  previousSession: SessionPayload | null;
+  clientIp: string | null;
+  userAgent: string | null;
+  expiresAt: Date;
+}) {
+  const sessionId = generateSessionToken();
+  const userIdsToLock = [
+    userId,
+    ...(previousSession && previousSession.userId !== userId ? [previousSession.userId] : []),
+  ].sort();
+
+  for (let attempt = 1; attempt <= SESSION_ISSUANCE_MAX_ATTEMPTS; attempt += 1) {
+    try {
+      return await prisma.$transaction(async (tx) => {
+        // Lock every affected user in a stable order. Concurrent issuers for
+        // the same account therefore replace one another instead of both
+        // observing an empty Session set and committing separate rows.
+        for (const lockedUserId of userIdsToLock) {
+          await tx.$queryRaw<Array<{ id: string }>>`
+            SELECT "id"
+            FROM "User"
+            WHERE "id" = ${lockedUserId}
+            FOR UPDATE
+          `;
+        }
+
+        if (previousSession && previousSession.userId !== userId) {
+          await tx.session.deleteMany({
+            where: {
+              id: previousSession.sessionId,
+              userId: previousSession.userId,
+            },
+          });
+        }
+
+        await tx.session.deleteMany({ where: { userId } });
+
+        return tx.session.create({
+          data: {
+            id: sessionId,
+            userId,
+            ipAddress: clientIp,
+            userAgent,
+            expiresAt,
+          },
+        });
+      });
+    } catch (error) {
+      if (attempt === SESSION_ISSUANCE_MAX_ATTEMPTS || !isRetryableSessionTransactionError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error("Session issuance retry loop exhausted unexpectedly");
+}
+
 export async function createSessionCookie(userId: string): Promise<{ sessionId: string; cookie: SessionCookie }> {
   const [jar, headersList] = await Promise.all([cookies(), headers()]);
   const previousSession = verifySession(jar.get(USER_COOKIE)?.value);
@@ -253,30 +325,12 @@ export async function createSessionCookie(userId: string): Promise<{ sessionId: 
   const now = Date.now();
   const expiresAt = new Date(now + env.SESSION_MAX_AGE_SECONDS * 1000);
 
-  if (previousSession && previousSession.userId !== userId) {
-    await prisma.session.delete({
-      where: { id: previousSession.sessionId },
-    }).catch(() => {
-      // The previous browser session may already be gone; login can continue.
-    });
-  }
-
-  // Invalidate all existing sessions for this user to ensure only one active session
-  // This prevents old tabs from interfering with newly logged-in sessions
-  await prisma.session.deleteMany({
-    where: { userId },
-  });
-
-  // Create new session in database
-  const sessionToken = generateSessionToken();
-  const session = await prisma.session.create({
-    data: {
-      id: sessionToken,
-      userId,
-      ipAddress: clientIp,
-      userAgent,
-      expiresAt,
-    },
+  const session = await replaceActiveSession({
+    userId,
+    previousSession,
+    clientIp,
+    userAgent,
+    expiresAt,
   });
 
   // Set cookie with signed session token

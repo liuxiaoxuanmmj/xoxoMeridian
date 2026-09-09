@@ -120,6 +120,10 @@ export const studyStartSchema = z.object({
   plannedMinutes: z.number().int().min(1).max(180).optional(),
 });
 
+export const studyTransitionSchema = z.object({
+  sessionKey: z.string().min(1).max(128),
+});
+
 export const studyGoalPostSchema = z.object({
   text: z.preprocess(trim, z.string().min(1).max(200)),
 });

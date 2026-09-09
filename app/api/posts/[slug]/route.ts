@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { assertPostOwnership } from "@/lib/api-posts";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { prisma } from "@/lib/prisma";
 import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
 
@@ -12,11 +13,14 @@ export async function GET(
   { params }: { params: Promise<{ slug: string }> }
 ) {
   try {
-    await requireCurrentUser();
+    const user = await requireCurrentUser();
     const { slug } = await params;
 
-    const post = await prisma.post.findUnique({
-      where: { slug },
+    const post = await prisma.post.findFirst({
+      where: {
+        slug,
+        AND: [getPostVisibilityWhere(user.id)],
+      },
       include: {
         author: {
           select: {

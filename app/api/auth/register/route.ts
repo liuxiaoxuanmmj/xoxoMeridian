@@ -9,6 +9,13 @@ import { enforceRateLimit } from "@/lib/rate-limit";
 import { readJsonBody, registerSchema } from "@/lib/validation";
 import { FIFTEEN_MINUTES_MS } from "@/lib/constants";
 
+type RegistrationRoom = {
+  id: string;
+  slug: string;
+  name: string;
+  maxHumanUsers: number;
+};
+
 export async function POST(request: Request) {
   try {
     const limited = enforceRateLimit(request, "register", 5, FIFTEEN_MINUTES_MS);
@@ -24,19 +31,27 @@ export async function POST(request: Request) {
       return jsonError("Invalid invite code", 403);
     }
 
-    const room = await prisma.room.findUnique({
-      where: { slug: env.DEMO_ROOM_SLUG },
-    });
-    if (!room) {
-      return jsonError("Default room not provisioned. Run prisma seed.", 500);
-    }
-
     const passwordHash = await hashPassword(body.password);
     const avatarLabel = body.displayName.slice(0, 2);
 
-    let user;
+    let registration;
     try {
-      user = await prisma.$transaction(async (tx) => {
+      registration = await prisma.$transaction(async (tx) => {
+        const [room] = await tx.$queryRaw<RegistrationRoom[]>`
+          SELECT "id", "slug", "name", "maxHumanUsers"
+          FROM "Room"
+          WHERE "slug" = ${env.DEMO_ROOM_SLUG}
+          FOR UPDATE
+        `;
+        if (!room) {
+          throw new Response(JSON.stringify({
+            error: "Default room not provisioned. Run prisma seed.",
+          }), {
+            status: 500,
+            headers: { "content-type": "application/json" },
+          });
+        }
+
         const occupied = await tx.roomParticipant.count({ where: { roomId: room.id } });
         if (occupied >= room.maxHumanUsers) {
           throw new Response(JSON.stringify({ error: "Room is full" }), {
@@ -69,7 +84,7 @@ export async function POST(request: Request) {
           },
         });
 
-        return created;
+        return { room, user: created };
       });
     } catch (err) {
       if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === "P2002") {
@@ -78,16 +93,20 @@ export async function POST(request: Request) {
       throw err;
     }
 
-    const sessionCookie = await createSessionCookie(user.id);
+    const sessionCookie = await createSessionCookie(registration.user.id);
 
     const response = jsonOk({
       user: {
-        id: user.id,
-        email: user.email,
-        displayName: user.displayName,
-        avatarLabel: user.avatarLabel,
+        id: registration.user.id,
+        email: registration.user.email,
+        displayName: registration.user.displayName,
+        avatarLabel: registration.user.avatarLabel,
       },
-      room: { id: room.id, slug: room.slug, name: room.name },
+      room: {
+        id: registration.room.id,
+        slug: registration.room.slug,
+        name: registration.room.name,
+      },
     });
     applyNoStoreHeaders(response.headers);
     await appendSessionCookieHeaders(response.headers, sessionCookie.cookie);

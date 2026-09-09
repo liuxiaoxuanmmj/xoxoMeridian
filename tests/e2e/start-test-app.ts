@@ -1,5 +1,5 @@
 import { execFile, spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
@@ -12,6 +12,7 @@ const execFileAsync = promisify(execFile);
 const port = "3100";
 const baseURL = `http://127.0.0.1:${port}`;
 const dataDir = await mkdtemp(join(tmpdir(), "xoxo-meridian-e2e-"));
+const databaseUrlFile = resolve("test-results/.e2e-database-url");
 let postgres: StartedPostgreSqlContainer;
 try {
   postgres = await new PostgreSqlContainer("postgres:16-alpine")
@@ -57,6 +58,9 @@ await execFileAsync(process.execPath, ["--import", "tsx", "prisma/seed.ts"], {
   cwd: process.cwd(),
   env: appEnv,
 });
+await mkdir(resolve("test-results"), { recursive: true });
+await rm(databaseUrlFile, { force: true });
+await writeFile(databaseUrlFile, databaseUrl, { mode: 0o600 });
 
 const nextCli = resolve("node_modules/next/dist/bin/next");
 const server = spawn(
@@ -72,6 +76,7 @@ async function shutdown(exitCode: number) {
   shuttingDown = true;
   server.kill("SIGTERM");
   await postgres.stop().catch(() => undefined);
+  await rm(databaseUrlFile, { force: true });
   await rm(dataDir, { recursive: true, force: true });
   process.exit(exitCode);
 }

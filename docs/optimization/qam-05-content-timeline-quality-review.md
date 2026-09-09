@@ -5,55 +5,55 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-05 内容发布与时间线 |
-| 快照日期 | 2026-09-06 |
+| 快照日期 | 2026-09-08 |
 | 审查 Skill | [`xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-05、Cross-cutting Concerns、共享映射、BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `baseline`（初审） |
-| 当前基线命令 | `npm run check:quick`：本轮未重复执行；当前工作区交接记录为通过（TypeScript、ESLint、58 个文件/344 项 Vitest） |
-| 风险匹配命令 | `npm run test:unit -- tests/lib/posts.test.ts tests/server/posts-api.test.ts tests/agent/agent-posts.test.ts tests/server/markdown-content.test.ts tests/server/home-timeline-board-search.test.ts tests/server/timeline-empty-message.test.ts`：6 文件/47 项通过；`npm run test:component -- tests/component/home-timeline-board-search.test.tsx tests/component/post-editor.test.tsx tests/component/search-input.test.tsx`：3 文件/5 项通过；另执行 `node --import tsx --input-type=module -e 'import React from "react"; import {renderToStaticMarkup} from "react-dom/server"; import {MarkdownContent} from "./components/blog/MarkdownContent.tsx"; const html=renderToStaticMarkup(React.createElement(MarkdownContent,{content:"[bad](javascript:alert(1))\\n\\n<script>alert(1)</script>"})); console.log(html)'`，危险链接/HTML 呈现实验通过 |
-| 证据纪律 | E3 为本轮实际执行的测试或可复现实验；E2 为源码、schema、迁移与测试交叉证据；未把 Prisma mock 或组件测试写成真实 PostgreSQL、跨房间授权或浏览器 E2E 证据 |
-| 工作区说明 | 审查前已有 AGENTS/Harness、PROJECT_VIEW、共享标准及 QAM-01～QAM-03 报告未提交改动；本报告未将其作为业务基线改动，且只新增本文件 |
+| 本轮 Delta | `+9（QAM-05-005 resolved）` |
+| 当前基线命令 | `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full`：单次退出 0；59 文件/346 项 Vitest、生产构建、覆盖率、13 文件/30 项 PostgreSQL 与 Playwright 9/9 通过 |
+| 风险匹配命令 | `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/post-visibility.integration.test.ts`：修复前 0/1，用户 A 实际读到 B 房间和孤儿 Agent log；修复后 1/1，覆盖列表、type、搜索、详情、首页、双用户成员切换和 Room `SetNull` 孤儿语义；全量 PostgreSQL 13 文件/30 项通过 |
+| 证据纪律 | E3 为本轮实际执行的真实 PostgreSQL、完整门禁和浏览器验证；E2 为源码、schema、迁移与测试交叉证据；只将跨房间读取回归用于关闭 QAM-05-005，未据此宣称 slug/cursor/projection 等 P2 已验证 |
+| 工作区说明 | 本轮保持 feat-033 为唯一活动 feature；前序 feat-031/032 与 QAM-01/Harness 改动完整保留，未把它们计入 QAM-05 分数变化 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **64 / 100** |
-| Score Level | **L1** |
-| Gate Level | **L1** |
-| Final Level | **L1** |
-| Trend | `baseline` |
-| Evidence Confidence | 中等（正常写入、slug/分页、Agent projection 和跨房间过滤主要为 E2；Markdown 与现有 UI 路径有 E3；没有 QAM-05 真实 PostgreSQL 并发/级联或发帖全旅程 E3） |
-| 当前开放问题 | 8 项（P1×1、P2×7） |
+| Score | **73 / 100** |
+| Score Level | **L2** |
+| Gate Level | **L2** |
+| Final Level | **L2** |
+| Trend | `+9` |
+| Evidence Confidence | 中高（Agent log 跨房间读取与孤儿语义已有真实 PostgreSQL E3，完整生产构建和既有发帖旅程通过；slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍主要为 E2） |
+| 当前开放问题 | 7 项（P2×7） |
 
-Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可定位的分层实现，数据库也提供 slug 唯一键和 Post→AtlasElement 级联。HTTP Route、Server Action、首页查询却各自重复写入/查询规则；slug 和时间 cursor 没有稳定并发语义，Agent log 也在任务完成事务之外 best-effort 写入。带 `roomId` 的 Agent log 查询没有成员资格过滤，唯一开放 P1 与最高风险缺少行为级验证，使最终等级为 L1。
+Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可定位的分层实现，数据库也提供 slug 唯一键和 Post→AtlasElement 级联。`getPostVisibilityWhere()` 现在让列表、搜索、API/页面详情和首页共享同一成员可见性条件，保留全局 `user_post`，并隐藏非成员及 Room 删除后的孤儿 `agent_log`；真实 PostgreSQL 已覆盖该权限边界。HTTP Route/Server Action 写入、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍有 7 个 P2，因此当前为 L2。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
-| 架构与责任边界 | 10 | 14 | 页面、Route、Server Action、Post helper 和组件职责基本可导航；但首页直接拥有 Post 查询，Timeline 又复用 Home spatial shell，且 QAM-05/QAM-06 没有单向 composition boundary（[`app/home/page.tsx`](../../app/home/page.tsx#L1-L57)、[`Timeline.tsx`](../../components/blog/Timeline.tsx#L1-L7)、BU-05，E2）。 |
+| 架构与责任边界 | 11 | 14 | 页面、Route、Server Action、Post helper 和组件职责基本可导航，读取授权已下沉到共享领域条件；但首页仍直接拥有 Post 查询，Timeline 又复用 Home spatial shell，且 QAM-05/QAM-06 没有单向 composition boundary（[`post-visibility.ts`](../../lib/post-visibility.ts#L1-L18)、[`app/home/page.tsx`](../../app/home/page.tsx#L13-L30)、BU-05，E2/E3）。 |
 | 代码结构与复杂度 | 8 | 10 | CRUD 与呈现控制流局部简单，复杂度主要来自 HTTP/Action 两套写路径、首页/搜索两套读投影和 Agent completion 后置投影，而非内容功能本身（[`posts route`](../../app/api/posts/route.ts#L9-L88)、[`posts actions`](../../app/actions/posts.ts#L17-L103)，E2）。 |
-| 抽象与复用 | 5 | 8 | `generateSlug`、`ensureUniqueSlug`、位置快照和 `assertPostOwnership` 有复用；Post body/query schema、写入服务、cursor 编解码和读取 view model 没有单一来源（QAM-05-001/006/007，E2）。 |
-| 数据流与状态一致性 | 8 | 12 | Post 持久化字段与 Atlas 外键级联清楚，最终 Agent Message/Task 事务也有边界；但 slug/cursor 只以时间或 check-then-write 推进，Agent log 是任务完成后的独立写入，失败/节流没有持久事实（QAM-05-002/003/004/008，E2）。 |
-| 接口与依赖关系 | 6 | 10 | 受保护页面与主要 Route 入口稳定，详情/编辑 ownership 可定位；HTTP 与 Action 的输入、空字段和错误返回契约重复且漂移，首页和搜索 API 的 author projection 也不同（QAM-05-001/006/007，E2）。 |
+| 抽象与复用 | 6 | 8 | `generateSlug`、`ensureUniqueSlug`、位置快照、ownership 和 Post read visibility 均有单一复用入口；Post body/query schema、写入服务、cursor 编解码和读取 view model 仍没有单一来源（[`post-visibility.ts`](../../lib/post-visibility.ts#L3-L18)、QAM-05-001/006/007，E2/E3）。 |
+| 数据流与状态一致性 | 9 | 12 | Post 持久化字段、Atlas 外键级联及 `agent_log` 的成员/Room `SetNull` 读取语义已明确；但 slug/cursor 只以时间或 check-then-write 推进，Agent log 投影失败/节流仍没有持久事实（QAM-05-002/003/004/008，E2/E3）。 |
+| 接口与依赖关系 | 7 | 10 | 列表、搜索、API/页面详情和首页共享相同可见性 contract；HTTP 与 Action 的输入、空字段和错误返回仍重复，首页和搜索 API 的 author projection 也不同（[`posts route`](../../app/api/posts/route.ts#L11-L43)、[`Post detail route`](../../app/api/posts/%5Bslug%5D/route.ts#L11-L44)、QAM-05-001/006/007，E2/E3）。 |
 | 健壮性、并发与生命周期 | 7 | 14 | Prisma unique/FK、Atlas `skipDuplicates` 和 final step 栅栏提供基础保护；slug race、Agent projection 丢失、Home anchor 与 Post 删除交错、无稳定 cursor 没有恢复或并发证明（QAM-05-002/003/004/008，E2）。 |
 | 性能与资源使用 | 6 | 8 | 首页/API 各限制 50/100 条，Post 有 type/author/room 索引；搜索对 title/content 使用 contains，首页还为每次访问执行 board 查询和 anchor 补齐，规模增长时查询与重复装配成本可见，但当前没有凭数量直接扣分（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`home-board.ts`](../../lib/home-board.ts#L18-L54)，E2）。 |
-| 安全与隐私 | 5 | 10 | 认证、编辑/删除 ownership 和 `react-markdown` 默认危险 URL/HTML 防护有效（本轮 E3）；Agent log 明确带 roomId 却在首页、列表和详情中全局返回，Server Action 还把内部异常消息返回客户端（QAM-05-005/006，E2）。 |
-| 可测试性与验证可信度 | 4 | 8 | slug/位置、Markdown、搜索交互、编辑防重复提交和 Agent helper 有定向测试且本轮通过；没有 Post Route PUT/DELETE ownership、真实 PostgreSQL slug/cursor/Atlas 生命周期、跨房间授权或 Agent projection 失败/恢复测试，现有测试主要使用 Prisma mock（[`posts-api.test.ts`](../../tests/server/posts-api.test.ts#L1-L258)、[`agent-posts.test.ts`](../../tests/agent/agent-posts.test.ts#L1-L74)，E2/E3）。 |
+| 安全与隐私 | 8 | 10 | 认证、编辑/删除 ownership、Markdown 防护和 room-scoped Agent log 成员过滤均有效；真实 PostgreSQL 证明非成员无法经列表、搜索、详情或首页读取秘密日志，孤儿日志也不会转为全局内容。Server Action/开发错误响应仍可能泄漏内部异常（QAM-05-006，E2/E3）。 |
+| 可测试性与验证可信度 | 6 | 8 | slug/位置、Markdown、搜索交互、编辑防重复提交和 Agent helper 有定向测试；新增真实 PostgreSQL 跨房间回归覆盖四条读取路径、双用户和 `SetNull`，完整门禁通过。Post Route PUT/DELETE ownership、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍缺少风险匹配 E3（[`post-visibility.integration.test.ts`](../../tests/integration/post-visibility.integration.test.ts#L54-L179)，E3）。 |
 | 可维护性、演进与技术债 | 5 | 6 | 变化落点大体明确，Post schema 的快照字段和 Atlas 关系可追踪；新增输入、排序、隐私或 Agent log 规则仍需同步 Route、Action、Home、API 与 projection 多处（QAM-05-001/004/007，E2）。 |
-| **合计** | **64** | **100** | 算术核对：10+8+5+8+6+7+6+5+4+5 = 64。 |
+| **合计** | **73** | **100** | 算术核对：11+8+6+9+7+7+6+8+6+5 = 73。 |
 
 ## Level Gate
 
 | 门禁 | 结果 | 证据与原因 |
 | --- | --- | --- |
 | 开放 P0 | 通过 | 未发现已确认的 P0；Markdown 危险链接/原始 HTML 的本轮渲染实验未执行脚本，Post 删除的 FK 级联存在。 |
-| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 未通过 | 仅 QAM-05-005 直接突破 room-scoped Agent log 的成员权限边界，Gate 不高于 L1。QAM-05-001/002/003/004 经本轮优先级复核均属 P2：分别是 malformed body 的不稳错误/规则扩散、unique 拒绝一个并发请求但数据库仍一致、同毫秒边界漏读、异常时派生日志丢失；当前没有证据证明它们达到 P1 的跨用户、不可恢复状态、重复副作用或持续故障条件。 |
-| 最高风险不变量有风险匹配行为验证 | 未通过 | 没有真实 PostgreSQL 的并发 slug/cursor、Atlas FK 交错、Agent projection 失败恢复或多房间 HTTP 访问测试；定向测试的 Prisma/网络依赖为 mock，故该条件单独使 Gate 不高于 L2。 |
-| L4 要求 | 未通过 | 仍存在开放 P1（QAM-05-005），且关键失败、并发和 Agent log 生命周期没有完整 E3。 |
-| **最终判定** | **L1** | Score Level=L1；Gate Level=L1；Final Level=min(L1,L1)=L1。 |
+| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-05-005 已由共享成员条件与真实 PostgreSQL 跨房间回归关闭；当前没有开放 P0/P1，QAM-05-001/002/003/004/006/007/008 继续保持 P2。 |
+| 最高风险不变量有风险匹配行为验证 | 部分通过 | Agent log 成员边界与 Room `SetNull` 孤儿语义已有 E3；slug/cursor、Agent projection 失败恢复及 Post/Atlas FK 交错仍缺少真实 PostgreSQL 行为证据，故 Gate 不高于 L2。 |
+| L4 要求 | 未通过 | 当前无开放 P0/P1，但关键并发、失败恢复和跨写生命周期仍未全部达到 E3。 |
+| **最终判定** | **L2** | Score Level=L2；Gate Level=L2；Final Level=min(L2,L2)=L2。 |
 
 ## Critical Issues
 
@@ -63,15 +63,11 @@ Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可�
 
 ### P1
 
-#### QAM-05-005：room-scoped Agent log 未按当前用户成员资格过滤
+#### QAM-05-005：room-scoped Agent log 未按当前用户成员资格过滤（resolved）
 
-- **状态**：`open`
-- **优先级复核**：保留 P1。`Post.roomId` 明确表达 room scope，而列表、搜索、详情和首页均只做 authenticated check、未调用成员资格条件；这条路径可被任一已登录非成员稳定读取，属于现实的跨用户/跨房间隐私边界突破，满足 P1 权限条件，即使本轮尚未运行跨房间 E3。
-- **问题**：`createAgentLogPost` 给 Agent log 写入 `roomId`，但 `GET /api/posts` 只调用 `requireCurrentUser` 后按可选 type/author/q 查询全表；详情 API 和首页 `prisma.post.findMany` 同样没有 `RoomParticipant`/`assertRoomAccess` 过滤（[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L28-L37)、[`app/api/posts/route.ts`](../../app/api/posts/route.ts#L9-L39)、[`Post detail route`](../../app/api/posts/%5Bslug%5D/route.ts#L14-L34)、[`app/home/page.tsx`](../../app/home/page.tsx#L12-L28)）。Post model 明确保留可选 `roomId`，RoomParticipant 也有复合成员唯一键（[`schema.prisma`](../../prisma/schema.prisma#L154-L186)、[`schema.prisma`](../../prisma/schema.prisma#L517-L539)）。
-- **证据**：同一应用的 room 资源使用 `assertRoomAccess(roomId,userId)`（[`lib/access.ts`](../../lib/access.ts#L5-L19)），而 Post 列表/详情没有对应成员条件；没有跨房间 HTTP 行为测试（E2）。user_post 的全局共享语义未据此扩大登记，本问题只针对有明确 roomId 的 agent_log。
-- **质量影响**：拥有任一账户/房间会话的用户可通过列表、搜索或猜测 slug 看到非成员房间的 Agent 执行摘要和 metadata；这是私密双人空间的跨房间隐私边界突破，并使首页内容集合不再等于当前用户可见集合。
-- **最小修正**：为 Post read model 先解析当前用户参与的 room IDs，在列表、搜索、详情和首页投影中对 `agent_log` 加成员条件；若保留全局 user_post，则只对 room-scoped 类型收窄。避免把 QAM-08 Trace 生成责任移入读取层。
-- **验收证据**：真实 PostgreSQL 建立用户 A/B 与两个 room，A 请求 B-only Agent log 的列表、搜索、详情均为 404/不返回，成员请求仍可见；首页与 API 集合一致；测试覆盖 room 删除后的 orphan/SetNull 语义。
+- **原问题**：`createAgentLogPost` 为 Agent log 写入 `roomId`，但列表、搜索、详情和首页只检查登录态，任一已登录非成员都能读取其他房间的 Agent 摘要和 metadata。
+- **已实施修正**：[`getPostVisibilityWhere()`](../../lib/post-visibility.ts#L3-L18) 定义唯一读取规则：`user_post` 保持全局可见；`agent_log` 必须仍有关联 Room 且该 Room 的 `participants` 包含当前用户。列表/搜索、API 详情、页面详情和首页全部复用该 Prisma 条件；详情在同一查询中返回记录或 404，不先暴露其存在性（[`posts route`](../../app/api/posts/route.ts#L11-L43)、[`detail route`](../../app/api/posts/%5Bslug%5D/route.ts#L11-L44)、[`home page`](../../app/home/page.tsx#L13-L30)、[`detail page`](../../app/posts/%5Bslug%5D/page.tsx#L12-L37)，E2）。
+- **验收证据**：[`post-visibility.integration.test.ts`](../../tests/integration/post-visibility.integration.test.ts#L54-L179) 在真实 PostgreSQL 创建 A/B 两个成员隔离的 Room、全局 `user_post`、双方 `agent_log` 与删除 Room 后 `roomId=null` 的孤儿日志。修复前 A 的列表实际返回四条；修复后 A/B 各只见全局文章及自己的 Room 日志，type/search 不能绕过，成员详情 200、非成员/孤儿详情 404，首页集合与 API 一致（E3）。
 - **影响范围**：QAM-05 直接受影响；QAM-02/QAM-01 提供成员/身份 contract，QAM-08 的 task/trace 生成不因本问题改造。
 
 ### P2
@@ -154,7 +150,10 @@ Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可�
 
 ```text
 当前用户
-  ├─ /home 页面 ──> Prisma Post(全局前 50) ──> ensureHomePostElements ──> Home board snapshot
+  ├─ getPostVisibilityWhere(userId)
+  │    ├─ user_post：全局可见
+  │    └─ agent_log：RoomParticipant 成员可见；roomId=null 隐藏
+  ├─ /home 页面 ──> 可见 Post 前 50 ──> ensureHomePostElements ──> Home board snapshot
   │                                      └─> HomeTimelineBoard ──> Timeline ──> PostCard/AgentLogCard
   ├─ GET /api/posts ──认证──> Prisma Post(搜索/type/author/cursor)
   ├─ GET /api/posts/:slug ──认证──> Prisma Post detail
@@ -166,11 +165,12 @@ AgentTask completion
        └─ 事务外 createAgentLogPost(roomId) ──> Post(agent_log, metadata)
 ```
 
-Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；`AtlasElement.postId` 是 QAM-06 消费的空间派生关系，数据库 FK cascade 负责 Post 删除后的 anchor 清理。当前正常用户发帖和 Agent 完成都能到达 Post，但前者有 HTTP/Action 两个平行写入入口，后者在完成事实提交后才做不可恢复的 best-effort 投影。主要失败路径是：raw body/query 进入 Prisma、slug 竞态撞 unique、同 timestamp cursor 排除记录、Agent Post 写失败被吞掉、非成员读取 room-scoped log，以及旧 Post 列表与 anchor 补齐交错。Markdown 只负责呈现：本轮实验显示危险 URL 被清空、原始 HTML 被转义；不把 QAM-08 Trace 生成或 QAM-06 坐标算法移入本报告。
+Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；`AtlasElement.postId` 是 QAM-06 消费的空间派生关系，数据库 FK cascade 负责 Post 删除后的 anchor 清理。Post 可见性现在由单一关系条件下沉到数据库查询，搜索/type/cursor 只是额外收窄，不能绕过成员资格；Room 删除后的孤儿 Agent log 因无关联 Room 而保持隐藏。其余主要失败路径仍是 raw body/query 进入 Prisma、slug 竞态撞 unique、同 timestamp cursor 排除记录、Agent Post 写失败被吞掉，以及旧 Post 列表与 anchor 补齐交错；不把 QAM-08 Trace 生成或 QAM-06 坐标算法移入本报告。
 
 ## Verified Strengths
 
 - Post 页面、新建页面、API 和 Server Action 均经过当前用户认证；编辑页面、PUT/DELETE 和 Action 对 user_post 执行 author ownership 检查（[`Edit post page`](../../app/posts/edit/%5Bslug%5D/page.tsx#L16-L25)、[`lib/api-posts.ts`](../../lib/api-posts.ts#L4-L9)、[`app/actions/posts.ts`](../../app/actions/posts.ts#L51-L103)，E2）。
+- Post 列表、搜索、API/页面详情和首页共享同一成员可见性条件；真实 PostgreSQL 证明全局 `user_post` 保持可见，非成员和孤儿 `agent_log` 不进入响应或首页投影（[`post-visibility.ts`](../../lib/post-visibility.ts#L3-L18)、[`post-visibility.integration.test.ts`](../../tests/integration/post-visibility.integration.test.ts#L124-L179)，E3）。
 - `generateSlug` 对中文转拼音、ASCII、特殊字符、长度和全被清空的标题有纯函数测试；本轮 `tests/lib/posts.test.ts` 通过。数据库仍保留 Post slug unique index，提供最终唯一性底线（E3/E2）。
 - Post 的 authorCity/Country/Timezone 快照优先于当前 profile，避免用户改档案后历史位置全部回写；相关 helper 和测试覆盖 snapshot fallback（[`lib/post-time.ts`](../../lib/post-time.ts#L16-L31)、[`tests/lib/posts.test.ts`](../../tests/lib/posts.test.ts#L70-L99)，E3）。
 - `react-markdown` 使用 GFM/line-break 插件但未开启 raw HTML；本轮实际渲染中 `[bad](javascript:...)` 输出空 href，`<script>` 被转义，未形成可执行脚本（[`MarkdownContent.tsx`](../../components/blog/MarkdownContent.tsx#L1-L35)，E3）。
@@ -180,11 +180,10 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 
 ## Recommended Improvements
 
-1. **优先修复 QAM-05-005（P1）**：先建立按当前用户参与 room 收窄 Agent log 的统一读取 projection，并用真实 PostgreSQL 的列表/搜索/详情跨房间测试锁定隐私边界。
-2. **治理 QAM-05-001（P2）**：共享 Post Zod body/query、写入服务和稳定错误 view model，降低 malformed body 与双入口规则扩散；补 Route/Action 行为测试。
-3. **治理 QAM-05-002/003/004（P2）**：依次补 slug 冲突重试、`(publishedAt,id)` 不透明 cursor 和 AgentTask→Post 的 durable/idempotent projection；以真实 PostgreSQL 测试确认可用性、无漏项和失败恢复。
-4. **治理 QAM-05-006/007（P2）**：统一错误响应与 Home/API 读取 projection，补非 2xx 搜索行为测试。
-5. **最后治理 QAM-05-008（P2）**：为首页 Post 与 Atlas anchor 的交错删除增加真实 FK 测试和安全重试；保留 Post 删除 cascade，不把空间坐标责任转给 QAM-05。
+1. **治理 QAM-05-001（P2）**：共享 Post Zod body/query、写入服务和稳定错误 view model，降低 malformed body 与双入口规则扩散；补 Route/Action 行为测试。
+2. **治理 QAM-05-002/003/004（P2）**：依次补 slug 冲突重试、`(publishedAt,id)` 不透明 cursor 和 AgentTask→Post 的 durable/idempotent projection；以真实 PostgreSQL 测试确认可用性、无漏项和失败恢复。
+3. **治理 QAM-05-006/007（P2）**：统一错误响应与 Home/API 读取 projection，补非 2xx 搜索行为测试。
+4. **最后治理 QAM-05-008（P2）**：为首页 Post 与 Atlas anchor 的交错删除增加真实 FK 测试和安全重试；保留 Post 删除 cascade，不把空间坐标责任转给 QAM-05。
 
 以上均为现有 Post/Agent log/首页时间线的边界修正，不新增内容类型、搜索能力、Trace 能力或空间交互。
 
@@ -198,17 +197,22 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 | QAM-05-002 | P2 | `open` | `ensureUniqueSlug` check-then-write + DB unique（E2；优先级复核降级） | slug 算法、Post create/update、Agent log projection 或唯一迁移修改 |
 | QAM-05-003 | P2 | `open` | API cursor/Home/Timeline 仅按 publishedAt（E2；优先级复核降级） | 搜索、分页、首页排序、Timeline 或 Post index 修改 |
 | QAM-05-004 | P2 | `open` | final completion 后置 Post 写入，异常/节流只 console/null（E2；优先级复核降级） | ExecutionTracer completion、agent-posts、AgentTask/Post relation 或 Worker retry 修改 |
-| QAM-05-005 | P1 | `open` | roomId Agent log 的列表/详情/home 无成员过滤（E2） | Post read projection、RoomParticipant/room access、首页查询或 Agent log metadata 修改 |
 | QAM-05-006 | P2 | `open` | Action/API 原始异常 message 返回（E2） | `lib/api.ts`、Post Action 或错误响应策略修改 |
 | QAM-05-007 | P2 | `open` | Home/API author projection 与搜索非 2xx 语义漂移（E2） | Home query、Post API projection、SearchInput/HomeTimelineBoard 或错误 UI 修改 |
 | QAM-05-008 | P2 | `open` | anchor 补齐与 Post 删除跨写 FK 交错（E2） | Post/Atlas FK、home-board 补齐、Home page 或 Post delete 生命周期修改 |
+
+### 已解决问题
+
+| ID | Priority | 状态 | 修正/证据 | 复审触发 |
+| --- | --- | --- | --- | --- |
+| QAM-05-005 | P1 | `resolved` | 统一 Post 可见性条件；真实 PostgreSQL 覆盖列表/type/搜索/详情/首页、双用户成员边界和 Room `SetNull` 孤儿隐藏（E2/E3） | Post read projection、RoomParticipant/Room 删除、首页查询或 Agent log roomId 语义修改 |
 
 ### 复审触发与证据规则
 
 - 任一问题修复后保留原 ID，状态只改为 `resolved`、`accepted-risk` 或 `not-reproduced`，并附当前代码和风险匹配测试证据；不得删除历史结论。
 - QAM-05 复审必须重新核对 HTTP/Action 规则是否同源、Agent log room 过滤是否覆盖列表/搜索/详情/home、Post→Atlas FK 是否仍为正确生命周期方向；QAM-06 的坐标/媒体问题和 QAM-08 的 Trace 生成/lease 问题只作为关联证据，不重复计分。
 - 最高风险验证应至少包括真实 PostgreSQL 的并发 slug、同 timestamp cursor、跨房间 Post read、Agent projection 失败/恢复/幂等和 Post 删除与 anchor 补齐交错；Playwright 发帖/编辑/删除/搜索旅程应在浏览器运行环境可用后补跑。
-- 本轮只执行定向 Node/组件测试及 Markdown 渲染实验；未运行 `npm run check`、真实 PostgreSQL integration、完整 Playwright E2E 或 Compose smoke，不将其标为通过。
+- 本轮 `npm run check:full` 单次通过生产构建、覆盖率、13 文件/30 项真实 PostgreSQL和 Playwright 9/9；未运行 Compose smoke，因为本 feature 未修改构建、进程或部署拓扑。
 
 ### 只追加评分历史
 
@@ -216,5 +220,6 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 | --- | ---: | --- | --- | --- | --- | --- |
 | 2026-09-06 | 64 | L1 | L1 | L1 | `baseline` | 初审；Post/Agent/Markdown/Search 定向 Node 测试 6 文件/47 项通过，组件测试 3 文件/5 项通过；Markdown 危险链接/HTML 实验通过；并发、跨房间、PostgreSQL 生命周期和完整浏览器旅程未验证。 |
 | 2026-09-06 | 64 | L1 | L1 | L1 | `优先级复核（0分）` | 重新核对原 5 个 P1：仅 QAM-05-005 的跨房间权限泄漏满足 P1；QAM-05-001/002/003/004 分别降为 P2，理由为 malformed body 不稳错误、unique 拒绝但数据一致、同毫秒边界漏读、派生 log 丢失均无当前跨用户/不可恢复状态/重复副作用/持续故障证据。 |
+| 2026-09-08 | 73 | L2 | L2 | L2 | `+9（QAM-05-005 resolved）` | `getPostVisibilityWhere()` 统一列表、搜索、API/页面详情和首页的 Post read authorization；修复前真实 PostgreSQL 证明 A 可读 B 房间及孤儿 Agent log，修复后 1/1 覆盖成员可见、非成员/孤儿隐藏、user_post 全局语义和双用户切换。`npm run check:full` 单次通过 13 文件/30 项 PostgreSQL 与 Playwright 9/9。 |
 
 复审时只在代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate、Final 和所有稳定问题状态。

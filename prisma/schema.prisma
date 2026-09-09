@@ -582,6 +582,7 @@ model FocusState {
 model FocusSession {
   id             String             @id @default(cuid())
   userId         String
+  sessionKey     String
   roomId         String?
   status         FocusSessionStatus @default(completed)
   mode           StudyTimerMode     @default(focus)
@@ -594,6 +595,7 @@ model FocusSession {
   user           User               @relation(fields: [userId], references: [id], onDelete: Cascade)
   room           Room?              @relation(fields: [roomId], references: [id], onDelete: SetNull)
 
+  @@unique([userId, sessionKey])
   @@index([userId, startedAt(sort: Desc)])
   @@index([startedAt(sort: Desc)])
   @@index([roomId])

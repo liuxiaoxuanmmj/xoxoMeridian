@@ -33,6 +33,7 @@ type FocusState = {
   startedAt: string | null;
   expectedEndAt: string | null;
   pausedAt: string | null;
+  sessionKey?: string | null;
 };
 
 type StudyGoal = {
@@ -265,7 +266,11 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
     busyRef.current = true;
     setBusy(true);
     try {
-      const response = await fetch("/api/study/stop", { method: "POST" });
+      const response = await fetch("/api/study/stop", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionKey: state.sessionKey }),
+      });
       if (response.ok) {
         await refreshData();
       }
@@ -273,7 +278,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
       busyRef.current = false;
       setBusy(false);
     }
-  }, [refreshData]);
+  }, [refreshData, state.sessionKey]);
 
   // ── Auto-stop when timer reaches 0 ────────────────────────────────────────
 
@@ -332,7 +337,11 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
     busyRef.current = true;
     setBusy(true);
     try {
-      const response = await fetch("/api/study/pause", { method: "POST" });
+      const response = await fetch("/api/study/pause", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionKey: state.sessionKey }),
+      });
       if (response.ok) {
         const result = await response.json();
         setNowMs(Date.now());
@@ -342,14 +351,18 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
       busyRef.current = false;
       setBusy(false);
     }
-  }, []);
+  }, [state.sessionKey]);
 
   const resumeTimer = useCallback(async () => {
     if (busyRef.current) return;
     busyRef.current = true;
     setBusy(true);
     try {
-      const response = await fetch("/api/study/resume", { method: "POST" });
+      const response = await fetch("/api/study/resume", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sessionKey: state.sessionKey }),
+      });
       if (response.ok) {
         const result = await response.json();
         setNowMs(Date.now());
@@ -359,7 +372,7 @@ export function StudyDashboard({ initialData }: { initialData: StudyPageData }) 
       busyRef.current = false;
       setBusy(false);
     }
-  }, []);
+  }, [state.sessionKey]);
 
   const createGoal = useCallback(async () => {
     const text = goalDraft.trim();

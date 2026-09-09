@@ -2,10 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const {
   mockRequireCurrentUser,
-  mockFocusStateFindUnique,
   mockFocusStateUpsert,
-  mockFocusStateUpdate,
-  mockFocusSessionCreate,
   mockRoomParticipantFindFirst,
   mockRevalidatePath,
   mockStudyGoalCreate,
@@ -15,10 +12,7 @@ const {
   mockStudyGoalCount,
 } = vi.hoisted(() => ({
   mockRequireCurrentUser: vi.fn(),
-  mockFocusStateFindUnique: vi.fn(),
   mockFocusStateUpsert: vi.fn(),
-  mockFocusStateUpdate: vi.fn(),
-  mockFocusSessionCreate: vi.fn(),
   mockRoomParticipantFindFirst: vi.fn(),
   mockRevalidatePath: vi.fn(),
   mockStudyGoalCreate: vi.fn(),
@@ -28,16 +22,32 @@ const {
   mockStudyGoalCount: vi.fn(),
 }));
 
+const {
+  mockStartFocusTimer,
+  mockPauseFocusTimer,
+  mockResumeFocusTimer,
+  mockStopFocusTimer,
+} = vi.hoisted(() => ({
+  mockStartFocusTimer: vi.fn(),
+  mockPauseFocusTimer: vi.fn(),
+  mockResumeFocusTimer: vi.fn(),
+  mockStopFocusTimer: vi.fn(),
+}));
+
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mockRequireCurrentUser }));
 vi.mock("next/cache", () => ({ revalidatePath: mockRevalidatePath }));
+vi.mock("@/lib/study-transitions", () => ({
+  StudyTransitionConflictError: class StudyTransitionConflictError extends Error {},
+  startFocusTimer: mockStartFocusTimer,
+  pauseFocusTimer: mockPauseFocusTimer,
+  resumeFocusTimer: mockResumeFocusTimer,
+  stopFocusTimer: mockStopFocusTimer,
+}));
 vi.mock("@/lib/prisma", () => ({
   prisma: {
     focusState: {
-      findUnique: mockFocusStateFindUnique,
       upsert: mockFocusStateUpsert,
-      update: mockFocusStateUpdate,
     },
-    focusSession: { create: mockFocusSessionCreate },
     roomParticipant: { findFirst: mockRoomParticipantFindFirst },
     studyGoal: {
       create: mockStudyGoalCreate,
@@ -68,8 +78,7 @@ afterEach(() => {
 
 describe("productized study timer API", () => {
   it("starts a short break as running state in the default room", async () => {
-    mockFocusStateFindUnique.mockResolvedValue(null);
-    mockFocusStateUpsert.mockResolvedValue({
+    mockStartFocusTimer.mockResolvedValue({
       status: "running",
       mode: "short",
       plannedMinutes: 5,
@@ -77,6 +86,7 @@ describe("productized study timer API", () => {
       startedAt: new Date("2026-06-30T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-30T01:05:00.000Z"),
       pausedAt: null,
+      currentSessionKey: "short-key",
     });
 
     const response = await START(new Request("http://localhost/api/study/start", {
@@ -89,23 +99,17 @@ describe("productized study timer API", () => {
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("running");
     expect(data.state.mode).toBe("short");
-    expect(mockFocusStateUpsert).toHaveBeenCalledWith(expect.objectContaining({
-      update: expect.objectContaining({ status: "running", mode: "short", roomId: "room-1" }),
-      create: expect.objectContaining({ userId: "user-1", status: "running", mode: "short", roomId: "room-1" }),
-    }));
+    expect(data.state.sessionKey).toBe("short-key");
+    expect(mockStartFocusTimer).toHaveBeenCalledWith({
+      userId: "user-1",
+      roomId: "room-1",
+      mode: "short",
+      plannedMinutes: 5,
+    });
   });
 
   it("pauses a running focus timer and stores remaining seconds", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
-      userId: "user-1",
-      status: "running",
-      mode: "focus",
-      plannedMinutes: 25,
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      expectedEndAt: new Date("2026-06-30T01:25:00.000Z"),
-      roomId: "room-1",
-    });
-    mockFocusStateUpdate.mockResolvedValue({
+    mockPauseFocusTimer.mockResolvedValue({
       status: "paused",
       mode: "focus",
       plannedMinutes: 25,
@@ -113,29 +117,24 @@ describe("productized study timer API", () => {
       startedAt: new Date("2026-06-30T01:00:00.000Z"),
       expectedEndAt: null,
       pausedAt: new Date("2026-06-30T01:10:00.000Z"),
+      currentSessionKey: "focus-key",
     });
 
-    const response = await PAUSE(new Request("http://localhost/api/study/pause", { method: "POST" }));
+    const response = await PAUSE(new Request("http://localhost/api/study/pause", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey: "focus-key" }),
+    }));
     const data = await response.json();
 
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("paused");
-    expect(mockFocusStateUpdate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ status: "paused", expectedEndAt: null, remainingSeconds: 900 }),
-    }));
+    expect(data.state.remainingSeconds).toBe(900);
+    expect(mockPauseFocusTimer).toHaveBeenCalledWith("user-1", "focus-key");
   });
 
   it("resumes a paused timer with a new expected end", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
-      userId: "user-1",
-      status: "paused",
-      mode: "focus",
-      plannedMinutes: 25,
-      remainingSeconds: 900,
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      roomId: "room-1",
-    });
-    mockFocusStateUpdate.mockResolvedValue({
+    mockResumeFocusTimer.mockResolvedValue({
       status: "running",
       mode: "focus",
       plannedMinutes: 25,
@@ -143,73 +142,87 @@ describe("productized study timer API", () => {
       startedAt: new Date("2026-06-30T01:00:00.000Z"),
       expectedEndAt: new Date("2026-06-30T01:25:00.000Z"),
       pausedAt: null,
+      currentSessionKey: "focus-key",
     });
 
-    const response = await RESUME(new Request("http://localhost/api/study/resume", { method: "POST" }));
+    const response = await RESUME(new Request("http://localhost/api/study/resume", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey: "focus-key" }),
+    }));
     const data = await response.json();
 
     expect(response.status).toBe(200);
     expect(data.state.status).toBe("running");
     expect(data.state.startedAt).toBe("2026-06-30T01:00:00.000Z");
+    expect(mockResumeFocusTimer).toHaveBeenCalledWith("user-1", "focus-key");
   });
 
   it("stops a paused short break and writes a short session", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
-      userId: "user-1",
-      status: "paused",
-      mode: "short",
-      plannedMinutes: 5,
-      remainingSeconds: 120,
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      roomId: "room-1",
+    mockStopFocusTimer.mockResolvedValue({
+      session: {
+        id: "session-1",
+        mode: "short",
+        startedAt: new Date("2026-06-30T01:00:00.000Z"),
+        endedAt: new Date("2026-06-30T01:03:00.000Z"),
+        actualMinutes: 3,
+      },
+      state: {
+        status: "idle",
+        mode: "focus",
+        plannedMinutes: 5,
+        remainingSeconds: null,
+        startedAt: null,
+        expectedEndAt: null,
+        pausedAt: null,
+      },
+      replayed: false,
     });
-    mockFocusSessionCreate.mockResolvedValue({
-      id: "session-1",
-      mode: "short",
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      endedAt: new Date("2026-06-30T01:03:00.000Z"),
-      actualMinutes: 3,
-    });
-    mockFocusStateUpdate.mockResolvedValue({ status: "idle" });
 
-    const response = await STOP(new Request("http://localhost/api/study/stop", { method: "POST" }));
+    const response = await STOP(new Request("http://localhost/api/study/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey: "short-key" }),
+    }));
     const data = await response.json();
 
     expect(response.status).toBe(200);
     expect(data.session.mode).toBe("short");
-    expect(mockFocusSessionCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ mode: "short", roomId: "room-1" }),
-    }));
+    expect(mockStopFocusTimer).toHaveBeenCalledWith("user-1", "short-key");
   });
 
   it("stops a running focus timer and writes a session with correct actual minutes", async () => {
-    mockFocusStateFindUnique.mockResolvedValue({
-      userId: "user-1",
-      status: "running",
-      mode: "focus",
-      plannedMinutes: 25,
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      expectedEndAt: new Date("2026-06-30T01:25:00.000Z"),
-      roomId: "room-1",
+    mockStopFocusTimer.mockResolvedValue({
+      session: {
+        id: "session-2",
+        mode: "focus",
+        startedAt: new Date("2026-06-30T01:00:00.000Z"),
+        endedAt: new Date("2026-06-30T01:10:00.000Z"),
+        actualMinutes: 10,
+      },
+      state: {
+        status: "idle",
+        mode: "focus",
+        plannedMinutes: 25,
+        remainingSeconds: null,
+        startedAt: null,
+        expectedEndAt: null,
+        pausedAt: null,
+      },
+      replayed: false,
     });
-    mockFocusSessionCreate.mockResolvedValue({
-      id: "session-2",
-      mode: "focus",
-      startedAt: new Date("2026-06-30T01:00:00.000Z"),
-      endedAt: new Date("2026-06-30T01:10:00.000Z"),
-      actualMinutes: 10,
-    });
-    mockFocusStateUpdate.mockResolvedValue({ status: "idle" });
 
-    const response = await STOP(new Request("http://localhost/api/study/stop", { method: "POST" }));
+    const response = await STOP(new Request("http://localhost/api/study/stop", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sessionKey: "focus-key" }),
+    }));
     const data = await response.json();
 
     expect(response.status).toBe(200);
     expect(data.session.mode).toBe("focus");
     expect(data.session.actualMinutes).toBe(10);
-    expect(mockFocusSessionCreate).toHaveBeenCalledWith(expect.objectContaining({
-      data: expect.objectContaining({ mode: "focus", roomId: "room-1" }),
-    }));
+    expect(mockStopFocusTimer).toHaveBeenCalledWith("user-1", "focus-key");
   });
 });
 

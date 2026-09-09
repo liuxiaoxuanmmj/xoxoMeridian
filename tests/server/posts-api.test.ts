@@ -1,7 +1,8 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
-const { mockPostFindMany, mockPostFindUnique, mockPostCreate, mockPostUpdate, mockPostDelete } = vi.hoisted(() => ({
+const { mockPostFindMany, mockPostFindFirst, mockPostFindUnique, mockPostCreate, mockPostUpdate, mockPostDelete } = vi.hoisted(() => ({
   mockPostFindMany: vi.fn(),
+  mockPostFindFirst: vi.fn(),
   mockPostFindUnique: vi.fn(),
   mockPostCreate: vi.fn(),
   mockPostUpdate: vi.fn(),
@@ -16,6 +17,7 @@ vi.mock("@/lib/prisma", () => ({
   prisma: {
     post: {
       findMany: mockPostFindMany,
+      findFirst: mockPostFindFirst,
       findUnique: mockPostFindUnique,
       create: mockPostCreate,
       update: mockPostUpdate,
@@ -38,6 +40,25 @@ import { GET as GET_POST_DETAIL } from "@/app/api/posts/[slug]/route";
 beforeEach(() => {
   vi.clearAllMocks();
 });
+
+function expectRoomScopedAgentLogVisibility(where: Record<string, unknown>) {
+  expect(where).toEqual(
+    expect.objectContaining({
+      AND: [
+        {
+          OR: [
+            { type: "user_post" },
+            {
+              type: "agent_log",
+              roomId: { not: null },
+              room: { participants: { some: { userId: "user-1" } } },
+            },
+          ],
+        },
+      ],
+    }),
+  );
+}
 
 describe("GET /api/posts", () => {
   it("requires authentication", async () => {
@@ -74,9 +95,9 @@ describe("GET /api/posts", () => {
 
     const response = await GET(new Request("http://localhost/api/posts?type=agent_log"));
     expect(response.status).toBe(200);
-    expect(mockPostFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { type: "agent_log" } })
-    );
+    const { where } = mockPostFindMany.mock.calls[0][0];
+    expect(where).toEqual(expect.objectContaining({ type: "agent_log" }));
+    expectRoomScopedAgentLogVisibility(where);
   });
 });
 
@@ -189,16 +210,16 @@ describe("GET /api/posts?q= search", () => {
 
       await GET(new Request("http://localhost/api/posts?q=docker"));
 
-      expect(mockPostFindMany).toHaveBeenCalledWith(
+      const { where } = mockPostFindMany.mock.calls[0][0];
+      expect(where).toEqual(
         expect.objectContaining({
-          where: {
-            OR: [
-              { title: { contains: "docker", mode: "insensitive" } },
-              { content: { contains: "docker", mode: "insensitive" } },
-            ],
-          },
-        })
+          OR: [
+            { title: { contains: "docker", mode: "insensitive" } },
+            { content: { contains: "docker", mode: "insensitive" } },
+          ],
+        }),
       );
+      expectRoomScopedAgentLogVisibility(where);
     });
 
     it("treats empty q same as no q", async () => {
@@ -207,9 +228,9 @@ describe("GET /api/posts?q= search", () => {
 
       await GET(new Request("http://localhost/api/posts?q="));
 
-      expect(mockPostFindMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} })
-      );
+      const { where } = mockPostFindMany.mock.calls[0][0];
+      expect(where.OR).toBeUndefined();
+      expectRoomScopedAgentLogVisibility(where);
     });
 
     it("treats whitespace-only q same as no q", async () => {
@@ -218,9 +239,9 @@ describe("GET /api/posts?q= search", () => {
 
       await GET(new Request("http://localhost/api/posts?q=   "));
 
-      expect(mockPostFindMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: {} })
-      );
+      const { where } = mockPostFindMany.mock.calls[0][0];
+      expect(where.OR).toBeUndefined();
+      expectRoomScopedAgentLogVisibility(where);
     });
 
     it("combines q with type filter", async () => {
@@ -229,17 +250,17 @@ describe("GET /api/posts?q= search", () => {
 
       await GET(new Request("http://localhost/api/posts?q=docker&type=user_post"));
 
-      expect(mockPostFindMany).toHaveBeenCalledWith(
+      const { where } = mockPostFindMany.mock.calls[0][0];
+      expect(where).toEqual(
         expect.objectContaining({
-          where: {
-            type: "user_post",
-            OR: [
-              { title: { contains: "docker", mode: "insensitive" } },
-              { content: { contains: "docker", mode: "insensitive" } },
-            ],
-          },
-        })
+          type: "user_post",
+          OR: [
+            { title: { contains: "docker", mode: "insensitive" } },
+            { content: { contains: "docker", mode: "insensitive" } },
+          ],
+        }),
       );
+      expectRoomScopedAgentLogVisibility(where);
     });
   });
 
@@ -253,6 +274,6 @@ describe("GET /api/posts?q= search", () => {
     );
 
     expect(response.status).toBe(401);
-    expect(mockPostFindUnique).not.toHaveBeenCalled();
+    expect(mockPostFindFirst).not.toHaveBeenCalled();
   });
 });

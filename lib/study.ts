@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
+import { reconcileExpiredFocusTimer } from "@/lib/study-transitions";
 import type { RoomSnapshot } from "@/components/chat/types";
 
 export async function getStudyRoomForUser(userId: string) {
@@ -82,6 +83,7 @@ export function serializeFocusState(state: {
   startedAt?: Date | string | null;
   expectedEndAt?: Date | string | null;
   pausedAt?: Date | string | null;
+  currentSessionKey?: string | null;
 }) {
   const iso = (value: Date | string | null | undefined) =>
     value ? new Date(value).toISOString() : null;
@@ -94,6 +96,7 @@ export function serializeFocusState(state: {
     startedAt: iso(state.startedAt),
     expectedEndAt: iso(state.expectedEndAt),
     pausedAt: iso(state.pausedAt),
+    sessionKey: state.currentSessionKey ?? null,
   };
 }
 
@@ -165,9 +168,10 @@ export async function getStudyPageData(
   user: { id: string; displayName: string; avatarLabel: string },
   timeZone: string
 ) {
-  const room = await getStudyRoomForUser(user.id);
   const userId = user.id;
   const now = new Date();
+  await reconcileExpiredFocusTimer(userId, now);
+  const room = await getStudyRoomForUser(userId);
   const statsWindowStart = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
   const todayKey = getLocalDateKey(now, timeZone);
   const localDateParts = getLocalDateParts(now, timeZone);
@@ -185,6 +189,7 @@ export async function getStudyPageData(
         startedAt: true,
         expectedEndAt: true,
         pausedAt: true,
+        currentSessionKey: true,
       },
     }),
     prisma.studyGoal.findMany({
@@ -288,6 +293,7 @@ export async function getStudyPageData(
           startedAt: null,
           expectedEndAt: null,
           pausedAt: null,
+          sessionKey: null,
         },
     goals,
     members,

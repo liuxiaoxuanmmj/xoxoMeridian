@@ -6,6 +6,7 @@ import { PageTransition } from "@/components/layout/PageTransition";
 import { ScrollRestore } from "@/components/layout/ScrollRestore";
 import { HomeTimelineBoard } from "@/components/home/HomeTimelineBoard";
 import { ensureHomePostElements, getHomeBoardSnapshot, getOrCreateHomeBoard } from "@/lib/home-board";
+import { getPostVisibilityWhere } from "@/lib/post-visibility";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export default async function HomePage() {
   const user = await requirePageUser();
 
   const posts = await prisma.post.findMany({
+    where: getPostVisibilityWhere(user.id),
     orderBy: { publishedAt: "desc" },
     take: 50,
     include: {
