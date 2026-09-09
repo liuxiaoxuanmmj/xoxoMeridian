@@ -470,6 +470,48 @@
         "不扩展到 DST 统计、Goal 排序、Room snapshot 或其他 QAM；风险匹配门禁、QAM-07 复审和会话状态记录完整"
       ],
       "evidence": "lib/study-transitions.ts 抽取统一 settlement helper，并由 reconcileExpiredFocusTimer、startFocusTimer 与 stopFocusTimer 在同一用户行锁事务中复用：过期 running state 以持久化 expectedEndAt 结算 FocusSession 与 idle，GET/服务端页面在读取前恢复，过期后 start 同事务开启新 key，未到期 running 与 paused 不变；legacy 活动状态会先修复独立旧 key。tests/integration/study-focus-transitions.integration.test.ts 修复前 6/10 通过（4 项失败：GET 不结算、start 保留旧 key、stop 完成时间偏移、GET 故障路径未触发），修复后 10/10，覆盖重复 GET、GET/start 并发、stop 重放与 trigger 故障回滚；Study 定向 Node 4 文件/31 项通过。Playwright 新旅程离开 Study、推进隔离数据库 deadline、重访并刷新，UI 与数据库均证明同 key 恰一条 Session。受限边界 npm run check 的 quick 通过后 build 因 TypeScript --showConfig 输出解析失败；按权限复核规则在获准正常边界重跑同命令通过。最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、14 文件/40 项 PostgreSQL 和 10/10 Playwright 全部通过；QAM-07-002 resolved，QAM-07 更新为 85 分、Score L3、Gate/Final L2。"
+    },
+    {
+      "id": "feat-036",
+      "name": "修复 Room snapshot 私有档案字段泄露",
+      "description": "关闭 QAM-02-001：以 Prisma select 和显式公开 view model 收窄房间参与者档案，阻止私有字段进入 Chat 与 Study 浏览器载荷。",
+      "status": "done",
+      "dependencies": ["feat-035"],
+      "acceptanceCriteria": [
+        "getRoomSnapshot 只查询并返回聊天与 Study 既有 UI 所需的用户公开字段，不包含 lastGeoIp、preferences 或未公开 profileNote",
+        "Chat 页面和复用 Room snapshot 的 Study 页面浏览器载荷均不含私有档案字段，同时保留显示名、头像、公开城市和时区",
+        "缺陷修复具有修复前可失败、修复后通过的真实页面或 Playwright 隐私回归，并通过风险匹配门禁",
+        "不改变 QAM-01 档案写入/隐私所有权、成员资格或公开 UI contract，不扩展到消息 trace、Agent dispatch、房间删除或 SSE 问题"
+      ],
+      "evidence": "lib/room-snapshot.ts 将 Room participant 查询收窄为 Prisma select，并用显式 view model 只返回 id、displayName、avatarLabel、公开 city/country/timezone 与 studyStatus；app/chat/[roomId]/page.tsx 和 app/study/page.tsx 也不再把完整认证 User/Profile 传给 Client Component，components/chat/types.ts 移除遗留 preferences 字段。tests/integration/room-snapshot-privacy.integration.test.ts 修复前 0/1，实际快照包含 email、passwordHash、sessionVersion、lastGeoIp、preferences 与 profileNote，修复后 1/1；tests/e2e/authenticated.spec.ts 的 Chat/Study RSC 页面载荷隐私回归修复前 1/2（含 setup）且直接观察到 bcrypt hash 和完整私有档案，修复后 2/2。最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、15 文件/41 项真实 PostgreSQL 和 11/11 Playwright 全部通过。QAM-02-001 resolved，QAM-02 更新为 78 分、Score L2、Gate/Final L1。"
+    },
+    {
+      "id": "feat-037",
+      "name": "修复显式 Agent dispatch 原子幂等派生",
+      "description": "关闭 QAM-02-003：将 source message 的显式 AgentTask 与 EventLog 派生收敛为原子事务，并为重复派发提供稳定幂等结果。",
+      "status": "done",
+      "dependencies": ["feat-036"],
+      "acceptanceCriteria": [
+        "显式 dispatch 复用单一领域派生边界，在同一 PostgreSQL 事务中创建 AgentTask 与唯一一条 agent.task.created EventLog，保留既有认证、房间成员、预算和 inline-run 契约",
+        "相同 sourceMessageId 的并发或重放请求返回同一 AgentTask 的明确幂等 HTTP 结果，数据库最多存在一条 Task 和一条对应创建事件",
+        "真实 PostgreSQL 故障注入证明 EventLog 写入失败会回滚 Task，移除故障后相同请求可成功重试且不留下孤儿或重复记录",
+        "不扩展到 AgentTask claim 后执行、房间删除、message trace 或 SSE；风险匹配门禁、QAM-02 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/agent-task-dispatch.ts 抽取预算化 AgentTask 与 agent.task.created EventLog 的共享创建边界；普通消息沿用原有 Message transaction，显式 sourceMessageId dispatch 在同一 PostgreSQL transaction 中锁定 source Message、查找唯一 Task 并原子创建 Task/Event。首次创建返回 201，重复或并发命中返回同一 Task 的 200；route 保留认证、房间成员、预算快照与 inline-run 契约。tests/integration/agent-dispatch-atomicity.integration.test.ts 修复前 0/2：并发响应为 201/500，EventLog 故障后遗留 1 条孤儿 Task；修复后扩展为 3/3，覆盖并发 200/201 同 Task、恰一 Task/一 created Event、故障全回滚与清除故障后重试，以及普通消息自动派生契约。最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、16 文件/44 项 PostgreSQL 和 11/11 Playwright 全部通过。QAM-02-003 resolved，QAM-02 更新为 86 分、Score L3、Gate/Final L1。"
+    },
+    {
+      "id": "feat-038",
+      "name": "修复最后房间并发删除竞态",
+      "description": "关闭 QAM-02-004：将最后房间保护的成员计数与删除收敛到用户级串行化事务，保证并发删除后用户至少保留一个房间。",
+      "status": "done",
+      "dependencies": ["feat-037"],
+      "acceptanceCriteria": [
+        "Room DELETE 在同一 PostgreSQL 事务内以稳定用户事实源串行化，并在锁内重新检查当前成员房间数后删除目标房间",
+        "同一用户仅有两个房间时，并发 DELETE 最多一个成功，另一个稳定返回 409，数据库始终保留一个 RoomParticipant 和可解析的默认房间",
+        "真实 PostgreSQL Route Handler 回归在修复前复现两个请求同时成功、修复后证明不变量，并保留认证、成员资格、限流与既有 HTTP 成功契约",
+        "不扩展到房间 wipe、message trace、SSE 或跨参与者产品策略；风险匹配门禁、QAM-02 复审和会话状态记录完整"
+      ],
+      "evidence": "lib/room-lifecycle.ts 以稳定 User 行锁串行同一用户的 Room 删除，并在单一 Prisma transaction 内重新验证目标成员资格、统计 RoomParticipant 和删除 Room；Route 保留认证、早期成员校验、rate limit 及既有 200/409 contract。tests/integration/room-delete-invariant.integration.test.ts 通过 PostgreSQL BEFORE DELETE delay trigger 在修复前稳定复现并发响应 [200,200] 与全部房间被删，修复后为 [200,409]、数据库恰一 RoomParticipant，并直接执行 ChatIndexPage 证明 /chat 重定向到剩余默认房间。npm run check:quick 通过 60 文件/360 项 Vitest；全量 integration 17 文件/45 项通过；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0，生产构建、覆盖率和 11/11 Playwright 全部通过。QAM-02-004 resolved，QAM-02 更新为 90 分、Score/Gate/Final L4。"
     }
   ]
 }

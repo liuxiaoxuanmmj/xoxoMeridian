@@ -19,11 +19,23 @@ export default async function ChatRoomPage({ params }: { params: Promise<{ roomI
   if (!participant) redirect("/chat");
 
   const snapshot = await getRoomSnapshot(roomId, user.id);
+  const currentUser = {
+    id: user.id,
+    displayName: user.displayName,
+    avatarLabel: user.avatarLabel,
+    profile: user.profile
+      ? {
+          city: user.profile.city,
+          country: user.profile.country,
+          timezone: user.profile.timezone,
+        }
+      : null,
+  };
 
   return (
     <ChatApp
       key={`${user.id}:${roomId}`}
-      currentUser={JSON.parse(JSON.stringify(user))}
+      currentUser={currentUser}
       initialSnapshot={JSON.parse(JSON.stringify(snapshot))}
     />
   );

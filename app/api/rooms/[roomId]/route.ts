@@ -1,8 +1,8 @@
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
-import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import { deleteRoomPreservingUserMembership } from "@/lib/room-lifecycle";
 
 export const dynamic = "force-dynamic";
 
@@ -21,17 +21,13 @@ export async function DELETE(
     const limited = enforceRateLimit(request, `room-delete:${user.id}`, 10, 60_000);
     if (limited) return limited;
 
-    const remaining = await prisma.roomParticipant.count({
-      where: { userId: user.id, roomId: { not: roomId } },
-    });
-    if (remaining === 0) {
+    const result = await deleteRoomPreservingUserMembership(roomId, user.id);
+    if (result.status === "last-room") {
       return Response.json(
         { error: "Cannot delete the last remaining room. Create another first." },
         { status: 409 }
       );
     }
-
-    await prisma.room.delete({ where: { id: roomId } });
 
     return jsonOk({ ok: true });
   } catch (error) {

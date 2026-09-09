@@ -2,7 +2,81 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-09-09。feat-035「修复 Focus 到期状态的服务端幂等结算」已完成，当前没有 `in-progress` 或 `blocked` feature。Study GET/服务端页面、start 与 stop 现在复用 keyed transition service 的到期 reconciliation：页面离开后，首次重访会按持久化 deadline 原子结算恰一条 FocusSession，刷新或并发入口不会重复，过期后 start 可直接开启新计时。QAM-07-002 已解决，QAM-07 当前为 85 分、Score L3、Gate/Final L2；组合开放问题为 P1×8/P2×31，模块平均分为 75.9。
+Last Updated：2026-09-09。feat-038「修复最后房间并发删除竞态」已完成，当前没有 `in-progress` 或 `blocked` feature；feat-001 至 feat-038 全部为 `done`。Room DELETE 现在以稳定 User 行锁串行同一用户的删除请求，并在单一 transaction 中重查成员资格、成员数和删除 Room。QAM-02-004 已解决，QAM-02 当前为 90 分、Score/Gate/Final L4；组合开放问题为 P1×5/P2×31，模块平均分为 78.0。
+
+## 2026-09-09 — feat-038 最后房间并发删除竞态修复
+
+### 已完成
+
+- 按唯一下一步只关闭 QAM-02-004；没有修改房间 wipe、消息 trace、SSE、Prisma schema/migration、共享房间产品策略或其他 QAM。
+- 新增 lib/room-lifecycle.ts：deleteRoomPreservingUserMembership() 在 Prisma interactive transaction 中先对当前 User 执行 SELECT ... FOR UPDATE，再在同一临界区重新验证目标 RoomParticipant、统计该用户成员关系并删除 Room；同一用户的所有删除请求因此共享稳定串行化事实源。
+- Room DELETE Route 保留认证、事务外早期成员校验、按用户/IP 限流和原有 200/409 响应 contract，只把生命周期写入委托给领域服务。事务内二次成员校验防止授权与实际写入之间的状态变化。
+- 新增真实 PostgreSQL Route Handler 回归：对 Room DELETE 安装延迟 trigger，稳定放大旧实现的 count → delete 窗口；并发删除同一用户仅有的两个房间时，修复前两个请求都返回 200，修复后严格收敛为 200/409、数据库保留一个 RoomParticipant，并直接执行 ChatIndexPage 验证 /chat 重定向到剩余房间。
+- 使用 xoxo-qam-02-room-message-review 只重算并发/生命周期与验证直接影响的维度：QAM-02-004 转为 resolved，QAM-02 从 86/L1 提升到 90/L4，开放项仅余 P2×2；总览同步为平均 78.0、开放 P1×5/P2×31。使用 harness-creator 保持 feat-038 为唯一活动 feature，并同步验收、修复前后证据与清洁重启路径。
+
+### 验证证据
+
+- Node.js/npm 为 v22.23.2 / 10.9.8；开始与最终 ./init.sh 均退出 0，Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。
+- 修复前 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/room-delete-invariant.integration.test.ts 为 0/1，原始断言为期望 [200,409]、实际 [200,200]，直接证明两个请求共同删除全部房间。
+- 修复后同一定向命令为 1/1；全量 npm run test:integration 为 17 文件/45 项通过。npm run typecheck、npm run lint 与 npm run check:quick 均退出 0，快速门禁为 60 文件/360 项 Vitest。
+- 最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次退出 0：TypeScript、ESLint、60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、17 文件/45 项真实 PostgreSQL integration 与 11/11 Playwright 全部通过。
+- 覆盖率为 statements 42.32%、branches 36.42%、functions 47.72%、lines 43.02%，均高于门槛；集成测试中的 Prisma P0001 和唯一约束日志均来自既有故障注入/约束回归，未造成测试失败。
+
+### 范围、清理与下一步
+
+- 未新增 npm 依赖、修改锁文件、Prisma schema/migration 或部署配置；User 行锁只串行同一用户的 Room DELETE，不改变房间创建、跨参与者策略、wipe、trace 或 SSE。
+- 完整门禁生成的 coverage/、playwright-report/ 和 test-results/ 已移入系统回收站，可恢复；next-env.d.ts 已恢复 production types。Docker 只保留既有且健康的 xoxo-meridian-postgres，无 Testcontainers 残留；既有用户改动已保留，与本任务无关的未跟踪 3D_Agent_Entry_Plan.md 未读取或修改。
+- 唯一推荐下一步：另行登记并只处理 QAM-03-002，把 ScheduledJob 的 active cap 在 Route create/re-enable 与 Agent Tool create/re-enable 之间收敛为共享事务边界，并用真实 PostgreSQL 并发回归证明 active Job 不超过 30；不要与 one-shot fireAt 或 participant 顺序问题合并。
+
+## 2026-09-09 — feat-037 显式 Agent dispatch 原子幂等派生修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-02-003`；没有修改 AgentTask claim 后 Runtime/Trace、最后房间删除、message trace、SSE 或其他 QAM。
+- 新增 `lib/agent-task-dispatch.ts`：`createAgentTaskWithCreatedEvent()` 统一生成预算快照、Task input 和 `agent.task.created` Event；普通消息在既有 Message transaction 中复用，显式 dispatch 在单一 interactive transaction 中锁定同一 source Message 后复用，Event 写入失败会连同 Task 回滚。
+- 显式 source-message 入口以 `SELECT ... FOR UPDATE` 串行同一消息的并发请求，再读取 `AgentTask.sourceMessageId @unique` 事实：首次创建返回 201，重放或并发请求返回相同 Task 的 200；唯一冲突捕获只作为自动消息入口与显式入口跨路径竞争的兜底。
+- Route 保留认证、rate limit、Zod、Room 成员资格和 inline-run 契约；显式请求命中既有 pending Task 时仍可交给既有 claim 机制执行。新增真实 PostgreSQL 回归覆盖并发、EventLog trigger 故障回滚/重试，并验证普通消息自动派生仍持久化相同预算、input 和 created Event。
+- 使用 `xoxo-qam-02-room-message-review` 只重算派生边界、状态一致性、接口与并发验证直接影响的维度：`QAM-02-003` 转为 `resolved`，QAM-02 从 78 提升到 86、Score L2→L3；最后房间删除 P1 仍开放，因此 Gate/Final 保持 L1。使用 `harness-creator` 维持 feat-037 为唯一活动 feature，并同步验收、修复前后证据与唯一下一步。
+
+### 验证证据
+
+- Node.js/npm 版本为 v22.23.2 / 10.9.8；开始 `./init.sh` 退出 0，Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/agent-dispatch-atomicity.integration.test.ts` 为 0/2：同一 source Message 并发响应实际为 `[201,500]`（唯一约束冲突），EventLog 注入失败后的 AgentTask count 实际为 1，证明存在孤儿写入。
+- 修复后的首次定向运行因测试断言误用 Vitest 不支持的 `toHaveSize` 为 1/2；只将断言改为 `.size` 后为 2/2。加入普通消息共享路径回归后，同命令最终为 3/3：并发响应为 200/201 且 Task ID 相同，数据库恰一 Task/一 created Event；故障时二者均为 0，移除 trigger 后相同请求 201 成功。
+- `npm run check:quick` 退出 0：60 文件/360 项 Vitest 通过。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：TypeScript、ESLint、60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、16 文件/44 项真实 PostgreSQL integration 与 11/11 Playwright 全部通过。
+- 最终覆盖率为 statements 42.51%、branches 36.55%、functions 47.94%、lines 43.17%，均高于门槛；故障注入用例中的 Prisma `P0001` 日志为预期回滚证据，不是门禁失败。Playwright WebServer 出现一次 `The destination stream closed early` 日志，但所有 11 项用例及组合命令均退出 0。
+
+### 范围、清理与下一步
+
+- 未新增 npm 依赖、修改锁文件、Prisma schema/migration 或部署配置；行锁只串行同一 source Message 的显式派发，QAM-08 的 claim、lease、budget enforcement 与 durable step 生命周期未改变。
+- 最终 `./init.sh` 退出 0：Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。`harness-creator` 校验为 100/100；`feature_list.json` 可解析，37 个 feature 全部为 `done`、活动/阻塞为 0；QAM-02 评分算术、稳定 ID、总览数字与完整门禁证据一致，`git diff --check` 通过。
+- 本轮生成的 `coverage/`、`playwright-report/`、`test-results/` 和 `public/models/` 已移入系统回收站，可恢复；E2E 数据库 URL 文件随 `test-results/` 清理，Docker 只保留既有且健康的 `xoxo-meridian-postgres`，无 Testcontainers 残留；`next-env.d.ts` 已恢复到会话开始时的 production types 引用。
+- 唯一推荐下一步：另行登记并只处理 `QAM-02-004`，把最后房间删除的 count/delete 收敛为原子、串行化语义，用真实 PostgreSQL 并发 DELETE 证明最多一个请求成功且用户始终保留一个房间；不要与 wipe、message trace 或 SSE 合并。
+
+## 2026-09-09 — feat-036 Room snapshot 私有档案字段泄露修复
+
+### 已完成
+
+- 按唯一下一步只关闭 `QAM-02-001`；没有改变 QAM-01 档案写入/所有权、Room 成员资格或既有公开 UI，也没有处理 message trace、Agent dispatch、最后房间删除或 SSE。
+- `getRoomSnapshot()` 的 Room 与 participant/profile 查询改用 Prisma `select`，返回值按显式 view model 组装，只保留 Room `id/name`、用户 `id/displayName/avatarLabel`、公开 `city/country/timezone` 和运行时 `studyStatus`；不再传播完整 Prisma `User`/`UserProfile`。
+- Chat 页面将当前用户也收窄为相同公开身份/档案字段，Study 页面传给 `SiteNav` 的用户只保留 `id/displayName/avatarLabel`；移除 Chat 客户端类型中遗留的 `preferences`，避免第二条完整认证对象序列化路径绕过 snapshot 修复。
+- 新增真实 PostgreSQL 快照回归，精确断言两个参与者的公开 view model，并扫描序列化结果中的 `email`、`passwordHash`、`sessionVersion`、定位字段、`preferences` 与 `profileNote`。Playwright 向隔离数据库写入唯一私有标记，再直接检查 `/chat/:roomId` 与 `/study` 的完整 RSC/HTML 响应：公开显示名、头像、城市和时区仍可用，私有字段名和值均不存在。
+- 使用 `xoxo-qam-02-room-message-review` 只重算 projection、接口、安全和验证直接受影响的维度：`QAM-02-001` 转为 `resolved`，QAM-02 从 71 提升到 78、Score L2，QAM-02-003/004 两个 P1 仍开放，因此 Gate/Final 保持 L1。使用 `harness-creator` 维持 feat-036 为唯一活动 feature，并同步修复前后证据、完整门禁与唯一下一步。
+
+### 验证证据
+
+- 开始 `./init.sh` 退出 0：Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/room-snapshot-privacy.integration.test.ts` 为 0/1，差异直接显示完整 User/Profile 中的邮箱、密码摘要、sessionVersion、定位、preferences 与 profileNote；修复后同命令为 1/1。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e -- --project=authenticated --grep 'keeps private profile fields'` 为 1/2（setup 通过、隐私用例失败），Chat RSC 载荷直接包含当前用户 bcrypt hash 和双方完整私有档案；修复后同命令为 2/2。
+- `npm run check:quick` 退出 0：60 文件/360 项 Vitest 通过。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：TypeScript、ESLint、60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、15 文件/41 项真实 PostgreSQL integration 与 11/11 Playwright 全部通过。
+- 最终覆盖率为 statements 42.72%、branches 36.73%、functions 48.17%、lines 43.40%，均高于门槛；其他 integration 故障注入用例中的 Prisma `P0001` 日志为预期回滚证据，不是门禁失败。
+
+### 范围、清理与下一步
+
+- 未新增 npm 依赖、修改锁文件、Prisma schema/migration 或部署配置；只收窄已有读取 projection 和服务端到客户端的序列化边界。
+- 最终 `./init.sh` 退出 0：Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过。`harness-creator` 校验为 100/100；`feature_list.json` 可解析，36 个 feature 全部为 `done`、活动/阻塞为 0；QAM-02 评分算术、稳定 ID、总览数字与完整门禁证据一致，`git diff --check` 通过。
+- 本轮生成的 `coverage/`、`playwright-report/` 和 `test-results/` 已移入系统回收站，可恢复；E2E 数据库 URL 文件不存在，Docker 只保留既有且健康的 `xoxo-meridian-postgres`，无 Testcontainers 残留；`next-env.d.ts` 已恢复到会话开始时的 production types 引用。
+- 唯一推荐下一步：另行登记并只处理 `QAM-02-003`，把显式 Agent dispatch 的 Task 创建与 EventLog 派生收敛为原子、幂等语义，用真实 PostgreSQL 覆盖相同 source message 并发派发及 EventLog 写入故障回滚；不要与房间删除、message trace 或 SSE 合并。
 
 ## 2026-09-09 — feat-035 Focus 到期状态服务端幂等结算修复
 

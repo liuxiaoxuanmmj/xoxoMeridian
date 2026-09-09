@@ -67,14 +67,29 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     }),
     prisma.room.findUnique({
       where: { id: roomId },
-      include: {
+      select: {
+        id: true,
+        name: true,
         participants: {
-          include: {
-            user: { include: { profile: true } }
+          select: {
+            user: {
+              select: {
+                id: true,
+                displayName: true,
+                avatarLabel: true,
+                profile: {
+                  select: {
+                    city: true,
+                    country: true,
+                    timezone: true,
+                  },
+                },
+              },
+            },
           },
-          orderBy: { joinedAt: "asc" }
-        }
-      }
+          orderBy: { joinedAt: "asc" },
+        },
+      },
     }),
     // Sidebar room list piggy-backed onto the snapshot so LeftRail updates in
     // lockstep with the active room (~2s tick). Skipped when no userId.
@@ -85,7 +100,7 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     ? await prisma.focusState.findMany({
         where: {
           userId: {
-            in: room.participants.map((participant) => participant.userId),
+            in: room.participants.map((participant) => participant.user.id),
           },
         },
         select: {
@@ -115,10 +130,18 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
       ? {
           ...room,
           participants: room.participants.map((participant) => ({
-            ...participant,
             user: {
-              ...participant.user,
-              studyStatus: studyStatusByUserId.get(participant.userId) ?? null,
+              id: participant.user.id,
+              displayName: participant.user.displayName,
+              avatarLabel: participant.user.avatarLabel,
+              profile: participant.user.profile
+                ? {
+                    city: participant.user.profile.city,
+                    country: participant.user.profile.country,
+                    timezone: participant.user.profile.timezone,
+                  }
+                : null,
+              studyStatus: studyStatusByUserId.get(participant.user.id) ?? null,
             },
           })),
         }

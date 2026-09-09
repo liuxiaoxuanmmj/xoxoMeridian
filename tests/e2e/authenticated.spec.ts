@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
-import { PrismaClient } from "@prisma/client";
+import { Prisma, PrismaClient } from "@prisma/client";
 import { expect, test } from "@playwright/test";
 
 import { E2E_USERS } from "./support/credentials";
@@ -13,6 +13,128 @@ test("renders the authenticated home navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: "Chat" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Study" })).toBeVisible();
   await expect(page.getByRole("link", { name: E2E_USERS[0].displayName })).toBeVisible();
+});
+
+test("keeps private profile fields out of Chat and Study browser payloads", async ({ page }) => {
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const e2ePrisma = new PrismaClient({
+    datasources: { db: { url: databaseUrl } },
+  });
+  const privateValues = [
+    "e2e-private-profile-note-one",
+    "e2e-private-profile-note-two",
+    "e2e-private-preferences-one",
+    "e2e-private-preferences-two",
+    "198.51.100.21",
+    "198.51.100.22",
+  ];
+
+  try {
+    const users = await e2ePrisma.user.findMany({
+      where: { email: { in: E2E_USERS.map((user) => user.email) } },
+      orderBy: { email: "asc" },
+      select: {
+        id: true,
+        email: true,
+        displayName: true,
+        avatarLabel: true,
+        passwordHash: true,
+      },
+    });
+    expect(users).toHaveLength(2);
+    const userByEmail = new Map(users.map((user) => [user.email, user]));
+    const currentUser = userByEmail.get(E2E_USERS[0].email);
+    const partnerUser = userByEmail.get(E2E_USERS[1].email);
+    expect(currentUser).toBeDefined();
+    expect(partnerUser).toBeDefined();
+    if (!currentUser || !partnerUser) return;
+
+    const participant = await e2ePrisma.roomParticipant.findFirstOrThrow({
+      where: { userId: currentUser.id },
+      select: { roomId: true },
+    });
+    await Promise.all([
+      e2ePrisma.userProfile.update({
+        where: { userId: currentUser.id },
+        data: {
+          city: "Public City One",
+          country: "Public Country One",
+          timezone: "Asia/Tokyo",
+          lastGeoIp: "198.51.100.21",
+          preferences: { privateMarker: "e2e-private-preferences-one" },
+          profileNote: "e2e-private-profile-note-one",
+        },
+      }),
+      e2ePrisma.userProfile.update({
+        where: { userId: partnerUser.id },
+        data: {
+          city: "Public City Two",
+          country: "Public Country Two",
+          timezone: "Asia/Seoul",
+          lastGeoIp: "198.51.100.22",
+          preferences: { privateMarker: "e2e-private-preferences-two" },
+          profileNote: "e2e-private-profile-note-two",
+        },
+      }),
+    ]);
+
+    const chatResponse = await page.goto(`/chat/${participant.roomId}`);
+    expect(chatResponse?.ok()).toBe(true);
+    const chatPayload = await chatResponse?.text();
+    expect(chatPayload).toContain("Public City One");
+    expect(chatPayload).toContain("Public City Two");
+    expect(chatPayload).toContain("Asia/Tokyo");
+    expect(chatPayload).toContain("Asia/Seoul");
+    await expect(page.getByText("Public City One", { exact: true }).first()).toBeVisible();
+    await expect(page.getByText("Public City Two", { exact: true }).first()).toBeVisible();
+
+    const studyResponse = await page.goto("/study");
+    expect(studyResponse?.ok()).toBe(true);
+    const studyPayload = await studyResponse?.text();
+    expect(studyPayload).toContain("Public City One");
+    expect(studyPayload).toContain("Public City Two");
+    expect(studyPayload).toContain("Asia/Tokyo");
+    expect(studyPayload).toContain("Asia/Seoul");
+
+    for (const payload of [chatPayload, studyPayload]) {
+      expect(payload).toContain(currentUser.displayName);
+      expect(payload).toContain(partnerUser.displayName);
+      expect(payload).toContain(currentUser.avatarLabel);
+      for (const privateField of [
+        "email",
+        "passwordHash",
+        "sessionVersion",
+        "lastGeoIp",
+        "preferences",
+        "profileNote",
+      ]) {
+        expect(payload).not.toContain(privateField);
+      }
+      for (const privateValue of [
+        ...privateValues,
+        currentUser.email,
+        currentUser.passwordHash,
+        partnerUser.email,
+        partnerUser.passwordHash,
+      ]) {
+        expect(payload).not.toContain(privateValue);
+      }
+    }
+  } finally {
+    await e2ePrisma.userProfile.updateMany({
+      where: { user: { email: { in: E2E_USERS.map((user) => user.email) } } },
+      data: {
+        city: "—",
+        country: "—",
+        timezone: "Asia/Shanghai",
+        lastGeoIp: null,
+        preferences: Prisma.JsonNull,
+        profileNote: null,
+      },
+    });
+    await e2ePrisma.$disconnect();
+  }
 });
 
 test("creates and displays a post", async ({ page }) => {

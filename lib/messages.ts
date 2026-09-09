@@ -1,7 +1,7 @@
 import { prisma } from "@/lib/prisma";
 import { detectAgentTarget } from "@/lib/agent-detection";
+import { createAgentTaskWithCreatedEvent } from "@/lib/agent-task-dispatch";
 import { appendChatLog } from "@/lib/chat-log-file";
-import { getAgentRuntimeBudgetCreateData } from "@/agent/runtime-budget";
 
 const messageInclude = {
   sender: { select: { id: true, displayName: true, avatarLabel: true } },
@@ -39,34 +39,14 @@ export async function createHumanMessage(input: {
 
     let task = null;
     if (detection.isAgentTargeted && agent) {
-      task = await tx.agentTask.create({
-        data: {
-          roomId: input.roomId,
-          agentId: agent.id,
-          sourceMessageId: message.id,
-          requestedById: input.userId,
-          status: "pending",
-          ...getAgentRuntimeBudgetCreateData(),
-          input: {
-            rawContent: input.content,
-            normalizedContent: detection.normalizedContent,
-            trigger: detection.trigger,
-            sourceMessageId: message.id
-          }
-        }
-      });
-
-      await tx.eventLog.create({
-        data: {
-          roomId: input.roomId,
-          actorUserId: input.userId,
-          agentTaskId: task.id,
-          type: "agent.task.created",
-          payload: {
-            trigger: detection.trigger,
-            sourceMessageId: message.id
-          }
-        }
+      task = await createAgentTaskWithCreatedEvent(tx, {
+        roomId: input.roomId,
+        agentId: agent.id,
+        sourceMessageId: message.id,
+        requestedById: input.userId,
+        rawContent: input.content,
+        normalizedContent: detection.normalizedContent,
+        trigger: detection.trigger
       });
     }
 

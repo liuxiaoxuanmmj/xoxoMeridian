@@ -3,82 +3,76 @@
 ## 元数据
 
 - QAM：QAM-02 私密房间与实时消息
-- 快照日期：2026-09-06
+- 快照日期：2026-09-09
 - 审查 Skill：`xoxo-qam-02-room-message-review`
 - 共享标准：`docs/optimization/module-quality-review-standard.md` v1.0.0
 - 范围来源：`PROJECT_VIEW.md` QAM-02、Cross-cutting Concerns、共享映射、BU-02、BU-06
 - 当前基线命令：`npm run check:quick`
-- 初审 Delta：`baseline`
-- 工作区说明：审查前 `git status --short` 显示 AGENTS/Harness、PROJECT_VIEW 和共享标准存在未提交改动；本报告未将其当作 QAM-02 业务基线改动，也未修改这些文件。
+- 本轮 Delta：`+4（QAM-02-004 resolved；86→90）`
+- 工作区说明：本轮只重算最后房间删除的事务边界、并发/生命周期语义及其验证直接影响的维度；QAM-02-002/005/006 和其他 QAM 状态保持不变。
 
 ## Overall
 
-- Score：71/100
-- Score Level：L2
-- Gate Level：L1
-- Final Level：L1
-- Trend：baseline
-- Evidence Confidence：中等（主路径和部分生命周期有 E3；高风险并发、真实浏览器和完整跨模型清空仍为 E2/未验证）
-- 当前开放问题：5 项（P1×3、P2×2）；QAM-02-005 保留为 `not-reproduced` 历史记录，不计入开放项。
+- Score：90/100
+- Score Level：L4
+- Gate Level：L4
+- Final Level：L4
+- Trend：+4（QAM-02-004 resolved）
+- Evidence Confidence：高（成员访问、SSE 关闭生命周期、Room snapshot 隐私、dispatch 原子幂等与最后房间并发删除均有 E3；SSE 周期重入仍为 E2）
+- 当前开放问题：2 项（P2×2）；QAM-02-001/003/004 已解决，QAM-02-005 保留为 `not-reproduced` 历史记录，均不计入开放项。
 
-当前房间成员资格在主要 HTTP 入口和数据库层有清晰控制，SSE 的中止/关闭路径也有针对性测试。快照和客户端合并结构可读，但快照边界没有过滤完整档案，重连消息接口还把内部 Agent trace 载荷带入浏览器。显式 Agent dispatch、最后房间删除以及 SSE 定时轮询存在可复现于代码结构的竞态或契约不一致；因此总分处于 L2，开放 P1 将最终门禁降为 L1。
+当前房间成员资格、公开 snapshot 和 SSE 中止路径已有清晰控制与行为证据。普通消息与显式 dispatch 复用同一预算化 Task/Event 创建边界；最后房间删除也已通过稳定 User 行锁，把成员重查与 Room 删除收敛为同一事务。真实 PostgreSQL 证明同一用户的并发删除最多一个成功，`/chat` 始终能解析剩余默认房间。重连消息接口的 Agent trace 投影与 SSE 定时轮询仍是独立 P2，但当前没有开放 P0/P1，因此总分及最终等级提升到 90/L4。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
-| 架构与责任边界 | 11 | 14 | Route、`lib/access.ts`、消息服务和客户端 Hook 分层清楚；但 snapshot 同时承载 QAM-02/03/07/08，且显式 dispatch 在 Route 中重复 Task/EventLog 编排。[snapshot](../../lib/room-snapshot.ts#L1-L125)、[dispatch](../../app/api/agent/dispatch/route.ts#L18-L75)（E2） |
-| 代码结构与复杂度 | 8 | 10 | 房间、消息、SSE 控制流局部可读，客户端合并有单一入口；删除/清空和 dispatch 的异步分支仍把一致性责任散落在多个调用点。[messages route](../../app/api/rooms/%5BroomId%5D/messages/route.ts#L45-L108)（E2） |
-| 抽象与复用 | 6 | 8 | `assertRoomAccess`、`createHumanMessage`、`stableMergeBy` 复用有效；显式 dispatch 未复用原子派生服务，HTTP GET 与 SSE 使用两套 Message/trace 投影。[messages](../../lib/messages.ts#L12-L93)、[merge](../../components/chat/useRoomChat.ts#L10-L57)（E2） |
-| 数据流与状态一致性 | 8 | 12 | 正常消息的 Message→Task→EventLog 事务路径明确，wipe 的多表删除在单一事务中原子提交；dispatch Task/EventLog 分离仍会产生不一致，snapshot 与客户端暂存状态的交错需补验证。[messages](../../lib/messages.ts#L20-L72)、[wipe](../../app/api/rooms/%5BroomId%5D/messages/route.ts#L91-L103)（E2） |
-| 接口与依赖关系 | 7 | 10 | 输入经过 Zod，访问入口有成员检查；`ChatMessage` 只声明摘要字段，而消息 GET 实际返回完整关系，形成可观察 contract 漂移。[types](../../components/chat/types.ts#L21-L61)、[GET messages](../../app/api/rooms/%5BroomId%5D/messages/route.ts#L18-L38)（E2） |
-| 健壮性、并发与生命周期 | 8 | 14 | SSE 对 abort、controller close 和首次/进行中 snapshot 有保护并通过定向测试；interval 不防重入，最后房间删除存在 check-then-act 竞态。wipe 的并发线性化语义尚未验证/文档化，但本轮未证明缺陷。[stream](../../app/api/rooms/%5BroomId%5D/stream/route.ts#L27-L120)、[stream tests](../../tests/server/room-stream.test.ts#L113-L171)（E2/E3） |
-| 性能与资源使用 | 6 | 8 | 查询数量受消息/生活数据上限约束，消息有索引；每个连接每 2 秒重新聚合多个模块，房间列表无上限且 trace 子关系无分页，后续连接数/房间数增长成本可见。[snapshot](../../lib/room-snapshot.ts#L5-L81)、[room list](../../lib/room-list.ts#L9-L31)（E2） |
-| 安全与隐私 | 6 | 10 | HTTP 入口普遍认证、成员复核且真实 PostgreSQL 访问测试通过；snapshot 将完整 UserProfile 序列化到客户端，GET messages 还暴露内部 Agent trace 载荷。[page](../../app/chat/%5BroomId%5D/page.tsx#L10-L28)、[profile projection](../../lib/room-snapshot.ts#L66-L76)（E2；结构风险见 QAM-02-001/002） |
-| 可测试性与验证可信度 | 6 | 8 | `npm run check:quick` 的 58 个测试文件/344 个测试通过；PostgreSQL 成员/唯一/级联 3 项通过，SSE 中止和消息编辑器有行为测试，但缺少高风险并发/路由事务测试，Playwright 被环境依赖阻塞。[integration](../../tests/integration/prisma-access.integration.test.ts#L16-L74)、[composer](../../tests/component/message-composer.test.tsx#L21-L70)（E3） |
+| 架构与责任边界 | 13 | 14 | Route、`lib/access.ts`、消息服务和客户端 Hook 分层清楚；普通消息与显式 dispatch 复用独立 Task/Event 派生服务，Route 只保留 HTTP 编排，但 snapshot 仍承载 QAM-02/03/07/08。[task derivation](../../lib/agent-task-dispatch.ts#L21-L122)、[dispatch](../../app/api/agent/dispatch/route.ts#L10-L63)（E2/E3） |
+| 代码结构与复杂度 | 9 | 10 | Task/Event 创建、预算快照与 created payload 已从两条入口收敛为一个局部函数；房间删除/清空和 SSE 仍保留各自的异步一致性分支。[task derivation](../../lib/agent-task-dispatch.ts#L21-L56)、[messages](../../lib/messages.ts#L20-L72)（E2/E3） |
+| 抽象与复用 | 7 | 8 | `assertRoomAccess`、`createAgentTaskWithCreatedEvent`、`stableMergeBy` 和共享 Room snapshot 均有真实复用；HTTP GET 与 SSE 仍使用两套 Message/trace 投影。[task derivation](../../lib/agent-task-dispatch.ts#L21-L56)、[merge](../../components/chat/useRoomChat.ts#L10-L57)（E2/E3） |
+| 数据流与状态一致性 | 11 | 12 | Message→Task→EventLog 与最后房间删除均有单事务事实边界；删除服务以 User 行锁串行同一用户的成员重查与 Room 删除，避免两个请求共同消费最后一个可保留房间。SSE 完整 snapshot 仍可能交错。[room lifecycle](../../lib/room-lifecycle.ts#L22-L50)、[delete regression](../../tests/integration/room-delete-invariant.integration.test.ts#L59-L108)（E3） |
+| 接口与依赖关系 | 9 | 10 | 输入经过 Zod、成员资格前置校验，显式 dispatch 首次创建返回 201、幂等命中返回 200 且资源 ID 稳定；消息 GET 的完整 trace 与 `ChatMessage` 摘要类型仍有 contract 漂移。[dispatch](../../app/api/agent/dispatch/route.ts#L36-L59)、[types](../../components/chat/types.ts#L8-L61)（E2/E3） |
+| 健壮性、并发与生命周期 | 13 | 14 | dispatch、最后房间删除与 SSE 关闭均有并发/失败 E3；删除触发器稳定放大旧窗口后证明 User 行锁使并发响应收敛为 200/409。剩余缺口是 interval 不防异步 snapshot 重入。[delete regression](../../tests/integration/room-delete-invariant.integration.test.ts#L59-L108)、[stream](../../app/api/rooms/%5BroomId%5D/stream/route.ts#L27-L120)（E2/E3） |
+| 性能与资源使用 | 7 | 8 | 查询数量受消息/生活数据上限约束，participant 查询和周期性载荷不再读取完整 User/Profile；每个连接每 2 秒重新聚合多个模块，房间列表无上限且 trace 子关系无分页，增长成本仍可见。[snapshot](../../lib/room-snapshot.ts#L5-L105)、[room list](../../lib/room-list.ts#L9-L31)（E2） |
+| 安全与隐私 | 8 | 10 | HTTP 入口普遍认证并复核成员；snapshot 与 Chat/Study Client Component 边界仅输出公开用户字段，PostgreSQL 和浏览器载荷均有 E3。消息 GET 仍暴露内部 Agent trace 摘要之外的完整载荷。[snapshot privacy](../../tests/integration/room-snapshot-privacy.integration.test.ts#L16)、[browser privacy](../../tests/e2e/authenticated.spec.ts#L18)（E3；剩余风险见 QAM-02-002） |
+| 可测试性与验证可信度 | 8 | 8 | 成员/唯一/级联、SSE 中止、snapshot 隐私、dispatch 并发/故障回滚和最后房间并发删除均有风险匹配 E3；新回归还直接执行 `/chat` 默认房间解析路径。[delete regression](../../tests/integration/room-delete-invariant.integration.test.ts#L59-L108)（E3） |
 | 可维护性、演进与技术债 | 5 | 6 | 主要变化点有明确文件落点，稳定合并和 snapshot contract 便于局部修改；跨 QAM snapshot 与 Agent trace 载荷边界仍需治理（BU-02）。[PROJECT_VIEW BU-02](../../PROJECT_VIEW.md#L900-L904)（E2） |
-| **合计** | **71** | **100** | 算术核对：11+8+6+8+7+8+6+6+6+5 = 71。 |
+| **合计** | **90** | **100** | 算术核对：13+9+7+11+9+13+7+8+8+5 = 90。 |
 
 ## Level Gate
 
 - P0：通过。当前没有具备 E3 直接行为证据的开放 P0。
-- 开放 P1：未通过。QAM-02-001 的完整档案暴露属于房间 snapshot 的隐私边界问题；QAM-02-003/004 涉及重复派发或删除后的错误状态，Gate 不高于 L1。QAM-02-005 经本轮证据复核未能证明为缺陷，已标记 `not-reproduced`。
-- 最高风险不变量行为验证：未通过。成员访问和数据库级级联有 E3，但 Message/AgentTask/EventLog 原子派生、房间 wipe 并发语义、last-room 删除竞态没有风险匹配的行为测试；该条件单独使 Gate 不高于 L2。
-- L4 条件：未通过。存在开放 P1，且关键失败/并发路径没有完整 E3。
-- 结论：Score Level=L2，Gate Level=L1，因此 Final Level=min(L2,L1)=L1。
+- 开放 P1：通过。QAM-02-001/003/004 均已由 E3 回归关闭；QAM-02-005 保持 `not-reproduced`，不计入开放项。
+- 最高风险不变量行为验证：通过。成员访问、数据库级级联、Message/AgentTask/EventLog 原子派生，以及用户至少保留一个房间的并发删除语义均有真实 PostgreSQL E3；`/chat` 默认房间解析也在同一回归中执行。
+- L4 条件：通过。当前没有开放 P0/P1，持久化一致性、权限和关键失败/并发路径均有 E3；QAM-02-002/006 是不改变持久化事实的独立 P2。
+- 结论：Score Level=L4，Gate Level=L4，因此 Final Level=min(L4,L4)=L4。
 
 ## Critical Issues
 
 ### P1
 
-#### QAM-02-001：Room snapshot 将私有 UserProfile 字段带入浏览器
+#### QAM-02-001：Room snapshot 将私有 UserProfile 字段带入浏览器（resolved）
 
-- 状态：`open`
-- 问题：`getRoomSnapshot()` 对 participant 使用 `user: { include: { profile: true } }`，随后展开整个 `user`；聊天页又把整个 snapshot `JSON.stringify` 后传给 Client Component。运行时类型只做 TypeScript 缩窄，不会删除 `lastGeoIp`、`preferences`、`profileNote` 等字段。
-- 证据：[`lib/room-snapshot.ts#L66-L76`](../../lib/room-snapshot.ts#L66-L76)、[`app/chat/[roomId]/page.tsx#L14-L28`](../../app/chat/%5BroomId%5D/page.tsx#L14-L28)、[`UserProfile schema`](../../prisma/schema.prisma#L134-L152)（E2）。本轮未运行浏览器网络断言。
-- 质量影响：房间成员和页面 JavaScript 可读取不应由聊天展示的档案元数据；QAM-01 的隐私边界被 QAM-02 的 read model 绕过，并扩大 snapshot payload 和后续 contract 漂移风险。
-- 最小修正：在 QAM-02 snapshot projection 使用 Prisma `select` 和显式 allow-list，仅输出聊天确需的用户字段及公开城市/时区；不要依赖 `components/chat/types.ts` 进行运行时脱敏。保留 QAM-01 对档案字段的所有权。
-- 验收证据：用真实房间页面/Playwright 或 Route 行为测试检查序列化 snapshot 不含 `lastGeoIp`、`preferences`、未公开 `profileNote` 等字段，同时确认成员仍可看到既定公开显示名、头像、城市和时区；补充 QAM-01 隐私回归证据。
-- 影响范围：QAM-02；直接关联 QAM-01，`getRoomSnapshot()` 被 QAM-07 Study 页面复用时也需确认其 allow-list。
+- 状态：`resolved`
+- 原问题：`getRoomSnapshot()` 对 participant 使用完整 User/Profile include 并展开对象，Chat 页面又把完整认证用户传给 Client Component。修复前真实 PostgreSQL 与 Playwright RSC/HTML 载荷直接观察到 `email`、`passwordHash`、`sessionVersion`、`lastGeoIp`、`preferences`、`profileNote` 及其私有值。
+- 已实施修正：[`getRoomSnapshot()`](../../lib/room-snapshot.ts#L67-L153) 以 Prisma `select` 只读取 Room `id/name`、用户 `id/displayName/avatarLabel` 和公开 `city/country/timezone`，并再构造显式 participant view model；[`ChatRoomPage`](../../app/chat/%5BroomId%5D/page.tsx#L21-L42) 与 [`StudyPage`](../../app/study/page.tsx#L15-L28) 只把各 Client Component 需要的公开 current-user 字段送入渲染上下文，`ChatUser` 不再声明 `preferences`（E2）。
+- 验收证据：[`room-snapshot-privacy.integration.test.ts`](../../tests/integration/room-snapshot-privacy.integration.test.ts#L16-L126) 修复前 0/1，收到完整 User/Profile 和植入的两组私有值；修复后 1/1 精确匹配公开 view model。[`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts#L18-L135) 修复前在 Chat 页面 RSC 载荷观察到密码 hash 与完整私有档案并失败，修复后定向 setup + 浏览器用例 2/2，Chat/Study 均保留双方显示名、头像、城市、国家和时区，且字段名及私有值均不出现在载荷（E3）。
+- 影响范围：QAM-02；直接覆盖 QAM-01 的当前用户/伙伴档案隐私边界，以及 QAM-07 复用 `getRoomSnapshot()` 的 Study 页面。
 
-#### QAM-02-003：显式 Agent dispatch 的 Task 与 EventLog 不是原子派生
+#### QAM-02-003：显式 Agent dispatch 的 Task 与 EventLog 不是原子派生（resolved）
 
-- 状态：`open`
-- 问题：`/api/agent/dispatch` 的 `sourceMessageId` 分支先 `agentTask.create`，再单独 `eventLog.create`；没有事务或幂等响应。并发重复请求会竞争 `AgentTask.sourceMessageId @unique`，事件写入失败则留下无创建事件的任务且接口返回错误。
-- 证据：[`dispatch route#L41-L75`](../../app/api/agent/dispatch/route.ts#L41-L75)、[`AgentTask unique sourceMessageId`](../../prisma/schema.prisma#L228-L268)。正常 content 分支使用 [`createHumanMessage` 事务](../../lib/messages.ts#L20-L72)，说明两条入口契约已分叉（E2）；本轮未执行并发 dispatch 实验。
-- 质量影响：显式 UI 重试或网络重放可能产生 500/唯一约束错误、孤儿 Task 或重复副作用，聊天 snapshot 中的 Agent 状态与 EventLog 事实不一致。
-- 最小修正：将 source-message 分支的 Task 和 `agent.task.created` 放进同一 Prisma 事务，并以 sourceMessageId 唯一键提供明确的重复请求结果；最好复用与 `createHumanMessage` 相同的领域派生服务，不扩大 Agent Runtime 功能。
-- 验收证据：真实 PostgreSQL 并发提交同一 `sourceMessageId` 只能得到一个 Task 和一个创建事件；注入事件写失败时 Task 与事件一起回滚；重复 HTTP 请求返回稳定幂等结果。
-- 影响范围：QAM-02；直接关联 QAM-08 的 Task/Trace 生命周期。
+- 状态：`resolved`
+- 原问题：`/api/agent/dispatch` 的 `sourceMessageId` 分支先 `agentTask.create`，再单独 `eventLog.create`；没有事务或幂等响应。修复前真实 PostgreSQL 回归直接观察到并发响应为 `201/500`，EventLog 注入失败后遗留 1 条孤儿 Task，清除故障后的相同请求也因唯一约束无法重试。
+- 已实施修正：[`createAgentTaskWithCreatedEvent()`](../../lib/agent-task-dispatch.ts#L21-L56) 集中生成预算化 Task 与 `agent.task.created` Event；普通消息与显式 dispatch 均在各自单一 Prisma transaction 内复用。显式入口在事务中锁定同一 source Message，串行读取 `AgentTask.sourceMessageId @unique` 事实；首次创建返回 201，后续/并发命中返回同一 Task 的 200，唯一冲突捕获只作为跨入口兜底。[`dispatchAgentTaskForSourceMessage()`](../../lib/agent-task-dispatch.ts#L64-L122)、[`route`](../../app/api/agent/dispatch/route.ts#L36-L59)（E2）。
+- 验收证据：[`agent-dispatch-atomicity.integration.test.ts`](../../tests/integration/agent-dispatch-atomicity.integration.test.ts#L85-L225) 修复前 0/2：并发得到 `201/500`，事件故障后 Task count=1；修复后扩展为 3/3，证明并发响应 `200/201` 且 Task ID 相同、数据库恰一 Task/一 created Event，事件 trigger 故障时二者均为 0、移除故障后同一请求 201 成功，并验证自动消息入口仍持久化相同预算/输入/Event 契约。最终完整门禁为 16 文件/44 项 PostgreSQL 与 11/11 Playwright（E3）。
+- 影响范围：QAM-02；QAM-08 的 claim 后 Runtime/Trace 生命周期未修改，既有 lease、budget 与 durable step 集成回归保持通过。
 
 #### QAM-02-004：删除最后房间的保护是 check-then-act，不能保持显式不变量
 
-- 状态：`open`
-- 问题：删除 Route 先 count 当前用户其他房间，再执行 `room.delete`，两次请求可分别在 count 阶段看到彼此尚存，随后同时删除两个房间，导致用户没有默认房间，违反代码注释所声明的“不能删除最后房间”不变量。
-- 证据：[`room DELETE#L16-L36`](../../app/api/rooms/%5BroomId%5D/route.ts#L16-L36)、[`getDefaultRoomForUser`](../../lib/access.ts#L19-L31)。真实 PostgreSQL 仅验证了直接 cascade，不覆盖 API 并发删除（[`prisma-access.integration.test.ts#L54-L74`](../../tests/integration/prisma-access.integration.test.ts#L54-L74)，E3/E2）。
-- 质量影响：并发点击、两个浏览器或重试可使 `/chat` 无法解析默认房间，造成持久的房间生命周期错误和错误恢复路径。
-- 最小修正：在数据库事务内以可序列化/适当锁定的方式重新检查该用户房间数并删除，或引入等价的用户级互斥；保留当前“至少一个房间”的功能边界。
-- 验收证据：真实 PostgreSQL 两个并发 DELETE 的交错测试中，最多一个请求成功，用户始终保留一个房间；成功删除后 `/chat` 仍能重定向到默认房间。
+- 状态：`resolved`
+- 原问题：删除 Route 在事务外先 count 当前用户其他房间，再执行 `room.delete`；真实 PostgreSQL 延迟 DELETE trigger 稳定证明两个请求可同时越过保护并返回 `[200,200]`，最终删除全部成员关系，使 `/chat` 无默认房间可解析。
+- 已实施修正：[`deleteRoomPreservingUserMembership()`](../../lib/room-lifecycle.ts#L22-L50) 在 Prisma interactive transaction 中先锁定稳定的 User 行，再于同一临界区重新验证目标成员资格、统计该用户全部 RoomParticipant，并仅在数量大于 1 时删除 Room。Route 保留认证、事务外早期成员校验、按用户/IP 限流和 200/409 响应契约，只委托领域服务执行原子删除。[`room DELETE`](../../app/api/rooms/%5BroomId%5D/route.ts#L12-L35)（E2）。
+- 验收证据：[`room-delete-invariant.integration.test.ts`](../../tests/integration/room-delete-invariant.integration.test.ts#L59-L108) 修复前 0/1，实际响应 `[200,200]`；修复后 1/1，响应稳定为 `[200,409]`，数据库恰一 RoomParticipant，409 保留原错误 contract，并直接执行 `ChatIndexPage` 证明重定向到剩余 `/chat/:roomId`。全量真实 PostgreSQL 为 17 文件/45 项通过（E3）。
 - 影响范围：QAM-02；直接关联 QAM-01 注册创建的 RoomParticipant（BU-06）。
 
 ### P2
@@ -116,30 +110,33 @@
   │              └─ Room list
   ├─ POST /api/rooms/:roomId/messages
   │    └─ assertRoomAccess → createHumanMessage transaction
-  │         └─ Message → (optional) AgentTask → agent.task.created EventLog
+  │         └─ Message → shared Task/Event derivation
   ├─ POST /api/agent/dispatch（显式 UI/调用入口）
-  │    └─ assertRoomAccess → source Message → Task → EventLog（当前非原子）
+  │    └─ assertRoomAccess → source Message row lock → shared Task/Event transaction
+  │         ├─ created → 201 + Task
+  │         └─ existing → 200 + same Task
   └─ EventSource /api/rooms/:roomId/stream
        └─ initial auth/member check → session/member recheck
             └─ periodic full snapshot → client merge/reconnect
 ```
 
-正常人类消息路径的事务边界在 `createHumanMessage` 内，Room/Message 的成员资格在 Route 前置检查并由真实数据库唯一/级联关系支撑。失败路径中，SSE 对 abort 和 controller close 已有保护；最后房间删除和显式 dispatch 的线性化/幂等边界尚未表达，wipe 的并发线性化语义则尚未文档化或以行为测试锁定，但本轮没有证明其违反既定清空集合。BU-02 的 snapshot 聚合同时被 Chat 和 Study 使用；本报告只登记其对 QAM-02 读取 contract、隐私和实时成本的直接影响，不把 Memo、Study 状态、Scheduler 或 Agent Runtime 的领域规则移入本 QAM。
+普通消息与显式 dispatch 都通过同一 helper 创建预算化 Task/Event；前者与新 Message 同事务，后者锁定既有 source Message 后与 created Event 同事务，`sourceMessageId` 唯一键提供幂等事实。Room/Message 的成员资格仍在 Route 前置检查，Room participant/profile 只沿公开 allow-list 进入 Chat、SSE 和 Study。房间删除使用 User 行作为同一用户所有 DELETE 的稳定串行化事实源，在一个事务内重查成员资格、成员数并删除；Event 写入失败会回滚 Task，SSE 对 abort/controller close 也已有保护。wipe 的额外 barrier 语义尚未由产品定义，当前保持 `not-reproduced`。BU-02 的 snapshot 聚合同时被 Chat 和 Study 使用；本报告只登记其对 QAM-02 读取 contract、隐私和实时成本的直接影响，不把 AgentTask claim 后的 Runtime 规则移入本 QAM。
 
 ## Verified Strengths
 
 - 所有主要 Room/Message/Stream Route 都先取得当前用户并对 `roomId` 执行成员资格检查；RoomParticipant 的复合唯一键和 Room 外键级联在真实 PostgreSQL 测试中通过。
 - 普通消息创建在单一 Prisma 事务内完成 Message、可选 AgentTask 和 `agent.task.created` EventLog 派生，检测结果也写入持久化 metadata；这条主路径是当前较强的事实来源。
+- 普通消息与显式 dispatch 复用 `createAgentTaskWithCreatedEvent()`；真实 PostgreSQL 延迟 trigger 证明相同 source Message 并发派发只返回一个稳定 Task，失败 trigger 证明 Task/Event 原子回滚且可清洁重试。
+- 最后房间删除复用独立领域服务和稳定 User 行锁；真实 PostgreSQL 删除延迟 trigger 证明旧实现可双成功，修复后并发请求严格收敛为 200/409、成员关系保留为 1，且 `/chat` 可解析默认房间。
+- Room participant 查询与输出 view model 使用双重 allow-list；真实 PostgreSQL 和 Playwright 证明当前用户与伙伴的完整 User/Profile 私有字段不会进入 Chat/Study 浏览器载荷，显示名、头像、城市、国家与时区保持可用。
 - SSE 使用统一 `write`/`stop`，对客户端 abort、reader cancel、首次 snapshot 未完成和 controller 已关闭均有显式保护；`tests/server/room-stream.test.ts` 的 12 项定向 Node 测试通过。
 - 客户端 `stableMergeBy` 按 ID 合并并保留无变化引用，optimistic 消息在响应/重连时有替换和去重路径；消息编辑器的键盘提交、重复发送禁用和成功清空行为测试通过。
-- `npm run check:quick` 通过：typecheck、ESLint、Vitest 共 58 个测试文件/344 个测试；`prisma-access.integration.test.ts` 在 PostgreSQL 中 3 项通过。
+- `npm run check:quick` 通过：typecheck、ESLint、Vitest 共 60 个测试文件/360 个测试；`prisma-access.integration.test.ts` 的成员/唯一/级联 3 项与 Room snapshot 隐私回归 1 项均在真实 PostgreSQL 中通过。
 
 ## Recommended Improvements
 
-1. 先修复 QAM-02-001：在 `getRoomSnapshot` 和页面边界建立 allow-list projection，并用真实浏览器/HTTP payload 回归验证隐私字段不出现在 Chat 数据中。
-2. 合并 QAM-02-003 的显式 dispatch 与普通消息派生事务，补 PostgreSQL 并发/失败回滚测试；这同时降低重复入口和 Task/EventLog 漂移。
-3. 为 QAM-02-004 建立 Room/用户级串行化语义，补真实 PostgreSQL 的并发 DELETE 测试；对 wipe 与并发写入补明确的产品线性化语义测试，只有测试证明违反既定 barrier 时才重新登记缺陷。
-4. 修复 QAM-02-002/006：统一消息 view model 和 trace allow-list，并把 SSE timer 改为无重入串行循环；补 deferred snapshot 和慢查询行为测试。
+1. 修复 QAM-02-002：统一消息 view model 和 trace allow-list，确保重连 GET 不返回聊天 contract 之外的完整 Tool/LLM 载荷。
+2. 修复 QAM-02-006：把 SSE timer 改为无重入串行循环，并补 deferred snapshot 和慢查询行为测试。
 
 ## Sustainable Review Record
 
@@ -147,19 +144,23 @@
 
 | ID | Priority | Status | 首次证据 | 下一次复审触发 |
 | --- | --- | --- | --- | --- |
-| QAM-02-001 | P1 | open | snapshot 全量 profile + Chat 页面序列化（E2） | snapshot projection 或 QAM-01 profile contract 改动 |
 | QAM-02-002 | P2 | open | messages GET `include: true` 与类型/快照漂移（E2） | Message GET、trace API 或 ChatMessage 类型改动 |
-| QAM-02-003 | P1 | open | dispatch Task/EventLog 两次写入（E2） | Agent dispatch、Task 创建或 EventLog 事务改动 |
-| QAM-02-004 | P1 | open | last-room count 后 delete（E2） | Room DELETE、默认房间或成员生命周期改动 |
 | QAM-02-005 | P1 | not-reproduced | Read Committed 交错分析未证明 wipe 后并发写违反既定语义；batch transaction 原子提交（E2） | 明确记录清空 barrier/线性化语义，或出现真实 PostgreSQL 交错导致清空集合被部分保留 |
 | QAM-02-006 | P2 | open | SSE interval 无 in-flight guard（E2） | Stream timer、snapshot 查询或客户端 merge 改动 |
+
+### 已解决问题
+
+| ID | Priority | Status | 解决证据 | 下一次复审触发 |
+| --- | --- | --- | --- | --- |
+| QAM-02-001 | P1 | resolved | Prisma `select` + 显式 Room participant/current-user view model；真实 PostgreSQL 修复前完整 User/Profile 暴露、修复后精确公开字段，Playwright Chat/Study RSC 载荷修复前失败、修复后通过（E2/E3） | snapshot、Chat/Study Client props 或 QAM-01 profile contract 改动 |
+| QAM-02-003 | P1 | resolved | 共享预算化 Task/Event helper + source Message 行锁 + `sourceMessageId` 幂等响应；真实 PostgreSQL 修复前并发 201/500 与孤儿 Task，修复后并发 200/201 同 Task、Event 故障全回滚并可重试（E2/E3） | Agent dispatch、Task 创建、EventLog created 事件或 sourceMessageId 约束改动 |
+| QAM-02-004 | P1 | resolved | User 行锁 + 事务内成员资格/count/delete；真实 PostgreSQL 修复前并发 `[200,200]` 删除全部房间，修复后 `[200,409]`、保留一个成员关系并由 `/chat` 解析默认房间（E2/E3） | Room DELETE、默认房间或成员生命周期改动 |
 
 ### 复审触发与证据规则
 
 - 任一问题修复后必须保留原 ID，状态只可改为 `resolved`、`accepted-risk` 或 `not-reproduced`，并附修复提交/测试证据；不得删除历史结论。
 - 下一次复审必须重新核对 QAM-01 profile 隐私、QAM-07 Study snapshot 使用方和 QAM-08 Task/Trace 所有权，避免把共享文件的改善重复计入多个 QAM。
-- 本轮实际验证：`npm run check:quick`（通过，58 files/344 tests）；`npm run test:unit -- tests/server/room-stream.test.ts tests/server/agent-detection.test.ts`（通过，2 files/12 tests）；`npm run test:component -- tests/component/message-composer.test.tsx`（通过，1 file/2 tests）；`npm run test:integration -- tests/integration/prisma-access.integration.test.ts`（通过，1 file/3 tests，Docker PostgreSQL）。
-- `npm run test:e2e -- tests/e2e/authenticated.spec.ts` 已执行但未完成聊天浏览器验证：setup 通过，4 个 authenticated 用例因 Chromium 启动缺少 `libnspr4.so` 失败；该结果是环境阻塞，不计作 QAM-02 行为通过。`npm run check`、完整 integration/E2E 和 Compose smoke 本轮未运行。
+- 本轮定向验证：`room-delete-invariant.integration.test.ts` 修复前 0/1，延迟 trigger 下两个请求实际为 `[200,200]`；修复后 1/1，User 行锁后的结果为 `[200,409]`、数据库成员数为 1，且 `/chat` 解析剩余默认房间。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：60 文件/360 项 Vitest、Next.js 16.3.3 production build、17 文件/45 项真实 PostgreSQL integration 与 11/11 Playwright 全部通过；覆盖率 statements 42.32%、branches 36.42%、functions 47.72%、lines 43.02%，均高于门槛。
 
 ### 评分历史（只追加）
 
@@ -167,3 +168,6 @@
 | --- | ---: | --- | --- | --- | --- | --- |
 | 2026-09-06 | 70 | L2 | L1 | L1 | baseline | 初审：`check:quick`、QAM-02 定向测试、PostgreSQL 访问/级联测试；浏览器 E2E 因 `libnspr4.so` 未验证。 |
 | 2026-09-06 | 71 | L2 | L1 | L1 | +1（证据纪律复核） | 复核 QAM-02-005：Read Committed 下并发 POST 在无文档 barrier 时可合法线性化到 wipe 前/后，未证明部分清空或孤儿写入；移除开放项并将其标为 `not-reproduced`。 |
+| 2026-09-09 | 78 | L2 | L1 | L1 | +7（QAM-02-001 resolved） | Room participant/profile 与 Chat/Study current-user props 改为 Prisma `select` 和显式公开 view model；真实 PostgreSQL 回归修复前观察完整 User/Profile、修复后 1/1，Playwright Chat/Study 页面载荷修复前失败、修复后 2/2；完整门禁通过 15 文件/41 项 PostgreSQL 与 11/11 Playwright。QAM-02-003/004 仍开放，Gate 保持 L1。 |
+| 2026-09-09 | 86 | L3 | L1 | L1 | +8（QAM-02-003 resolved） | 普通消息与显式 dispatch 复用预算化 Task/Event 原子派生；显式入口以 source Message 行锁和唯一键返回同一 Task。PostgreSQL 回归修复前 0/2（并发 201/500、Event 故障遗留 Task），修复后 3/3（并发 200/201、同 Task/单 Event、故障全回滚并可重试）；完整门禁通过 16 文件/44 项 PostgreSQL 与 11/11 Playwright。QAM-02-004 仍开放，Gate 保持 L1。 |
+| 2026-09-09 | 90 | L4 | L4 | L4 | +4（QAM-02-004 resolved） | 最后房间删除以 User 行锁串行，并在同一事务内重查成员资格/count/delete；PostgreSQL 回归修复前 0/1（并发 `[200,200]` 删除全部房间），修复后 1/1（`[200,409]`、保留一个成员关系且 `/chat` 解析默认房间）；完整门禁通过 17 文件/45 项 PostgreSQL 与 11/11 Playwright。开放项仅余 P2×2。 |

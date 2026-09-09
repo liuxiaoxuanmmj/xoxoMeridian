@@ -13,7 +13,6 @@ export type ChatUser = {
     city: string;
     country: string;
     timezone: string;
-    preferences?: unknown;
   } | null;
   studyStatus?: ChatStudyStatus | null;
 };
