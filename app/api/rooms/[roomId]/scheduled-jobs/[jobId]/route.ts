@@ -1,11 +1,16 @@
 import { CronExpressionParser } from "cron-parser";
 
-import { MAX_JOBS_PER_ROOM } from "@/agent/tools/schedule-tool";
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  ScheduledJobActiveLimitError,
+  ScheduledJobNotFoundError,
+  ScheduledJobRoomMismatchError,
+  updateScheduledJobWithActiveCap,
+} from "@/lib/scheduled-job-authoring";
 import { readJsonBody, scheduledJobPatchSchema } from "@/lib/validation";
 
 type JobPayload = { prompt?: string; description?: string | null; runOnce?: boolean };
@@ -72,75 +77,70 @@ export async function PATCH(
     const limited = enforceRateLimit(request, `scheduled-jobs-patch:${user.id}`, 10, 60_000);
     if (limited) return limited;
 
-    const existing = await prisma.scheduledJob.findUnique({
-      where: { id: jobId },
-    });
-
-    if (!existing || existing.roomId !== roomId) {
-      return jsonError("Not found", 404);
-    }
-
     const parsed = await readJsonBody(request, scheduledJobPatchSchema);
+    const updated = await prisma.$transaction((tx) =>
+      updateScheduledJobWithActiveCap(tx, {
+        roomId,
+        jobId,
+        buildData(existing) {
+          const cron = parsed.cron?.trim() || existing.cron;
+          const timezone = parsed.timezone?.trim() || existing.timezone;
 
-    if (parsed.enabled === true && !existing.enabled) {
-      const activeCount = await prisma.scheduledJob.count({
-        where: { roomId, enabled: true },
-      });
-      if (activeCount >= MAX_JOBS_PER_ROOM) {
-        return jsonError(`Room already has ${activeCount} active jobs (max ${MAX_JOBS_PER_ROOM})`, 409);
-      }
-    }
+          let nextRunAt = existing.nextRunAt;
+          const cronChanged = parsed.cron !== undefined
+            && parsed.cron.trim() !== existing.cron;
+          const tzChanged = parsed.timezone !== undefined
+            && parsed.timezone.trim() !== existing.timezone;
+          const reEnabling = parsed.enabled === true && !existing.enabled;
 
-    const cron = parsed.cron?.trim() || existing.cron;
-    const timezone = parsed.timezone?.trim() || existing.timezone;
+          if (cronChanged || tzChanged || reEnabling) {
+            try {
+              nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              throw jsonError(`Invalid cron expression: ${msg}`, 400);
+            }
+          }
 
-    let nextRunAt = existing.nextRunAt;
-    const cronChanged = parsed.cron !== undefined && parsed.cron.trim() !== existing.cron;
-    const tzChanged = parsed.timezone !== undefined && parsed.timezone.trim() !== existing.timezone;
-    const reEnabling = parsed.enabled === true && !existing.enabled;
+          const prevPayload = (existing.payload as JobPayload | null) ?? {};
+          const nextPrompt = parsed.prompt !== undefined
+            ? parsed.prompt.trim()
+            : prevPayload.prompt ?? "";
+          if (!nextPrompt) {
+            throw jsonError("prompt cannot be empty", 400);
+          }
 
-    if (cronChanged || tzChanged || reEnabling) {
-      try {
-        nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return jsonError(`Invalid cron expression: ${msg}`, 400);
-      }
-    }
-
-    const prevPayload = (existing.payload as JobPayload | null) ?? {};
-    const nextPrompt = parsed.prompt !== undefined ? parsed.prompt.trim() : prevPayload.prompt ?? "";
-    if (!nextPrompt) {
-      return jsonError("prompt cannot be empty", 400);
-    }
-    const nextDescription = parsed.description !== undefined ? parsed.description : prevPayload.description ?? null;
-    const nextRunOnce = parsed.runOnce !== undefined ? parsed.runOnce === true : prevPayload.runOnce === true;
-
-    const data: Record<string, unknown> = {
-      cron,
-      timezone,
-      nextRunAt,
-      payload: {
-        prompt: nextPrompt,
-        description: nextDescription,
-        runOnce: nextRunOnce,
-      },
-    };
-
-    if (parsed.enabled !== undefined) {
-      data.enabled = parsed.enabled;
-    }
-    if (reEnabling) {
-      data.failCount = 0;
-    }
-
-    const updated = await prisma.scheduledJob.update({
-      where: { id: jobId },
-      data,
-    });
+          return {
+            cron,
+            timezone,
+            nextRunAt,
+            payload: {
+              prompt: nextPrompt,
+              description: parsed.description !== undefined
+                ? parsed.description
+                : prevPayload.description ?? null,
+              runOnce: parsed.runOnce !== undefined
+                ? parsed.runOnce === true
+                : prevPayload.runOnce === true,
+            },
+            ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
+            ...(reEnabling ? { failCount: 0 } : {}),
+          };
+        },
+      }),
+    );
 
     return jsonOk({ job: formatJob(updated) });
   } catch (error) {
+    if (
+      error instanceof ScheduledJobNotFoundError
+      || error instanceof ScheduledJobRoomMismatchError
+    ) {
+      return jsonError("Not found", 404);
+    }
+    if (error instanceof ScheduledJobActiveLimitError) {
+      return jsonError(error.message, 409);
+    }
     return errorToResponse(error);
   }
 }

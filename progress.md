@@ -2,7 +2,52 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-09-09。feat-038「修复最后房间并发删除竞态」已完成，当前没有 `in-progress` 或 `blocked` feature；feat-001 至 feat-038 全部为 `done`。Room DELETE 现在以稳定 User 行锁串行同一用户的删除请求，并在单一 transaction 中重查成员资格、成员数和删除 Room。QAM-02-004 已解决，QAM-02 当前为 90 分、Score/Gate/Final L4；组合开放问题为 P1×5/P2×31，模块平均分为 78.0。
+Last Updated：2026-09-10。feat-001 至 feat-039 均为 `done`，当前没有 `in-progress` 或 `blocked` feature；feat-040「实现全局 3D Agent 聊天入口」为已登记的唯一 `not-started` 后续项，其设计审查与详细实施计划位于 `docs/spec/2026-09-10-agent-entry-implementation-plan.md`。QAM-03-002 已解决，QAM-03 当前为 81 分、Score L3、Gate/Final L2；组合开放问题为 P1×4/P2×31，模块平均分为 79.3。
+
+## 2026-09-10 — feat-039 ScheduledJob active cap 并发绕过修复
+
+### 已完成
+
+- 按唯一活动 feature 只关闭 QAM-03-002；没有修改 one-shot `fireAt`、participant 身份顺序、QAM-04 Scheduler 触发、Prisma schema/migration 或产品能力。
+- 新增 `lib/scheduled-job-authoring.ts`：以 Room `SELECT ... FOR UPDATE` 作为稳定串行化事实源，在同一 transaction 内重算 active count 并执行 create 或 disabled→enabled；已启用 Job 的普通编辑不重复消耗容量。
+- ScheduledJob Route POST/PATCH 显式开启 Prisma interactive transaction，并将 cap 领域冲突稳定映射为 409；Agent `schedule.create/update` 复用 Tool Registry 既有的 `database-write` transaction，移除跨入口重复计数逻辑并补齐 Agent re-enable cap。
+- 新增真实 PostgreSQL Route/Agent 混合并发回归：delay trigger 放大 enabled INSERT 与 disabled→enabled 窗口，覆盖 create、re-enable、无孤儿记录和满额时 active edit。使用 `xoxo-qam-03-life-plan-review` 仅重算直接受影响维度，QAM-03-002 转为 resolved，QAM-03 从 69/L1 提升为 81/L2（Score L3、Gate L2）；QAM-03-001/003 两项 P1 保持开放。
+- 使用 `harness-creator` 维护单 feature 状态、验收证据和恢复路径；并行存在的 Agent Entry 设计、原始 GLB 与 `docs/spec/` 用户改动均原样保留。
+
+### 验证证据
+
+- 开始与清理后的最终 `./init.sh` 均退出 0：Prisma Client、TypeScript、ESLint、60 文件/360 项 Vitest 全部通过；定向 `tests/agent/schedule-tool.test.ts` 为 17/17，`npm run check:quick` 同样为 60 文件/360 项通过。
+- 首次执行 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/scheduled-job-active-cap.integration.test.ts` 时，Docker Desktop 的 WSL mount 尚未出现，Testcontainers 在收集前报告 `Could not find a working container runtime strategy`；`docker info` 恢复为 Server 29.7.2 后，同一权限边界命令可正常运行，未把环境失败计为代码结果。
+- 临时移除 service 中两处 Room 行锁的负向对照为 0/2：create 与 re-enable 的 Route/Agent 两个请求均实际 `success/success`；立即恢复锁后先为 2/2，加入 active edit 回归后最终为 3/3，两个竞争场景均恰一成功/恰一冲突、active count=30 且无孤儿 Job。
+- 全量 `npm run test:integration` 为 18 文件/48 项通过，包含既有 QAM-04 Scheduler 原子派生回归。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：TypeScript、ESLint、60 文件/360 项 Vitest、Next.js 16.3.3 production build、覆盖率、18 文件/48 项真实 PostgreSQL integration 与 11/11 Playwright 全部通过。
+- 覆盖率为 statements 42.54%、branches 36.58%、functions 47.83%、lines 43.22%，均高于门槛；既有故障注入的 Prisma `P0001`/唯一约束日志和 WebServer 一次 `The destination stream closed early` 日志均未造成测试失败。
+
+### 范围、清理与下一步
+
+- 未新增依赖或修改锁文件、环境变量、schema、migration、Docker/Compose；Room 锁只保护 ScheduledJob authoring，Scheduler 的到期 claim/CAS/派生语义未改。
+- 完整门禁生成的 `coverage/`、`playwright-report/` 和 `test-results/` 已移入系统回收站，可恢复；`next-env.d.ts` 已恢复 production types。Docker 只保留既有且健康的 `xoxo-meridian-postgres`，无 Testcontainers 残留。
+- 唯一推荐下一步：按已登记顺序启动 feat-040，先依 `docs/spec/2026-09-10-agent-entry-implementation-plan.md` 的 S0 完成版本/依赖/基线核对；不要同时处理 QAM-03-001 或 QAM-03-003。
+
+## 2026-09-10 — Agent Entry 设计审查与实施计划（仅文档）
+
+### 产出与范围
+
+- 按用户要求审查 `docs/plan/2026-09-09-agent-entry-design.md`，并把审查意见和详细实施计划写入 `docs/spec/2026-09-10-agent-entry-implementation-plan.md`；原设计与两个已暂存的原始 GLB 保持原样。
+- 文档记录 9 项发现：生产 CSP/WASM、Docker 构建参数、E2E 测试发现与生产模式为 P1；首帧 ready、资源/错误生命周期、Tooltip、优化管线、探测/导航竞态和人工评审顺序为 P2。这些是设计实施风险，不是新增 QAM 缺陷评分。
+- 给出 S0–S8 顺序步骤、组件与状态契约、依赖/文件范围、资产预算及 recipe、人工质量检查点、测试矩阵、门禁命令和恢复路径。
+- `feature_list.json` 仅追加 feat-040 为 `not-started`，以 feat-039 作为工作流排期前置；未启动第二个活动 feature。当前另有 ScheduledJob authoring service、Route/Tool 和测试改动，本次未修改或验收它们。
+
+### 验证范围与证据
+
+- 通过 `./scripts/run-node22.sh node --input-type=module -e '…'` 两次只读诊断，核验 GLB JSON/索引/Buffer 与 sharp JPEG 元数据：default 为 60,745,800 bytes、1,894,099 面；birthday 为 62,241,580 bytes、1,954,449 面；两者纹理均为 8192²、4096²、4096²，源 SHA-256 已写入计划。
+- 对照当前 Layout、认证探测/跳转、CSP、Docker/Compose、Playwright/Vitest 与本地 Next.js 指南；官方来源链接随对应审查结论写入计划。Meshopt 生产 CSP 风险标为待实测推断，未宣称已复现。
+- 文档相对链接与 feature JSON 检查退出 0：ID 无重复，唯一活动项为 feat-039，feat-040 为 not-started，R01–R09 与 S0–S8 各 9 项；`git diff --check` 退出 0，`git status --short` 确认本次文档/状态文件及其他任务改动均保留。
+- `./init.sh`、`npm run check`、`npm run check:full`、`npm run test:compose-smoke`：本次均未运行。原因是用户请求仅为审查和编写计划，未实施产品代码，且仓库已有其他活动 feature；不将旧门禁结果当成本次结果，不声明实现完成或会话清洁退出。
+- 本次没有安装依赖、创建测试数据、启动服务/容器或生成 GLB 候选，无本次临时测试资源需要清理；所有产品验收仍待 feat-040 实施时执行。
+
+### 唯一推荐下一步
+
+保留并收尾当前 feat-039；其状态满足依赖要求后，再依照实施计划 S0 启动 feat-040，不并行启动第二个实现 feature。
 
 ## 2026-09-09 — feat-038 最后房间并发删除竞态修复
 

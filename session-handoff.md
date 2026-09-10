@@ -1,5 +1,28 @@
 # 会话交接
 
+## 2026-09-10 最新补充：feat-039 ScheduledJob active cap 修复完成
+
+- 当前状态：feat-001 至 feat-039 均为 `done`，没有 `in-progress` 或 `blocked`；feat-040 为唯一已登记的 `not-started` 后续项。QAM-03-002 已 resolved，QAM-03 为 81 分、Score L3、Gate/Final L2；组合平均 79.3，开放问题 P1×4/P2×31。
+- 实现边界：`lib/scheduled-job-authoring.ts` 用 Room 行锁和事务内 count/write 统一 ScheduledJob create/re-enable；Route POST/PATCH 显式使用 transaction，Agent `schedule.create/update` 使用 Tool Registry 的 `database-write` transaction。one-shot `fireAt`、participant 顺序和 Scheduler 触发未改。
+- 回归证据：真实 PostgreSQL delay trigger 下，无 Room 锁负向对照 0/2（create 与 re-enable 都是 Route/Agent `success/success`）；恢复锁后 3/3，竞争恰一成功/冲突、active=30、无孤儿，满额 active edit 仍成功。全量 integration 18 文件/48 项通过。
+- 最终门禁：`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0，60 文件/360 项 Vitest、production build、覆盖率、18/48 PostgreSQL 与 11/11 Playwright 全部通过；清理后 `./init.sh` 再次退出 0。首次定向 integration 曾因 Docker Desktop WSL mount 暂缺而在收集前报告 `Could not find a working container runtime strategy`，Docker Server 29.7.2 恢复后原命令通过，不是代码阻塞。
+- 清理与保留：`coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站，`next-env.d.ts` 恢复 production types；只保留既有健康 `xoxo-meridian-postgres`。Agent Entry 设计、两个已暂存 GLB、`docs/spec/` 及其他用户改动均未覆盖或删除。
+- 恢复路径：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；确认 feat-039 为 done 后，只将 feat-040 标为 `in-progress`，阅读 Agent Entry 设计与实施计划并从 S0 运行版本核对及 `./init.sh`。
+- 唯一推荐下一步：启动 feat-040 的 S0；QAM-03-001（one-shot `fireAt`）和 QAM-03-003（participant 身份）保持独立 P1，不并入 3D Agent Entry。
+
+## 2026-09-10 最新补充：Agent Entry 审查与计划
+
+- 本次目标：审查 `docs/plan/2026-09-09-agent-entry-design.md` 并编写详细实施计划；按用户补充要求，产物位于 `docs/spec/2026-09-10-agent-entry-implementation-plan.md`。
+- 当前状态：feat-039 保持既有 `in-progress`；新增 feat-040 为 `not-started`。本次只改计划、feature_list、progress 和本交接，不实施 3D 入口，不修改原设计、原始模型或并行产生的 ScheduledJob 源码/测试。
+- 计划内容：R01–R09 审查、S0–S8 顺序任务、真实首帧与错误生命周期、资产管线/人工选择、Docker 构建参数、CSP/WASM、两主题生产 E2E、文件范围、门禁与验收清单。资产原始尺寸/面数/纹理/hash 已只读核验。
+- 验证：本次只做文档链接、JSON、diff/status 核验，结果见 progress 本日条目。`./init.sh`、`npm run check`、`npm run check:full`、`npm run test:compose-smoke` 均未运行：本次是设计文档工作，仓库另有活动实现；不声明产品验收通过、feature 完成或会话清洁退出。
+- 阻塞与待办：计划编写无未决输入；正式模型候选尚未生成，后续人工质量选择、生产 decoder 验证和应用门禁都未执行。现有 feat-039 的结果需由其实施记录更新，本次不代为判断。
+- 清理：本次未生成服务、容器、测试数据、候选或其他临时工件，现有用户改动保留。
+- 恢复路径：先依次阅读 AGENTS、feature_list、progress 和本文件；以实时 feature_list 为状态依据。feat-039 收尾后，读取原设计与实施计划，仅将 feat-040 标为 `in-progress`，按 S0 运行版本核对及 `./init.sh`，再进入 S1。
+- 唯一推荐下一步：先收尾当前 feat-039，再进入 feat-040 的 S0。
+
+以下为 2026-09-09 上一已验收会话的历史交接；其中“当前状态”和门禁结果仅描述该日，不覆盖上面的最新补充。
+
 ## Last Updated
 
 2026-09-09

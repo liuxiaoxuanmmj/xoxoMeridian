@@ -25,6 +25,7 @@ function makeMockPrisma() {
 
   return {
     _jobs: jobs,
+    $queryRaw: vi.fn(async () => [{ id: "room-1" }]),
     scheduledJob: {
       create: vi.fn(async ({ data }: { data: Omit<MockJob, "id"> }) => {
         const job: MockJob = { id: `job-${++idCounter}`, ...data };

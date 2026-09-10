@@ -2,6 +2,10 @@ import { CronExpressionParser } from "cron-parser";
 
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
+import {
+  createActiveScheduledJob,
+  updateScheduledJobWithActiveCap,
+} from "@/lib/scheduled-job-authoring";
 
 type ScheduleCreateInput = {
   cron?: string;
@@ -31,10 +35,6 @@ type ScheduleUpdateInput = {
   description?: string;
   runOnce?: boolean;
 };
-
-// Hard cap on jobs per room. Prevents the LLM from going wild and filling the
-// scheduler queue with duplicates.
-export const MAX_JOBS_PER_ROOM = 30;
 
 export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
   return {
@@ -126,15 +126,9 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
         effectiveCron = cron!;
       }
 
-      const existingCount = await context.prisma.scheduledJob.count({
-        where: { roomId: context.roomId, enabled: true }
-      });
-      if (existingCount >= MAX_JOBS_PER_ROOM) {
-        throw new Error(`This room already has ${existingCount} active scheduled jobs (max ${MAX_JOBS_PER_ROOM}). Ask the user to cancel some first.`);
-      }
-
-      const job = await context.prisma.scheduledJob.create({
-        data: {
+      const job = await createActiveScheduledJob(
+        context.prisma,
+        {
           roomId: context.roomId,
           agentId: context.agentId,
           cron: effectiveCron,
@@ -147,8 +141,8 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
           enabled: true,
           nextRunAt,
           createdById: context.requestedById ?? undefined
-        }
-      });
+        },
+      );
 
       return {
         jobId: job.id,
@@ -272,65 +266,67 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
       const jobId = input.jobId?.trim();
       if (!jobId) throw new Error("jobId is required.");
 
-      const existing = await context.prisma.scheduledJob.findUnique({ where: { id: jobId } });
-      if (!existing) throw new Error(`Scheduled job not found: ${jobId}`);
-      if (existing.roomId !== context.roomId) {
-        throw new Error("Scheduled job does not belong to this room.");
-      }
+      const updated = await updateScheduledJobWithActiveCap(context.prisma, {
+        roomId: context.roomId,
+        jobId,
+        buildData(existing) {
+          const cron = input.cron?.trim() || existing.cron;
+          const timezone = input.timezone?.trim() || existing.timezone;
 
-      const cron = input.cron?.trim() || existing.cron;
-      const timezone = input.timezone?.trim() || existing.timezone;
+          let nextRunAt = existing.nextRunAt;
+          const cronChanged = input.cron !== undefined && input.cron.trim() !== existing.cron;
+          const tzChanged = input.timezone !== undefined && input.timezone.trim() !== existing.timezone;
+          if (cronChanged || tzChanged) {
+            try {
+              nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
+            } catch (err) {
+              const msg = err instanceof Error ? err.message : String(err);
+              throw new Error(`Invalid cron expression '${cron}': ${msg}`);
+            }
+          }
 
-      let nextRunAt = existing.nextRunAt;
-      const cronChanged = input.cron !== undefined && input.cron.trim() !== existing.cron;
-      const tzChanged = input.timezone !== undefined && input.timezone.trim() !== existing.timezone;
-      if (cronChanged || tzChanged) {
-        try {
-          nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          throw new Error(`Invalid cron expression '${cron}': ${msg}`);
-        }
-      }
+          const prevPayload = (existing.payload as {
+            prompt?: string;
+            description?: string | null;
+            runOnce?: boolean;
+          } | null) ?? {};
+          const nextPrompt = input.prompt !== undefined
+            ? input.prompt.trim()
+            : prevPayload.prompt ?? "";
+          if (!nextPrompt) throw new Error("prompt cannot be empty.");
+          if (nextPrompt.length > 500) throw new Error("prompt too long (>500 chars).");
 
-      const prevPayload = (existing.payload as {
-        prompt?: string;
+          return {
+            cron,
+            timezone,
+            nextRunAt,
+            enabled: true,
+            failCount: 0,
+            payload: {
+              prompt: nextPrompt,
+              description: input.description !== undefined
+                ? input.description
+                : prevPayload.description ?? null,
+              runOnce: input.runOnce !== undefined
+                ? input.runOnce === true
+                : prevPayload.runOnce === true,
+            },
+          };
+        },
+      });
+
+      const updatedPayload = (updated.payload as {
         description?: string | null;
         runOnce?: boolean;
       } | null) ?? {};
-
-      const nextPrompt = input.prompt !== undefined ? input.prompt.trim() : prevPayload.prompt ?? "";
-      if (!nextPrompt) throw new Error("prompt cannot be empty.");
-      if (nextPrompt.length > 500) throw new Error("prompt too long (>500 chars).");
-
-      const nextDescription =
-        input.description !== undefined ? input.description : prevPayload.description ?? null;
-      const nextRunOnce =
-        input.runOnce !== undefined ? input.runOnce === true : prevPayload.runOnce === true;
-
-      const updated = await context.prisma.scheduledJob.update({
-        where: { id: jobId },
-        data: {
-          cron,
-          timezone,
-          nextRunAt,
-          enabled: true,
-          failCount: 0,
-          payload: {
-            prompt: nextPrompt,
-            description: nextDescription,
-            runOnce: nextRunOnce
-          }
-        }
-      });
 
       return {
         jobId: updated.id,
         cron: updated.cron,
         timezone: updated.timezone,
         nextRunAt: updated.nextRunAt.toISOString(),
-        description: nextDescription,
-        runOnce: nextRunOnce
+        description: updatedPayload.description ?? null,
+        runOnce: updatedPayload.runOnce === true
       };
     }
   };

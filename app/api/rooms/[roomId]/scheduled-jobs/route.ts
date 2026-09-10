@@ -3,7 +3,6 @@ import { CronExpressionParser } from "cron-parser";
 import {
   FIRE_AT_GRACE_MS,
   isValidCron,
-  MAX_JOBS_PER_ROOM,
   synthesizeCronFromDate,
 } from "@/agent/tools/schedule-tool";
 import { assertRoomAccess } from "@/lib/access";
@@ -11,6 +10,10 @@ import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { enforceRateLimit } from "@/lib/rate-limit";
+import {
+  createActiveScheduledJob,
+  ScheduledJobActiveLimitError,
+} from "@/lib/scheduled-job-authoring";
 import { readJsonBody, scheduledJobPostSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -78,13 +81,6 @@ export async function POST(
       return jsonError("Default agent not configured", 500);
     }
 
-    const existingCount = await prisma.scheduledJob.count({
-      where: { roomId, enabled: true },
-    });
-    if (existingCount >= MAX_JOBS_PER_ROOM) {
-      return jsonError(`Room already has ${existingCount} active jobs (max ${MAX_JOBS_PER_ROOM})`, 409);
-    }
-
     let nextRunAt: Date;
     let effectiveCron: string;
     let runOnce = parsed.runOnce === true;
@@ -113,8 +109,8 @@ export async function POST(
       effectiveCron = parsed.cron!;
     }
 
-    const job = await prisma.scheduledJob.create({
-      data: {
+    const job = await prisma.$transaction((tx) =>
+      createActiveScheduledJob(tx, {
         roomId,
         agentId: agent.id,
         cron: effectiveCron,
@@ -127,8 +123,8 @@ export async function POST(
         enabled: true,
         nextRunAt,
         createdById: user.id,
-      },
-    });
+      }),
+    );
 
     const payload = job.payload as { prompt?: string; description?: string | null; runOnce?: boolean };
 
@@ -149,6 +145,9 @@ export async function POST(
       { status: 201 }
     );
   } catch (error) {
+    if (error instanceof ScheduledJobActiveLimitError) {
+      return jsonError(error.message, 409);
+    }
     return errorToResponse(error);
   }
 }
