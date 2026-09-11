@@ -1,5 +1,32 @@
 # 会话交接
 
+## 2026-09-11 当前交接：feat-042 已完成（QAM-03-001 resolved）
+
+- 状态：共登记 42 个 feature，feat-001 至 feat-042 均为 `done`；当前没有 `not-started`、`in-progress` 或 `blocked` feature。
+- 改动：新增 `lib/scheduled-job-one-shot.ts`（`fireAt` 解析、5 分钟宽限、`nextRunAt`、合成 cron、类型化错误）与 `lib/zoned-time.ts`（墙上时间 ↔ `Date` 两遍 offset 求解）作为一次性时间语义的单一事实来源；修改 `agent/tool-contracts.ts`、`agent/tools/schedule-tool.ts`、两个 scheduled-jobs Route、`lib/validation.ts`、`components/chat/LifePanelModals.tsx`；新增 `tests/lib/zoned-time.test.ts`、`tests/lib/scheduled-job-one-shot.test.ts`、`tests/server/scheduled-jobs-one-shot-patch.test.ts`、`tests/integration/scheduled-job-one-shot-fireat.integration.test.ts` 并扩展 agent/组件测试。
+- 门禁：feat-042 验收时 `npm run check:quick` exit 0（70 文件/457 项 Vitest，本 feature 前原始基线 67/414），最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` **单次 `EXIT=0`**：TypeScript、ESLint、70 文件/457 项 Vitest、Next.js 16.3.3 production build、覆盖率、19 文件/57 项真实 PostgreSQL 与 **26/26 Playwright**（默认 dev 模式套件，5.0 分钟，0 failed/flaky/skipped）。这些原始数字各包含后来按用户要求回退的 1 个无关 logo 测试；回退后本次 `./init.sh` 与 `npm run check` 均 exit 0，当前 quick/coverage 均为 69 文件/456 项，production build 通过，覆盖率 46.52/41.77/51.75/47.32。
+- Harness 状态：`feature_list.json`、`progress.md` 与本文件已统一为 feat-042；42 个 feature ID 连续且全部 `done`，`harness-creator` validator 100/100，跨文件语义断言全部通过。`coverage/` 已移入系统回收站，`git diff --check` exit 0；现有 `logo.png` 与其他用户改动均保留。
+- 负向对照：未修复的 `LifePanelModals` 上组件测试 3/4 失败——输入框显示 UTC 的 `2026-08-28T01:30` 而非任务时区的 `09:30`，未改动任何字段直接保存会把 `2026-08-28T01:30:00.000Z` 变成 `2026-08-27T17:30:00.000Z`（偏移 **−480 分钟**）；修复后 4/4。真实 PostgreSQL 9/9，含 Route 与 Agent `schedule.update` 在同一 `fireAt` 上产出相同 `nextRunAt`/`cron` 的防漂移断言。
+- 评分：QAM-03 由 81/L2 提升至 **88/L2**（Score L3、Gate L2，Final 因开放 P1 仍为 L2），Delta `+7`；开放问题降为 P1×3/P2×31，组合均分 80.1。QAM-03-003（参与者身份按数组位置推断）仍开放。
+- 记录更正：本轮初稿曾把当前基线的 Playwright 数写成 `11/11`——那是 feat-039 时期的**历史**值；feat-040 加入 agent-entry spec 后默认套件已增至 26 项，现已按原始输出 `26 passed (5.0m)` 更正为 26/26，历史行保留其当时的真实数字。
+- 残留与边界：未改 `agent/scheduler-tick.ts` 的 claim/CAS/触发语义；未处理 QAM-03-003；该界面没有浏览器旅程，回归由 lib + server + component + 真实 PostgreSQL 四层承载，不声称浏览器层验收。合成 cron 描述的是用户请求的时刻而非宽限后推的 `nextRunAt`（该 Job 为 `runOnce`、触发即禁用，残余语义归 QAM-04-002）。**QAM-04 复审触发条件已命中**（PATCH/`schedule.update` 改变了 `nextRunAt` 的时间语义），但本 feature 不代为改分，应由下一次 QAM-04 会话按其自身证据判断。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；用 `./scripts/run-node22.sh` 确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。
+- 唯一推荐下一步：登记一个独立的 QAM-04 调度器质量复审 feature，使用 `xoxo-qam-04-scheduler-review` 核对 feat-042 触发的时间语义影响；只做既有实现审查，不在同一 feature 中增加调度功能。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-11 历史交接：feat-041 已完成
+
+- 状态：feat-001 至 feat-041 全部 `done`，没有 `not-started`、`in-progress` 或 `blocked` feature。feat-041 只处理 2026-09-10 记录的依赖公告，没有扩展产品功能。
+- 改动：`package.json` 将 Nodemailer 提升为 `^9.1.1`；`package-lock.json` 解析 Browserslist 4.28.9、js-yaml 4.3.2、qs 6.16.0、根级 postcss-selector-parser 6.1.4、tsx 4.23.13/esbuild 0.28.2；新增 SMTP 公开发送路径行为测试。没有新依赖、主版本迁移、真实网络或凭据测试。
+- 审计：npm 官方 registry 的生产与全量 audit 均 exit 0、0 vulnerabilities；low/moderate/high/critical 均为 0，没有需延期的风险项或升级 feature。后续依赖变更继续执行官方 registry 审计。
+- 门禁：邮件定向测试 2 文件/7 项通过。`check:full` 已通过 quick 66/413、production build、覆盖率 44.60/39.25/49.32/45.35 和 PostgreSQL 18/48；只在 Playwright 启动前因用户已有开发进程 PID 24031 持有项目锁而 exit 1。未中断用户进程，同工作树隔离副本的完整 Playwright 26/26 exit 0。
+- 最终基线：测试输出及 290 MiB 隔离副本清理后，`./init.sh` exit 0，Prisma generate、正式资产、类型、lint 与 66/413 Vitest 全部通过。Docker 仅既有健康 `xoxo-meridian-postgres`；未跟踪的两份 logo 用户文件保留。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；用 `./scripts/run-node22.sh` 确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。当前没有可直接启动的已登记 feature。
+- 唯一推荐下一步：由产品优先级决定并登记一个新的独立 feature，明确依赖与验收标准后再将它标为唯一 `in-progress`。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
 ## 2026-09-11 当前交接：feat-040 已完成
 
 - 状态：feat-001 至 feat-040 均 done，没有 in-progress/blocked；feat-041 为唯一 not-started 后续项。用户已明确选择两个主题均为 5%，正式文件已提升，不要再次询问选型。

@@ -1,5 +1,3 @@
-import { CronExpressionParser } from "cron-parser";
-
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
@@ -11,6 +9,14 @@ import {
   ScheduledJobRoomMismatchError,
   updateScheduledJobWithActiveCap,
 } from "@/lib/scheduled-job-authoring";
+import {
+  fireAtErrorMessage,
+  resolveOneShotSchedule,
+  resolveRecurringSchedule,
+  ScheduledJobCronError,
+  ScheduledJobFireAtError,
+  ScheduledJobTimezoneError,
+} from "@/lib/scheduled-job-one-shot";
 import { readJsonBody, scheduledJobPatchSchema } from "@/lib/validation";
 
 type JobPayload = { prompt?: string; description?: string | null; runOnce?: boolean };
@@ -83,26 +89,10 @@ export async function PATCH(
         roomId,
         jobId,
         buildData(existing) {
-          const cron = parsed.cron?.trim() || existing.cron;
           const timezone = parsed.timezone?.trim() || existing.timezone;
-
-          let nextRunAt = existing.nextRunAt;
-          const cronChanged = parsed.cron !== undefined
-            && parsed.cron.trim() !== existing.cron;
-          const tzChanged = parsed.timezone !== undefined
-            && parsed.timezone.trim() !== existing.timezone;
-          const reEnabling = parsed.enabled === true && !existing.enabled;
-
-          if (cronChanged || tzChanged || reEnabling) {
-            try {
-              nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              throw jsonError(`Invalid cron expression: ${msg}`, 400);
-            }
-          }
-
           const prevPayload = (existing.payload as JobPayload | null) ?? {};
+          const existingRunOnce = prevPayload.runOnce === true;
+
           const nextPrompt = parsed.prompt !== undefined
             ? parsed.prompt.trim()
             : prevPayload.prompt ?? "";
@@ -110,19 +100,52 @@ export async function PATCH(
             throw jsonError("prompt cannot be empty", 400);
           }
 
+          const reEnabling = parsed.enabled === true && !existing.enabled;
+          const runOnce = parsed.runOnce !== undefined
+            ? parsed.runOnce === true
+            : existingRunOnce;
+          const description = parsed.description !== undefined
+            ? parsed.description
+            : prevPayload.description ?? null;
+
+          // An explicit instant defines the whole schedule: the stored cron has to
+          // follow the new fireAt because the scheduler derives the next run from
+          // cron when it claims the job.
+          if (parsed.fireAt) {
+            const resolved = resolveOneShotSchedule({
+              fireAt: parsed.fireAt,
+              cron: parsed.cron?.trim() ?? null,
+              timezone,
+            });
+            return {
+              cron: resolved.cron,
+              timezone,
+              nextRunAt: resolved.nextRunAt,
+              payload: { prompt: nextPrompt, description, runOnce: true },
+              ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
+              ...(reEnabling ? { failCount: 0 } : {}),
+            };
+          }
+
+          const cron = parsed.cron?.trim() || existing.cron;
+          const cronChanged = parsed.cron !== undefined
+            && parsed.cron.trim() !== existing.cron;
+          const tzChanged = parsed.timezone !== undefined
+            && parsed.timezone.trim() !== existing.timezone;
+          // Converting a one-shot back to recurring must re-derive the instant
+          // from cron; otherwise the job stays pinned to the old one-off time
+          // even when the cron string itself is unchanged.
+          const convertingToRecurring = existingRunOnce && !runOnce;
+
+          const nextRunAt = cronChanged || tzChanged || reEnabling || convertingToRecurring
+            ? resolveRecurringSchedule({ cron, timezone }).nextRunAt
+            : existing.nextRunAt;
+
           return {
             cron,
             timezone,
             nextRunAt,
-            payload: {
-              prompt: nextPrompt,
-              description: parsed.description !== undefined
-                ? parsed.description
-                : prevPayload.description ?? null,
-              runOnce: parsed.runOnce !== undefined
-                ? parsed.runOnce === true
-                : prevPayload.runOnce === true,
-            },
+            payload: { prompt: nextPrompt, description, runOnce },
             ...(parsed.enabled !== undefined ? { enabled: parsed.enabled } : {}),
             ...(reEnabling ? { failCount: 0 } : {}),
           };
@@ -140,6 +163,15 @@ export async function PATCH(
     }
     if (error instanceof ScheduledJobActiveLimitError) {
       return jsonError(error.message, 409);
+    }
+    if (error instanceof ScheduledJobFireAtError) {
+      return jsonError(fireAtErrorMessage(error), 400);
+    }
+    if (error instanceof ScheduledJobCronError) {
+      return jsonError(`Invalid cron expression: ${error.detail}`, 400);
+    }
+    if (error instanceof ScheduledJobTimezoneError) {
+      return jsonError(`Invalid timezone: ${error.timezone}`, 400);
     }
     return errorToResponse(error);
   }

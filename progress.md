@@ -1,3 +1,54 @@
+## 2026-09-11 — feat-042 修复 QAM-03-001 一次性任务 fireAt 被 PATCH 丢弃
+
+### 交付与范围
+
+- QAM-03-001 已 resolved：把 ScheduledJob 的**一次性时间语义**收敛为 `lib/` 中的单一事实来源。此前同一条规则分散在四处并漂移：`scheduledJobPatchSchema` 没有 `fireAt`（Zod 默认剥离未知键），POST 与 `schedule.create` 各写一遍同段逻辑，PATCH 与 `schedule.update` 则完全没有 `fireAt`。
+- 新增 `lib/scheduled-job-one-shot.ts`：从 `agent/tools/schedule-tool.ts` **迁移**（非复制）`FIRE_AT_GRACE_MS`、`isValidCron`、`synthesizeCronFromDate`，并新增 `resolveOneShotSchedule`（NaN 校验 → 5 分钟宽限 → `nextRunAt` → 合法 cron 优先否则按任务时区合成）、`resolveRecurringSchedule`、类型化错误 `ScheduledJobFireAtError`/`ScheduledJobCronError`/`ScheduledJobTimezoneError`。Route 不再从 `agent/tools/` 导入，先前的分层倒置一并消除。
+- 新增 `lib/zoned-time.ts`：`datetime-local` 的墙上时间与 `Date` 双向换算，用两遍 offset 求解；春季跳变的**不存在时刻**向前推移（NY `02:30` → `03:30`，与 cron-parser 对同一缺口的方向一致），秋季重复时刻取较早者。
+- `app/api/rooms/[roomId]/scheduled-jobs/[jobId]/route.ts` PATCH 按显式状态转移矩阵写入：`fireAt` 分支强制 `runOnce: true` 并按新时区合成 cron；新增 `convertingToRecurring = existingRunOnce && !runOnce`，修掉"一次性转周期时 cron 字符串未变则不重算、首次触发停在旧一次性时刻"的边界。`scheduledJobPatchSchema` 增加 `fireAt` 与"不可与 cron 同时提供"（**未**照搬 POST 的 exactly-one-of，否则会破坏 `prompt`-only 等部分更新）。
+- Agent 侧同步收敛：`schedule.create` 的 fireAt 分支改调共享契约并保留"Ask the user to clarify the time."；`schedule.update` 增加 `fireAt` 并在其 `buildData` 中应用同一矩阵。**注意** `agent/tool-contracts.ts` 才是真正的门槛——`tool-registry.ts:65` 会用契约的 `inputSchema` 覆盖工具自带 `schema`，且该契约是 `.strict()`；只改 `schedule-tool.ts` 会让 `fireAt` 在 `execute` 之前被静默拒绝，本次一并补齐契约。
+- `components/chat/LifePanelModals.tsx` 的初始值与提交值均按**任务时区**换算：此前显示用 UTC 墙上时间、提交却按浏览器本地时区解析。
+
+### 验证证据
+
+- 定向修复前负向对照（真实执行）：组件测试在**未修复**组件上 3/4 失败——输入框显示 `2026-08-28T01:30`（应为 `09:30`），未改动任何字段直接保存会把存储的 `2026-08-28T01:30:00.000Z` 变成 `2026-08-27T17:30:00.000Z`（**−480 分钟**）。修复后 4/4。
+- 新增 `tests/lib/zoned-time.test.ts` 与 `tests/lib/scheduled-job-one-shot.test.ts` 共 29 项；`tests/server/scheduled-jobs-one-shot-patch.test.ts` 6 项；`tests/integration/scheduled-job-one-shot-fireat.integration.test.ts` 真实 PostgreSQL 9/9，包含"Route 与 Agent `schedule.update` 在同一 `fireAt` 上产出相同 `nextRunAt`/`cron`"的防漂移断言。
+- 本轮另外修掉两处**已存在**的缺陷：`isValidCron` 只调 `parse()` 而 cron-parser 是惰性的（未知时区要到 `next()` 才抛），导致它对非法时区返回 `true`；以及一次性路径的未知时区会让 `Intl` 抛出裸 `RangeError` 变成 500——而**修复前**同一请求走周期路径返回的是 400，属本次改动会引入的回归，故在共享契约内加类型化守卫，两处均改为 400。
+- `npm run check:quick` exit 0：资产检查、TypeScript、ESLint 与 70 文件/457 项 Vitest 全部通过（本 feature 前基线为 67 文件/414 项）。`npm run test:component` 单独 14 文件/43 项通过，确认组件测试中固定的 `process.env.TZ = "Asia/Shanghai"` 未泄漏到其他文件。
+- 覆盖率：新增 `lib/scheduled-job-one-shot.ts` lines/statements/functions 100%、branches 89.28%，`lib/zoned-time.ts` lines 94.87%、branches 83.33%，均高于现有门槛。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次 `EXIT=0`：TypeScript、ESLint、70 文件/457 项 Vitest、Next.js 16.3.3 production build、覆盖率（All files 46.52/41.77/51.75/47.32）、19 文件/57 项真实 PostgreSQL 与 **26/26 Playwright** 全部通过。E2E 为默认（dev 模式）`playwright test`，5.0 分钟，0 failed/flaky/skipped。
+- 更正一处记录：本轮初稿曾把当前基线的 Playwright 数写成 `11/11`，那是 feat-039 时期**默认套件**的历史值；feat-040 加入 agent-entry spec 后默认套件已增至 26 项。历史行保留其当时的真实数字，当前基线改为 26/26（依据本轮原始输出 `26 passed (5.0m)`）。
+- 状态归一：上述 `70/457` 与本 feature 前 `67/414` 是 feat-042 验收时的原始输出，其中各包含后来按用户要求回退的 1 个无关 logo 测试；回退后本次 `./init.sh` 与 `npm run check` 均 exit 0，当前 quick/coverage 均为 `69/456`，production build 通过，覆盖率为 46.52/41.77/51.75/47.32；不改写历史门禁证据。
+- Harness 复核：feature 共 42 个、ID 连续至 feat-042、全部 `done` 且无活动/阻塞项；`harness-creator` validator 为 100/100，跨文件语义断言全部通过。`coverage/` 已移入系统回收站，`git diff --check` exit 0；本次只修正三份状态文件，保留现有 `logo.png` 与其他用户改动。
+
+### 清理、边界与下一步
+
+- 未改 `agent/scheduler-tick.ts` 的 claim/CAS/触发语义（QAM-04）、未处理 QAM-03-003（参与者身份）。
+- 残留并如实记录：合成 cron 描述的是用户请求的时刻而非宽限后推的 `nextRunAt`（"已过期但在宽限内"时相差数秒）；该 Job 为 `runOnce`、触发时即禁用，不影响触发结果，其超出 missed window 的残余语义归 QAM-04-002。
+- **QAM-04 复审触发条件已命中**：`docs/optimization/qam-04-scheduler-quality-review.md` 把"修改 QAM-03 ScheduledJob PATCH/Tool update，尤其改变 `nextRunAt` 的时间或 enabled 语义"列为复审触发条件，本次 `once→recurring` 重算与 `fireAt` 合成 cron 正属此类。本次**不改** `agent/scheduler-tick.ts` 的 claim/CAS/派生，`tests/integration/scheduler-atomic-dispatch.integration.test.ts` 在本轮全量 PostgreSQL 中仍然通过（1/1）；但 QAM-04 的评分是否需重算应由下一次 QAM-04 会话按其自身证据判断，本 feature 不代为改分。
+- 该界面**没有**浏览器旅程（`tests/e2e/` 无 scheduled-job spec），故按 AGENTS 的分层要求由 lib + server + component + 真实 PostgreSQL 四层承载回归；不声称浏览器层验收。
+- 唯一推荐下一步：登记一个独立的 QAM-04 调度器质量复审 feature，使用 `xoxo-qam-04-scheduler-review` 核对 feat-042 触发的时间语义影响；只做既有实现审查，不在同一 feature 中增加调度功能。
+
+## 2026-09-11 — feat-041 依赖审计新增公告处理完成
+
+### 交付与范围
+
+- feat-041 已按独立依赖升级范围完成并标为 `done`；未修改 Agent Entry、邮件业务契约、Prisma schema/migration 或部署拓扑。直接生产依赖 Nodemailer 从 `^9.0.5` 升至同主版本已修复下限 `^9.1.1`，锁文件将 Browserslist 从 4.28.2 升至 4.28.9、js-yaml 从 4.3.1 升至 4.3.2。
+- 审计继续发现的低中风险传递依赖均可在既有 semver 范围内修复，因此一并更新 qs 6.16.0、postcss-selector-parser 6.1.4、tsx 4.23.13/esbuild 0.28.2；未引入新依赖或主版本迁移。
+- 新增 `tests/lib/smtp-email-provider.test.ts`，通过公开 `sendEmail` 路径验证 SMTP transport 配置、收件人/Reply-To/正文载荷及成功 messageId；测试只模拟 Nodemailer 供应商边界，不访问真实网络或凭据。
+
+### 验证证据
+
+- 升级前使用 npm 官方 registry 的生产审计为 2 low/2 moderate/2 high，全量为 2 low/2 moderate/3 high；升级后 `npm audit --omit=dev --json --registry=https://registry.npmjs.org` 与 `npm audit --json --registry=https://registry.npmjs.org` 均 exit 0、`total=0`。剩余 low/moderate/high/critical 全为 0，因此没有需延期的公告；后续计划是在每次依赖变更与标准门禁中继续用官方 registry 复审。
+- `npm run test:unit -- tests/lib/email.test.ts tests/lib/smtp-email-provider.test.ts` exit 0：2 文件/7 项。最终解析版本为 Browserslist 4.28.9、Nodemailer 9.1.1、js-yaml 4.3.2、qs 6.16.0、根级 postcss-selector-parser 6.1.4、tsx 4.23.13 与 esbuild 0.28.2。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 的快速门禁 66 文件/413 项、Next.js 16.3.3 production build、覆盖率及真实 PostgreSQL 18 文件/48 项均通过；覆盖率 statements 44.60%、branches 39.25%、functions 49.32%、lines 45.35%。命令随后在 Playwright WebServer 启动前 exit 1，原因为项目已有用户开发进程 PID 24031 持有 `.next/dev/lock`：`Another next dev server is already running.`，不是测试断言或代码失败。
+- 未终止用户进程；将同一工作树复制到隔离临时目录、复用锁定 `node_modules` 后运行 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e`，exit 0、26/26。清理生成物后最终 `./init.sh` exit 0：Prisma generate、资产检查、TypeScript、ESLint 与 66 文件/413 项 Vitest 全部通过。
+
+### 清理、边界与下一步
+
+- 本次 `coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站，290 MiB 隔离副本已删除；Docker 只保留既有健康 `xoxo-meridian-postgres`。用户运行中的开发服务及未跟踪 `产品logo.png`、`产品logo.png:Zone.Identifier` 均未触碰。
+- 依赖审计当前无剩余低中风险，不需要为本轮再登记升级 feature。全部 41 个已登记 feature 均完成；唯一推荐下一步：由产品优先级决定并登记一个新的独立 feature，完成依赖和验收标准确认后再按单 feature 工作流启动。
+
 ## 2026-09-11 — feat-040 全局 3D Agent Entry 完成（S0–S8）
 
 ### 交付与范围
@@ -66,7 +117,7 @@
 
 ## Current State（当前状态）
 
-Last Updated：2026-09-11。feat-001 至 feat-040 均为 `done`；当前没有 `in-progress` 或 `blocked`，feat-041 为唯一已登记的 `not-started` 后续项。最新验收证据见本文件首条，其他日期记录保留历史状态。
+Last Updated：2026-09-11。共登记 42 个 feature，feat-001 至 feat-042 均为 `done`；当前没有 `not-started`、`in-progress` 或 `blocked` feature。当前 quick/coverage 基线均为 69 文件/456 项 Vitest，production build 通过；feat-042 验收时的 70/457 是包含后来回退之无关 logo 测试的历史原始输出。最新验收证据与唯一推荐下一步见本文件首条，其他日期记录保留历史状态。
 
 ## 2026-09-10 — feat-039 ScheduledJob active cap 并发绕过修复
 

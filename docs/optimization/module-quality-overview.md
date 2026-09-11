@@ -10,7 +10,7 @@
 | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |
 | QAM-01 | 身份、会话与个人档案 | 87 | L3 | L4 / L3 | +4 | 3（P2×3） | 2026-09-08 | [报告](./qam-01-identity-quality-review.md) | [`$xoxo-qam-01-identity-review`](../../.agents/skills/xoxo-qam-01-identity-review/SKILL.md) |
 | QAM-02 | 私密房间与实时消息 | 90 | L4 | L4 / L4 | +4 | 2（P2×2） | 2026-09-09 | [报告](./qam-02-room-message-quality-review.md) | [`$xoxo-qam-02-room-message-review`](../../.agents/skills/xoxo-qam-02-room-message-review/SKILL.md) |
-| QAM-03 | 双人生活信息与计划管理 | 81 | L3 | L2 / L2 | +12 | 2（P1×2） | 2026-09-10 | [报告](./qam-03-life-plan-quality-review.md) | [`$xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
+| QAM-03 | 双人生活信息与计划管理 | 88 | L3 | L2 / L2 | +7 | 1（P1×1） | 2026-09-11 | [报告](./qam-03-life-plan-quality-review.md) | [`$xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
 | QAM-04 | 定时任务触发与派生 | 75 | L2 | L2 / L2 | baseline | 3（P1×2，P2×1） | 2026-09-06 | [报告](./qam-04-scheduler-quality-review.md) | [`$xoxo-qam-04-scheduler-review`](../../.agents/skills/xoxo-qam-04-scheduler-review/SKILL.md) |
 | QAM-05 | 内容发布与时间线 | 73 | L2 | L2 / L2 | +9 | 7（P2×7） | 2026-09-08 | [报告](./qam-05-content-timeline-quality-review.md) | [`$xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
 | QAM-06 | 空间画布与媒体资产 | 71 | L2 | L2 / L2 | +7 | 6（P2×6） | 2026-09-07 | [报告](./qam-06-spatial-media-quality-review.md) | [`$xoxo-qam-06-spatial-media-review`](../../.agents/skills/xoxo-qam-06-spatial-media-review/SKILL.md) |
@@ -20,10 +20,10 @@
 
 ## Portfolio Snapshot
 
-- 九个模块简单平均分：`79.3/100`。该数值只用于观察全局趋势，不替代模块 Gate，也不用于比较产品价值或团队绩效。
+- 九个模块简单平均分：`80.1/100`。该数值只用于观察全局趋势，不替代模块 Gate，也不用于比较产品价值或团队绩效。
 - Final Level 分布：L0×0、L1×0、L2×7、L3×1、L4×1。
-- 当前开放问题：35 项，其中 P0×0、P1×4、P2×31；另有 QAM-02-005 一项 `not-reproduced` 历史记录，不计入开放项。
-- 当前首要风险簇：QAM-03 一次性计划时间与参与者身份语义，以及 QAM-04 调度触发可靠性；QAM-02 只剩消息 trace 投影与实时收敛 P2。修复必须分别回到对应稳定问题 ID，不从总览直接推导改造范围。
+- 当前开放问题：34 项，其中 P0×0、P1×3、P2×31；另有 QAM-02-005 一项 `not-reproduced` 历史记录，不计入开放项。
+- 当前首要风险簇：QAM-03 参与者身份语义，以及 QAM-04 调度触发可靠性；QAM-02 只剩消息 trace 投影与实时收敛 P2。修复必须分别回到对应稳定问题 ID，不从总览直接推导改造范围。
 
 ## 使用规则
 
@@ -50,3 +50,4 @@
 | 2026-09-09 | QAM-02 | QAM-02-003 已解决；QAM-02 由 78/L1 提升至 86/L1（Score L3、Gate L1），组合平均分 77.6，开放问题降为 P1×6/P2×31 | feat-037、共享预算化 Task/Event 原子派生、source Message 行锁与幂等 HTTP 结果、真实 PostgreSQL 修复前并发 201/500 和故障孤儿、修复后 3/3、完整门禁 16 文件/44 项 PostgreSQL 与 11/11 Playwright |
 | 2026-09-09 | QAM-02 | QAM-02-004 已解决；QAM-02 由 86/L1 提升至 90/L4（Score/Gate/Final L4），组合平均分 78.0，开放问题降为 P1×5/P2×31 | feat-038、User 行锁与事务内成员资格/count/delete、真实 PostgreSQL 修复前并发 `[200,200]` 删除全部房间、修复后 `[200,409]` 且 `/chat` 解析剩余默认房间、完整门禁 17 文件/45 项 PostgreSQL 与 11/11 Playwright |
 | 2026-09-10 | QAM-03 | QAM-03-002 已解决；QAM-03 由 69/L1 提升至 81/L2（Score L3、Gate L2），组合平均分 79.3，开放问题降为 P1×4/P2×31 | feat-039、共享 ScheduledJob authoring service、Room 行锁与事务内 active count/write；真实 PostgreSQL 无锁负向对照 0/2、修复后 Route/Agent create/re-enable/active edit 3/3，完整门禁 18 文件/48 项 PostgreSQL 与 11/11 Playwright |
+| 2026-09-11 | QAM-03 | QAM-03-001 已解决；QAM-03 由 81/L2 提升至 88/L2（Score L3、Gate L2，Final 因开放 P1 仍为 L2），组合平均分 80.1，开放问题降为 P1×3/P2×31 | feat-042、一次性 `fireAt` 与墙上时间收敛为 `lib/` 单一事实来源并由 Route/Agent 共用；未修复组件负向对照 3/4 失败（−480 分钟）、修复后 4/4；真实 PostgreSQL 9/9 含 Route 与 Agent 同一 `fireAt` 一致性；完整门禁 70 文件/457 项 Vitest、19 文件/57 项 PostgreSQL 与 26/26 Playwright |

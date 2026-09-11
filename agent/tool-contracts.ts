@@ -110,6 +110,7 @@ export const BUILT_IN_TOOL_CONTRACTS = {
     inputSchema: z.object({
       jobId: id,
       cron: z.string().min(1).max(200).optional(),
+      fireAt: z.string().min(1).max(100).optional(),
       timezone: z.string().min(1).max(200).optional(),
       prompt: z.string().min(1).max(500).optional(),
       description: z.string().max(500).optional(),

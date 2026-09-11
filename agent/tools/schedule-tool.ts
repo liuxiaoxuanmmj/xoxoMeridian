@@ -1,11 +1,15 @@
-import { CronExpressionParser } from "cron-parser";
-
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
 import {
   createActiveScheduledJob,
   updateScheduledJobWithActiveCap,
 } from "@/lib/scheduled-job-authoring";
+import {
+  resolveOneShotSchedule,
+  resolveRecurringSchedule,
+  ScheduledJobFireAtError,
+  ScheduledJobTimezoneError,
+} from "@/lib/scheduled-job-one-shot";
 
 type ScheduleCreateInput = {
   cron?: string;
@@ -16,11 +20,6 @@ type ScheduleCreateInput = {
   runOnce?: boolean;
 };
 
-// A one-off scheduled for an absolute datetime may land slightly in the past by
-// the time planning latency finishes — fire it anyway, but refuse anything that
-// is clearly too stale to be what the user meant.
-export const FIRE_AT_GRACE_MS = 5 * 60 * 1000;
-
 type ScheduleListInput = Record<string, never>;
 
 type ScheduleCancelInput = {
@@ -30,11 +29,40 @@ type ScheduleCancelInput = {
 type ScheduleUpdateInput = {
   jobId?: string;
   cron?: string;
+  fireAt?: string;
   timezone?: string;
   prompt?: string;
   description?: string;
   runOnce?: boolean;
 };
+
+/**
+ * Resolves a one-shot request with the Agent's own error contract: the model
+ * needs to be told to go back to the user, which is not something the HTTP
+ * routes have to say. Cron failures are already worded for the model, so they
+ * pass through from the shared resolver unchanged.
+ */
+function resolveOneShotForTool(input: {
+  fireAt: string;
+  cron?: string | null;
+  timezone: string;
+}): { nextRunAt: Date; cron: string } {
+  try {
+    return resolveOneShotSchedule(input);
+  } catch (err) {
+    if (err instanceof ScheduledJobFireAtError) {
+      throw new Error(
+        err.reason === "invalid"
+          ? `Invalid fireAt '${err.fireAt}': not a valid ISO datetime.`
+          : `fireAt '${err.fireAt}' is more than 5 minutes in the past. Ask the user to clarify the time.`,
+      );
+    }
+    if (err instanceof ScheduledJobTimezoneError) {
+      throw new Error(`${err.message} Use an IANA zone like 'Asia/Shanghai'.`);
+    }
+    throw err;
+  }
+}
 
 export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
   return {
@@ -100,30 +128,18 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
       let runOnce = input.runOnce === true;
 
       if (fireAtRaw) {
-        const parsed = new Date(fireAtRaw);
-        if (Number.isNaN(parsed.getTime())) {
-          throw new Error(`Invalid fireAt '${fireAtRaw}': not a valid ISO datetime.`);
-        }
-        const now = Date.now();
-        const diff = parsed.getTime() - now;
-        if (diff < -FIRE_AT_GRACE_MS) {
-          throw new Error(
-            `fireAt '${fireAtRaw}' is more than 5 minutes in the past. Ask the user to clarify the time.`
-          );
-        }
-        // Slightly-in-the-past or now → push by 1s so scheduleNearTermJobs picks
-        // it up via setTimeout instead of the lte:now batch in the same tick.
-        nextRunAt = diff < 0 ? new Date(now + 1000) : parsed;
+        const resolved = resolveOneShotForTool({
+          fireAt: fireAtRaw,
+          cron: cron ?? null,
+          timezone,
+        });
+        nextRunAt = resolved.nextRunAt;
+        effectiveCron = resolved.cron;
         runOnce = true;
-        effectiveCron = cron && isValidCron(cron, timezone) ? cron : synthesizeCronFromDate(parsed, timezone);
       } else {
-        try {
-          nextRunAt = CronExpressionParser.parse(cron!, { tz: timezone }).next().toDate();
-        } catch (err) {
-          const msg = err instanceof Error ? err.message : String(err);
-          throw new Error(`Invalid cron expression '${cron}': ${msg}`);
-        }
-        effectiveCron = cron!;
+        const resolved = resolveRecurringSchedule({ cron: cron!, timezone });
+        nextRunAt = resolved.nextRunAt;
+        effectiveCron = resolved.cron;
       }
 
       const job = await createActiveScheduledJob(
@@ -243,9 +259,13 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
       "for example '改成每周六' / '其实我只要今晚一次' / '把时间改到九点'. " +
       "Prefer update over cancel+create so the user gets a single coherent change. " +
       "Only provide the fields you want to change; omitted fields keep their current value. " +
+      "**To move a ONE-OFF job to a new datetime**, pass **fireAt** with an ISO-8601 datetime (with offset) — " +
+      "same field as schedule.create, e.g. fireAt='2026-05-09T21:30:00+08:00'. It forces runOnce=true and rewrites " +
+      "nextRunAt, so never express a one-off move as cron alone. " +
       "Setting runOnce=true converts a recurring job into a one-off that disables itself after the next fire; " +
       "setting runOnce=false converts it back to recurring. " +
-      "If you change cron or timezone, nextRunAt is recomputed automatically.",
+      "If you change fireAt, cron or timezone, nextRunAt is recomputed automatically; a job converted from one-off " +
+      "back to recurring is re-derived from its cron.",
     effect: "database-write",
     schema: {
       type: "object",
@@ -253,6 +273,12 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
       properties: {
         jobId: { type: "string", description: "The ScheduledJob id from schedule.list or schedule.create." },
         cron: { type: "string", description: "New cron expression. Omit to keep current." },
+        fireAt: {
+          type: "string",
+          description:
+            "New absolute datetime for a one-off, ISO-8601 with timezone offset, e.g. '2026-05-09T21:30:00+08:00'. " +
+            "Forces runOnce=true. Cannot be combined with cron. Omit to keep the current timing."
+        },
         timezone: { type: "string", description: "New IANA timezone. Omit to keep current." },
         prompt: { type: "string", description: "New prompt for the agent when fired." },
         description: { type: "string", description: "New human-readable description." },
@@ -270,31 +296,59 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
         roomId: context.roomId,
         jobId,
         buildData(existing) {
-          const cron = input.cron?.trim() || existing.cron;
           const timezone = input.timezone?.trim() || existing.timezone;
-
-          let nextRunAt = existing.nextRunAt;
-          const cronChanged = input.cron !== undefined && input.cron.trim() !== existing.cron;
-          const tzChanged = input.timezone !== undefined && input.timezone.trim() !== existing.timezone;
-          if (cronChanged || tzChanged) {
-            try {
-              nextRunAt = CronExpressionParser.parse(cron, { tz: timezone }).next().toDate();
-            } catch (err) {
-              const msg = err instanceof Error ? err.message : String(err);
-              throw new Error(`Invalid cron expression '${cron}': ${msg}`);
-            }
-          }
+          const fireAtRaw = input.fireAt?.trim();
 
           const prevPayload = (existing.payload as {
             prompt?: string;
             description?: string | null;
             runOnce?: boolean;
           } | null) ?? {};
+          const existingRunOnce = prevPayload.runOnce === true;
+
           const nextPrompt = input.prompt !== undefined
             ? input.prompt.trim()
             : prevPayload.prompt ?? "";
           if (!nextPrompt) throw new Error("prompt cannot be empty.");
           if (nextPrompt.length > 500) throw new Error("prompt too long (>500 chars).");
+
+          const runOnce = input.runOnce !== undefined
+            ? input.runOnce === true
+            : existingRunOnce;
+          const description = input.description !== undefined
+            ? input.description
+            : prevPayload.description ?? null;
+
+          // An explicit instant defines the whole schedule, exactly as it does on
+          // the PATCH route: the stored cron follows the new fireAt because the
+          // scheduler re-derives the next run from cron when it claims the job.
+          if (fireAtRaw) {
+            const resolved = resolveOneShotForTool({
+              fireAt: fireAtRaw,
+              cron: input.cron?.trim() ?? null,
+              timezone,
+            });
+            return {
+              cron: resolved.cron,
+              timezone,
+              nextRunAt: resolved.nextRunAt,
+              enabled: true,
+              failCount: 0,
+              payload: { prompt: nextPrompt, description, runOnce: true },
+            };
+          }
+
+          const cron = input.cron?.trim() || existing.cron;
+          const cronChanged = input.cron !== undefined && input.cron.trim() !== existing.cron;
+          const tzChanged = input.timezone !== undefined && input.timezone.trim() !== existing.timezone;
+          // Converting a one-shot back to recurring must re-derive the instant
+          // from cron; otherwise the job stays pinned to the old one-off time
+          // even when the cron string itself is unchanged.
+          const convertingToRecurring = existingRunOnce && !runOnce;
+
+          const nextRunAt = cronChanged || tzChanged || convertingToRecurring
+            ? resolveRecurringSchedule({ cron, timezone }).nextRunAt
+            : existing.nextRunAt;
 
           return {
             cron,
@@ -302,15 +356,7 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
             nextRunAt,
             enabled: true,
             failCount: 0,
-            payload: {
-              prompt: nextPrompt,
-              description: input.description !== undefined
-                ? input.description
-                : prevPayload.description ?? null,
-              runOnce: input.runOnce !== undefined
-                ? input.runOnce === true
-                : prevPayload.runOnce === true,
-            },
+            payload: { prompt: nextPrompt, description, runOnce },
           };
         },
       });
@@ -336,29 +382,4 @@ function inferRequesterTimezone(context: ToolExecutionContext): string | undefin
   return context.runtimeContext.participants.find(
     (p) => p.userId === context.requestedById
   )?.user.profile?.timezone ?? undefined;
-}
-
-export function isValidCron(cron: string, timezone: string): boolean {
-  try {
-    CronExpressionParser.parse(cron, { tz: timezone });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-// Derive a display-only cron from a concrete fireAt so the DB column (NOT NULL)
-// always has a parseable value. Uses the wall-clock minute/hour of the fireAt
-// in the given timezone — the value is cosmetic because runOnce=true disables
-// the job after firing, but it still needs to round-trip through cron-parser.
-export function synthesizeCronFromDate(fireAt: Date, timezone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: timezone,
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).formatToParts(fireAt);
-  const hour = parts.find((p) => p.type === "hour")?.value ?? "0";
-  const minute = parts.find((p) => p.type === "minute")?.value ?? "0";
-  return `${Number(minute)} ${Number(hour) % 24} * * *`;
 }

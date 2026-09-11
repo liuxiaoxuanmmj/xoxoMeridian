@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import { ToolRegistry } from "@/agent/tool-registry";
 import {
   createScheduleCancelTool,
   createScheduleCreateTool,
@@ -268,6 +269,117 @@ describe("schedule.update", () => {
     await expect(
       createScheduleUpdateTool().execute({ jobId: created.jobId, prompt: "   " }, ctx)
     ).rejects.toThrow(/prompt cannot be empty/);
+  });
+
+  it("moves a one-off to a new instant via fireAt", async () => {
+    const prisma = makeMockPrisma();
+    const ctx = makeContext(prisma);
+    const created = (await createScheduleCreateTool().execute(
+      { fireAt: "2030-05-09T20:40:00+08:00", timezone: "Asia/Shanghai", prompt: "发诗" },
+      ctx
+    )) as { jobId: string; nextRunAt: string; cron: string };
+
+    expect(created.cron).toBe("40 20 * * *");
+
+    const updated = (await createScheduleUpdateTool().execute(
+      { jobId: created.jobId, fireAt: "2030-05-09T21:15:00+08:00" },
+      ctx
+    )) as { nextRunAt: string; cron: string; runOnce: boolean };
+
+    expect(updated.nextRunAt).toBe("2030-05-09T13:15:00.000Z");
+    expect(prisma._jobs[0].nextRunAt.toISOString()).toBe("2030-05-09T13:15:00.000Z");
+    // The stored cron has to follow the new instant: the scheduler re-derives
+    // the next run from cron when it claims the job.
+    expect(updated.cron).toBe("15 21 * * *");
+    expect(updated.runOnce).toBe(true);
+    // The prompt is untouched by a timing-only edit.
+    expect(prisma._jobs[0].payload.prompt).toBe("发诗");
+  });
+
+  it("converts a one-off back to recurring by re-deriving nextRunAt from cron", async () => {
+    const prisma = makeMockPrisma();
+    const ctx = makeContext(prisma);
+    const created = (await createScheduleCreateTool().execute(
+      { fireAt: "2030-05-09T20:40:00+08:00", timezone: "Asia/Shanghai", prompt: "发诗" },
+      ctx
+    )) as { jobId: string; cron: string };
+
+    const updated = (await createScheduleUpdateTool().execute(
+      { jobId: created.jobId, runOnce: false },
+      ctx
+    )) as { nextRunAt: string; runOnce: boolean };
+
+    expect(updated.runOnce).toBe(false);
+    // The synthesized cron ("40 20 * * *") is unchanged, so a naive
+    // "did cron change?" check would leave nextRunAt pinned to the 2030 one-off.
+    expect(prisma._jobs[0].cron).toBe("40 20 * * *");
+    const daysOut = (Date.parse(updated.nextRunAt) - Date.now()) / 86_400_000;
+    expect(daysOut).toBeGreaterThanOrEqual(0);
+    expect(daysOut).toBeLessThan(2);
+  });
+
+  it("reports an unparseable fireAt on update with the ask-the-user wording", async () => {
+    const prisma = makeMockPrisma();
+    const ctx = makeContext(prisma);
+    const created = (await createScheduleCreateTool().execute(
+      { cron: "0 20 * * *", timezone: "Asia/Shanghai", prompt: "发诗" },
+      ctx
+    )) as { jobId: string };
+
+    await expect(
+      createScheduleUpdateTool().execute({ jobId: created.jobId, fireAt: "tomorrow" }, ctx)
+    ).rejects.toThrow(/Invalid fireAt 'tomorrow'/);
+  });
+
+  it("reports a stale fireAt on update with the ask-the-user wording", async () => {
+    const prisma = makeMockPrisma();
+    const ctx = makeContext(prisma);
+    const created = (await createScheduleCreateTool().execute(
+      { cron: "0 20 * * *", timezone: "Asia/Shanghai", prompt: "发诗" },
+      ctx
+    )) as { jobId: string };
+
+    // The model relies on this sentence to go back to the user instead of
+    // retrying the same rejected instant.
+    await expect(
+      createScheduleUpdateTool().execute(
+        { jobId: created.jobId, fireAt: "2020-01-01T00:00:00Z" },
+        ctx
+      )
+    ).rejects.toThrow(/more than 5 minutes in the past\. Ask the user to clarify the time\./);
+  });
+});
+
+describe("schedule tool contracts", () => {
+  // `ToolRegistry.register` replaces a tool's hand-written `schema` with the
+  // Zod contract in `agent/tool-contracts.ts`, and that contract is `.strict()`.
+  // A field added to the tool but not to the contract is therefore dropped
+  // before `execute` runs — silently, with no failing tool test. These cases go
+  // through the registry so the contract itself is what is under test.
+  function registerScheduleTools() {
+    const registry = new ToolRegistry();
+    registry.register(createScheduleCreateTool());
+    registry.register(createScheduleUpdateTool());
+    return registry;
+  }
+
+  it("advertises fireAt on schedule.update to the model", () => {
+    const registry = registerScheduleTools();
+    const advertised = registry.get("schedule.update").schema as {
+      properties?: Record<string, unknown>;
+    };
+
+    expect(Object.keys(advertised.properties ?? {})).toContain("fireAt");
+  });
+
+  it("accepts fireAt on schedule.update without stripping it", () => {
+    const registry = registerScheduleTools();
+    const parsed = registry
+      .get("schedule.update")
+      .inputSchema.safeParse({ jobId: "job-1", fireAt: "2030-05-09T22:15:00+08:00" });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.data).toMatchObject({ fireAt: "2030-05-09T22:15:00+08:00" });
   });
 });
 

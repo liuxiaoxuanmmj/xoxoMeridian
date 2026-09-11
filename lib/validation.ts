@@ -83,12 +83,16 @@ export const scheduledJobPostSchema = z
 
 export const scheduledJobPatchSchema = z
   .object({
+    fireAt: z.string().datetime({ offset: true }).optional(),
     cron: z.string().min(9).max(128).optional(),
     timezone: z.string().min(1).max(64).optional(),
     prompt: z.preprocess(trim, z.string().min(1).max(500)).optional(),
     description: z.preprocess(trim, z.string().max(200)).optional().nullable(),
     runOnce: z.boolean().optional(),
     enabled: z.boolean().optional(),
+  })
+  .refine((v) => !(v.fireAt && v.cron), {
+    message: "fireAt and cron cannot be provided together",
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
     message: "At least one field is required",

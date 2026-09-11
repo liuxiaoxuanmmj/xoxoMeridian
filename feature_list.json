@@ -625,7 +625,7 @@
       "id": "feat-041",
       "name": "处理 2026-09-10 依赖审计新增公告",
       "description": "在独立依赖升级范围内处理既有 Browserslist、Nodemailer 与开发依赖的审计公告，不并入 Agent Entry 产品实现。",
-      "status": "not-started",
+      "status": "done",
       "dependencies": [
         "feat-040"
       ],
@@ -634,7 +634,24 @@
         "验证邮件适配与构建兼容性，相关回归及风险匹配门禁通过",
         "记录剩余低中风险项目、原因与后续计划"
       ],
-      "evidence": "feat-040 安装后使用 npm 官方 registry 审计：生产 2 low/2 moderate/2 high（Browserslist 4.28.2、Nodemailer 9.0.5），全量另有 js-yaml 4.3.1 high。均为既有依赖链；默认 npmmirror 审计返回 404 NOT_IMPLEMENTED，已改用 --registry=https://registry.npmjs.org 复核。后续核对 Browserslist 4.28.9 与 Nodemailer 已修复版本的兼容性，单独升级并运行邮件和完整门禁。"
+      "evidence": "2026-09-11 完成：Nodemailer 升至同主版本已修复下限 ^9.1.1，锁文件将 Browserslist 更新至 4.28.9、js-yaml 4.3.2，并同步收敛 qs 6.16.0、postcss-selector-parser 6.1.4、tsx 4.23.13/esbuild 0.28.2。npm 官方 registry 的生产及全量 audit 均 exit 0、0 vulnerabilities，剩余 low/moderate/high/critical 均为 0。新增 SMTP 公共发送路径行为回归，定向邮件测试 2 文件/7 项通过；check:full 的 quick 66/413、production build、覆盖率与 PostgreSQL 18/48 通过，随后仅因用户已有 PID 24031 占用项目开发服务锁而在 Playwright WebServer 启动前 exit 1。未中断该用户进程；同一工作树隔离副本的完整 Playwright 26/26 exit 0。清理测试产物与隔离副本后，最终 ./init.sh exit 0、66/413；详见 progress 与 session-handoff。"
+    },
+    {
+      "id": "feat-042",
+      "name": "修复 QAM-03-001 一次性任务 fireAt 被 PATCH 丢弃",
+      "description": "把 ScheduledJob 一次性（runOnce/fireAt）的时间语义收敛为 lib 中的单一事实来源，让 Route POST/PATCH 与 Agent schedule.create/update 共用同一契约，并让编辑弹窗的墙上时间与所选时区语义一致。",
+      "status": "done",
+      "dependencies": [
+        "feat-041"
+      ],
+      "acceptanceCriteria": [
+        "scheduledJobPatchSchema 接受 fireAt，PATCH 一次性任务时 nextRunAt 等于合法 fireAt，cron 可回读且 prompt 不丢失",
+        "一次性 fireAt 的解析、5 分钟宽限、nextRunAt 与合成 cron 计算在 Route 与 Agent 工具间只有一处实现",
+        "Agent schedule.update 可修改一次性任务时间，与 UI 语义一致；过期或非法 fireAt 稳定返回 400 而非 500",
+        "组件测试断言编辑后发送的 ISO 时间与所选时区语义一致，未改动字段直接保存不产生时刻偏移",
+        "相关 Node、组件、真实 PostgreSQL 集成回归及风险匹配门禁通过并完成会话记录"
+      ],
+      "evidence": "2026-09-11 完成：新增 lib/scheduled-job-one-shot.ts 与 lib/zoned-time.ts 作为一次性时间语义的单一事实来源——fireAt 解析、5 分钟宽限、nextRunAt 与合成 cron 由 resolveOneShotSchedule 单点实现，墙上时间与时刻的双向换算用两遍 offset 求解（春季跳变的不存在时刻向前推移，与 cron-parser 对同一缺口的方向一致），先前的 Route→agent/tools 分层倒置一并消除。scheduledJobPatchSchema 增加 fireAt 与「不可与 cron 同时提供」，PATCH 按显式状态转移矩阵写入并修掉 once→recurring 时 cron 未变即不重算 nextRunAt 的边界；agent/tool-contracts.ts 的 schedule.update 契约补齐 fireAt（tool-registry.ts:65 会用 .strict() 契约覆盖工具自带 schema，只改 schedule-tool.ts 会让该字段在 execute 前被静默剥离）。components/chat/LifePanelModals.tsx 的初始值与提交值均按任务时区换算。负向对照：未修复组件上 3/4 失败（输入框显示 UTC 的 2026-08-28T01:30 而非 09:30，未改动任何字段直接保存使 2026-08-28T01:30:00.000Z 变为 2026-08-27T17:30:00.000Z，偏移 −480 分钟），修复后 4/4。新增 tests/lib 29 项、tests/server 6 项、真实 PostgreSQL 9/9（含 Route 与 Agent schedule.update 在同一 fireAt 上产出相同 nextRunAt/cron 的防漂移断言）。另修掉两处既有缺陷：isValidCron 因 cron-parser 的 parse 惰性而对未知时区误返回 true；一次性路径的未知时区会让 Intl 抛裸 RangeError 变成 500（修复前同一请求走周期路径为 400，属本次会引入的回归），两处现均稳定返回 400。npm run check:quick exit 0：70 文件/457 项 Vitest（本 feature 前基线 67 文件/414 项）；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 EXIT=0：TypeScript、ESLint、70 文件/457 项 Vitest、Next.js 16.3.3 production build、覆盖率、19 文件/57 项真实 PostgreSQL 与 26/26 Playwright 全部通过；清理后 ./init.sh 再次 exit 0。QAM-03-001 resolved，QAM-03 更新为 88 分、Score L3、Gate/Final L2（QAM-03-003 仍开放）。状态归一说明：上述 70/457 与 67/414 均为验收当时的原始输出，各包含后来按用户要求回退的 1 个无关 logo 测试；回退后本次 ./init.sh 与 npm run check 均 exit 0，当前 quick/coverage 均为 69/456，production build 通过，覆盖率 46.52/41.77/51.75/47.32；不改写历史门禁证据。"
     }
   ]
 }

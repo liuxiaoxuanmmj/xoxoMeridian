@@ -6,6 +6,7 @@ import { BaseModal, ModalActions } from "@/components/chat/BaseModal";
 import { TimezoneSelector, getDefaultTimezone } from "@/components/chat/TimezoneSelector";
 import { CronBuilder } from "@/components/chat/CronBuilder";
 import { showError, submitForm } from "@/lib/ui-utils";
+import { formatWallClockInZone, wallClockInZoneToDate } from "@/lib/zoned-time";
 
 type ModalProps = {
   isOpen: boolean;
@@ -146,13 +147,20 @@ function ScheduledJobModalForm({
   const [mode, setMode] = useState<"once" | "recurring">(
     isOnce ? "once" : "recurring"
   );
-  const [formData, setFormData] = useState(() => ({
+  const [formData, setFormData] = useState(() => {
+    const timezone = job?.timezone ?? getDefaultTimezone(participants);
+    return {
       description: (job?.payload?.description as string | null) ?? "",
       prompt: (job?.payload?.prompt as string | null) ?? "",
-      fireAt: job?.nextRunAt ? new Date(job.nextRunAt).toISOString().slice(0, 16) : "",
+      // `datetime-local` shows a wall clock with no zone, so it has to be read
+      // in the job's zone — the same one the sibling timezone selector offers.
+      // Reading it as UTC would both mislead the user and, on submit, move the
+      // instant by the zone's offset.
+      fireAt: job?.nextRunAt ? formatWallClockInZone(new Date(job.nextRunAt), timezone) : "",
       cron: job?.cron ?? "0 9 * * *",
-      timezone: job?.timezone ?? getDefaultTimezone(participants),
-  }));
+      timezone,
+    };
+  });
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,7 +180,7 @@ function ScheduledJobModalForm({
           setBusy(false);
           return;
         }
-        payload.fireAt = new Date(formData.fireAt).toISOString();
+        payload.fireAt = wallClockInZoneToDate(formData.fireAt, formData.timezone).toISOString();
         payload.runOnce = true;
       } else {
         payload.cron = formData.cron;

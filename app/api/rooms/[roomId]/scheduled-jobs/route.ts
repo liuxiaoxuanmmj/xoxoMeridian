@@ -1,10 +1,3 @@
-import { CronExpressionParser } from "cron-parser";
-
-import {
-  FIRE_AT_GRACE_MS,
-  isValidCron,
-  synthesizeCronFromDate,
-} from "@/agent/tools/schedule-tool";
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
@@ -14,6 +7,14 @@ import {
   createActiveScheduledJob,
   ScheduledJobActiveLimitError,
 } from "@/lib/scheduled-job-authoring";
+import {
+  fireAtErrorMessage,
+  resolveOneShotSchedule,
+  resolveRecurringSchedule,
+  ScheduledJobCronError,
+  ScheduledJobFireAtError,
+  ScheduledJobTimezoneError,
+} from "@/lib/scheduled-job-one-shot";
 import { readJsonBody, scheduledJobPostSchema } from "@/lib/validation";
 
 export const dynamic = "force-dynamic";
@@ -86,27 +87,28 @@ export async function POST(
     let runOnce = parsed.runOnce === true;
 
     if (parsed.fireAt) {
-      const fireDate = new Date(parsed.fireAt);
-      if (Number.isNaN(fireDate.getTime())) {
-        return jsonError("Invalid fireAt datetime", 400);
-      }
-      const diff = fireDate.getTime() - Date.now();
-      if (diff < -FIRE_AT_GRACE_MS) {
-        return jsonError("fireAt is more than 5 minutes in the past", 400);
-      }
-      nextRunAt = diff < 0 ? new Date(Date.now() + 1000) : fireDate;
+      const resolved = resolveOneShotSchedule({
+        fireAt: parsed.fireAt,
+        cron: parsed.cron ?? null,
+        timezone: parsed.timezone,
+      });
+      nextRunAt = resolved.nextRunAt;
+      effectiveCron = resolved.cron;
       runOnce = true;
-      effectiveCron = parsed.cron && isValidCron(parsed.cron, parsed.timezone)
-        ? parsed.cron
-        : synthesizeCronFromDate(fireDate, parsed.timezone);
     } else {
       try {
-        nextRunAt = CronExpressionParser.parse(parsed.cron!, { tz: parsed.timezone }).next().toDate();
+        const resolved = resolveRecurringSchedule({
+          cron: parsed.cron!,
+          timezone: parsed.timezone,
+        });
+        nextRunAt = resolved.nextRunAt;
+        effectiveCron = resolved.cron;
       } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        return jsonError(`Invalid cron expression: ${msg}`, 400);
+        if (err instanceof ScheduledJobCronError) {
+          return jsonError(`Invalid cron expression: ${err.detail}`, 400);
+        }
+        throw err;
       }
-      effectiveCron = parsed.cron!;
     }
 
     const job = await prisma.$transaction((tx) =>
@@ -147,6 +149,12 @@ export async function POST(
   } catch (error) {
     if (error instanceof ScheduledJobActiveLimitError) {
       return jsonError(error.message, 409);
+    }
+    if (error instanceof ScheduledJobFireAtError) {
+      return jsonError(fireAtErrorMessage(error), 400);
+    }
+    if (error instanceof ScheduledJobTimezoneError) {
+      return jsonError(`Invalid timezone: ${error.timezone}`, 400);
     }
     return errorToResponse(error);
   }
