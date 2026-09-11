@@ -1,3 +1,4 @@
+import Image from "next/image";
 import Link from "next/link";
 
 /**
@@ -8,8 +9,15 @@ import Link from "next/link";
 export function BrandBadge({ href = "/home", accentClass }: { href?: string; accentClass?: string }) {
   const badge = (
     <div className="flex items-center gap-2.5">
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] text-sm font-bold text-white ${accentClass ?? "bg-[#7da878]"}`}>
-        🌿
+      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] ${accentClass ?? "bg-[#7da878]"}`}>
+        <Image
+          src="/brand/logo_transparent.svg"
+          alt=""
+          aria-hidden="true"
+          width={24}
+          height={24}
+          unoptimized
+        />
       </div>
       <div>
         <p className="text-xs font-semibold leading-tight text-black">XOXO</p>

@@ -652,6 +652,23 @@
         "相关 Node、组件、真实 PostgreSQL 集成回归及风险匹配门禁通过并完成会话记录"
       ],
       "evidence": "2026-09-11 完成：新增 lib/scheduled-job-one-shot.ts 与 lib/zoned-time.ts 作为一次性时间语义的单一事实来源——fireAt 解析、5 分钟宽限、nextRunAt 与合成 cron 由 resolveOneShotSchedule 单点实现，墙上时间与时刻的双向换算用两遍 offset 求解（春季跳变的不存在时刻向前推移，与 cron-parser 对同一缺口的方向一致），先前的 Route→agent/tools 分层倒置一并消除。scheduledJobPatchSchema 增加 fireAt 与「不可与 cron 同时提供」，PATCH 按显式状态转移矩阵写入并修掉 once→recurring 时 cron 未变即不重算 nextRunAt 的边界；agent/tool-contracts.ts 的 schedule.update 契约补齐 fireAt（tool-registry.ts:65 会用 .strict() 契约覆盖工具自带 schema，只改 schedule-tool.ts 会让该字段在 execute 前被静默剥离）。components/chat/LifePanelModals.tsx 的初始值与提交值均按任务时区换算。负向对照：未修复组件上 3/4 失败（输入框显示 UTC 的 2026-08-28T01:30 而非 09:30，未改动任何字段直接保存使 2026-08-28T01:30:00.000Z 变为 2026-08-27T17:30:00.000Z，偏移 −480 分钟），修复后 4/4。新增 tests/lib 29 项、tests/server 6 项、真实 PostgreSQL 9/9（含 Route 与 Agent schedule.update 在同一 fireAt 上产出相同 nextRunAt/cron 的防漂移断言）。另修掉两处既有缺陷：isValidCron 因 cron-parser 的 parse 惰性而对未知时区误返回 true；一次性路径的未知时区会让 Intl 抛裸 RangeError 变成 500（修复前同一请求走周期路径为 400，属本次会引入的回归），两处现均稳定返回 400。npm run check:quick exit 0：70 文件/457 项 Vitest（本 feature 前基线 67 文件/414 项）；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 EXIT=0：TypeScript、ESLint、70 文件/457 项 Vitest、Next.js 16.3.3 production build、覆盖率、19 文件/57 项真实 PostgreSQL 与 26/26 Playwright 全部通过；清理后 ./init.sh 再次 exit 0。QAM-03-001 resolved，QAM-03 更新为 88 分、Score L3、Gate/Final L2（QAM-03-003 仍开放）。状态归一说明：上述 70/457 与 67/414 均为验收当时的原始输出，各包含后来按用户要求回退的 1 个无关 logo 测试；回退后本次 ./init.sh 与 npm run check 均 exit 0，当前 quick/coverage 均为 69/456，production build 通过，覆盖率 46.52/41.77/51.75/47.32；不改写历史门禁证据。"
+    },
+    {
+      "id": "feat-043",
+      "name": "替换项目品牌 Logo 与浏览器标签页图标",
+      "description": "使用提供的白底与透明背景 SVG 统一 XOXO Meridian 品牌标识：共用 BrandBadge 保留绿色圆角底块和文字并替换叶子 emoji，浏览器标签页使用白底图标。",
+      "status": "done",
+      "dependencies": [
+        "feat-042"
+      ],
+      "acceptanceCriteria": [
+        "将 logo_white.svg 与 logo_transparent.svg 收纳为本地品牌资产；允许收紧 viewBox、清理冗余元数据和按实际显示调整尺寸，但不得改变标志轮廓、品牌颜色或引入外部资源",
+        "BrandBadge 使用透明背景 logo，保留现有绿色圆角底块、动态 accentClass、32×32 布局、XOXO / Meridian 文字、链接行为与可访问名称；登录、主导航和聊天三处复用点一致生效",
+        "根 metadata 的 icon 使用白底 logo，真实浏览器页面生成有效 rel=icon，图标资源返回成功且 MIME 类型正确；不扩展到 Apple touch icon、PWA manifest 或 Open Graph 图片",
+        "About 与 Study 的内容型叶子 emoji 保持不变；16/32px 标签页、站内图标及 320px/1280px 布局经实际渲染确认清晰且无布局偏移",
+        "组件测试和 Playwright 覆盖品牌链接/文字、新图标与浏览器 icon 的可观察行为，npm run check、最终 init.sh、状态记录与工作树检查通过"
+      ],
+      "evidence": "2026-09-11 完成：将用户提供的两份 SVG 收纳到 public/brand/，统一使用等比方形 viewBox=181 170 925 925，保留两条 path 的几何与 #0e1418 品牌色；logo_white.svg 保留白色 rect，logo_transparent.svg 保持透明，静态检查确认无脚本、外链、事件处理器且两份几何路径一致。BrandBadge 以 24×24 next/image 替换叶子 emoji，仍位于原动态 accentClass 的 32×32 绿色圆角底块内，并保留 XOXO / Meridian、默认/自定义链接和由可见文字提供的可访问名称；AuthPanel、SiteNav、ChatApp 三处共用点同步生效。根 Metadata.icons 以 image/svg+xml、sizes=any 指向白底 SVG。新增组件行为回归修复前 0/1（链接名仍为“🌿 XOXO Meridian”、无 img），修复后 1/1；定向真实 Playwright 4/4（含 setup）覆盖登录页、Home、Chat、rel=icon、资源 200/MIME、16/32px 解码及 320/1280px 布局。截图级目视确认小尺寸清晰、站内 24px 标志在原绿色底块上对比明确且两个视口无偏移。npm run check exit 0：70 文件/457 项 Vitest、Next.js 16.3.3 production build和覆盖率门槛通过（46.47/41.73/51.75/47.32）；开始基线 ./init.sh 为 69/456，最终 ./init.sh 为 70/457，均 exit 0。About/Study 内容型叶子与 Apple/PWA/OG 范围未改，测试/截图工件已清理，logo.png 作为用户提供的未跟踪参考图保留。"
     }
   ]
 }

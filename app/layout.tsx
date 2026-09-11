@@ -47,7 +47,16 @@ const caveat = Caveat({
 
 export const metadata: Metadata = {
   title: "XOXO Meridian",
-  description: "A private two-person long-distance chat room with a local life assistant."
+  description: "A private two-person long-distance chat room with a local life assistant.",
+  icons: {
+    icon: [
+      {
+        url: "/brand/logo_white.svg",
+        type: "image/svg+xml",
+        sizes: "any",
+      },
+    ],
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

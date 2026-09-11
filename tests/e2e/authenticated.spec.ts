@@ -9,10 +9,34 @@ import { E2E_USERS } from "./support/credentials";
 test("renders the authenticated home navigation", async ({ page }) => {
   await page.goto("/home");
 
+  const brandLink = page.getByRole("link", { name: "XOXO Meridian" });
+  await expect(brandLink.locator("img")).toHaveAttribute(
+    "src",
+    "/brand/logo_transparent.svg",
+  );
+  await expect(brandLink.locator("img").locator("..")).toHaveCSS(
+    "background-color",
+    "rgb(125, 168, 120)",
+  );
   await expect(page.getByRole("link", { name: "Blog" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Chat" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Study" })).toBeVisible();
   await expect(page.getByRole("link", { name: E2E_USERS[0].displayName })).toBeVisible();
+});
+
+test("reuses the brand mark in the chat navigation", async ({ page }) => {
+  await page.goto("/chat");
+
+  await expect(page).toHaveURL(/\/chat\/[^/?]+/);
+  const brandLink = page.getByRole("link", { name: "XOXO Meridian" });
+  await expect(brandLink.locator("img")).toHaveAttribute(
+    "src",
+    "/brand/logo_transparent.svg",
+  );
+  await expect(brandLink.locator("img").locator("..")).toHaveCSS(
+    "background-color",
+    "rgb(125, 168, 120)",
+  );
 });
 
 test("keeps private profile fields out of Chat and Study browser payloads", async ({ page }) => {

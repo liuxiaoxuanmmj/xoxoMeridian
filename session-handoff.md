@@ -1,6 +1,18 @@
 # 会话交接
 
-## 2026-09-11 当前交接：feat-042 已完成（QAM-03-001 resolved）
+## 2026-09-11 当前交接：feat-043 已完成
+
+- 状态：共登记 43 个 feature，`feat-001` 至 `feat-043` 均为 `done`；当前没有 `not-started`、`in-progress` 或 `blocked` feature。
+- 实现：`public/brand/logo_transparent.svg` 和 `logo_white.svg` 使用不改几何/颜色的 `181 170 925 925` 方形紧裁 viewBox；白底版本保留白色 rect。`BrandBadge` 以 24×24 透明 SVG 替换叶子，仍保留动态 accent 的 32×32 绿色圆角底块、“XOXO / Meridian”、链接和可访问名称；AuthPanel、SiteNav、ChatApp 三处同步生效。根 `Metadata.icons` 以 `image/svg+xml`、`sizes=any` 指向白底 SVG。
+- 测试：组件旧实现负向对照 0/1、修复后 1/1；真实 Chromium 定向 4/4（含 setup），覆盖登录/Home/Chat、`rel=icon`、SVG 200/MIME、16/32px decode 和 320/1280px 布局；截图目视确认小尺寸清晰、绿色底块与文字保留且无偏移。
+- 门禁：初始 `./init.sh` exit 0、69 文件/456 项；`npm run check` exit 0，70 文件/457 项、Next.js 16.3.3 production build 和覆盖率 46.47/41.73/51.75/47.32 全部通过；最终 `./init.sh` exit 0、70/457。没有数据库、认证或部署变更，故未运行 integration、`check:full` 或 Compose smoke。
+- 范围与清理：About/Study 内容型叶子、Apple/PWA/OG、依赖和数据库均未改；coverage/Playwright 报告移入回收站，临时截图按明确路径删除，无失败日志、测试凭据或临时服务残留。根目录未跟踪 `logo.png` 是用户参考图，已保留且不参与运行时。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；用 `./scripts/run-node22.sh` 确认 Node 22.23.2/npm 10.9.8，按下一项产品优先级先登记 feature，再只将该 feature 标为 `in-progress` 并运行 `./init.sh`。
+- 唯一推荐下一步：由产品优先级决定并登记一个新的独立 feature，确认依赖与验收标准后再启动；不要继续扩大 `feat-043` 到 Apple/PWA/OG。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-11 历史交接：feat-042 已完成（QAM-03-001 resolved）
 
 - 状态：共登记 42 个 feature，feat-001 至 feat-042 均为 `done`；当前没有 `not-started`、`in-progress` 或 `blocked` feature。
 - 改动：新增 `lib/scheduled-job-one-shot.ts`（`fireAt` 解析、5 分钟宽限、`nextRunAt`、合成 cron、类型化错误）与 `lib/zoned-time.ts`（墙上时间 ↔ `Date` 两遍 offset 求解）作为一次性时间语义的单一事实来源；修改 `agent/tool-contracts.ts`、`agent/tools/schedule-tool.ts`、两个 scheduled-jobs Route、`lib/validation.ts`、`components/chat/LifePanelModals.tsx`；新增 `tests/lib/zoned-time.test.ts`、`tests/lib/scheduled-job-one-shot.test.ts`、`tests/server/scheduled-jobs-one-shot-patch.test.ts`、`tests/integration/scheduled-job-one-shot-fireat.integration.test.ts` 并扩展 agent/组件测试。

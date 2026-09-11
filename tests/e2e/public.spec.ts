@@ -15,6 +15,55 @@ test("shows accessible login and registration forms", async ({ page }) => {
   await expect(page.getByLabel("邀请码")).toBeVisible();
 });
 
+test("serves the shared brand mark and browser tab icon", async ({ page }) => {
+  for (const width of [320, 1280]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/");
+
+    const brandLink = page.getByRole("link", { name: "XOXO Meridian" });
+    const brandMark = brandLink.locator("img");
+    await expect(brandLink).toBeVisible();
+    await expect(brandLink).toHaveAttribute("href", "/home");
+    await expect(brandMark).toHaveAttribute("src", "/brand/logo_transparent.svg");
+    await expect(brandMark).toHaveAttribute("alt", "");
+    await expect(brandMark).toHaveCSS("width", "24px");
+    await expect(brandMark).toHaveCSS("height", "24px");
+    await expect(brandMark.locator("..")).toHaveCSS("width", "32px");
+    await expect(brandMark.locator("..")).toHaveCSS("height", "32px");
+
+    const brandBox = await brandLink.boundingBox();
+    expect(brandBox).not.toBeNull();
+    expect((brandBox?.x ?? width) + (brandBox?.width ?? 0)).toBeLessThanOrEqual(width);
+  }
+
+  const iconLink = page.locator('head link[rel="icon"]');
+  await expect(iconLink).toHaveAttribute("href", "/brand/logo_white.svg");
+  await expect(iconLink).toHaveAttribute("type", "image/svg+xml");
+  await expect(iconLink).toHaveAttribute("sizes", "any");
+
+  const iconResponse = await page.request.get("/brand/logo_white.svg");
+  expect(iconResponse.ok()).toBe(true);
+  expect(iconResponse.headers()["content-type"]).toContain("image/svg+xml");
+
+  const renderedIconSizes = await page.evaluate(async () => {
+    return Promise.all([16, 32].map(async (size) => {
+      const image = new Image(size, size);
+      image.src = "/brand/logo_white.svg";
+      image.style.width = `${size}px`;
+      image.style.height = `${size}px`;
+      document.body.append(image);
+      await image.decode();
+      const bounds = image.getBoundingClientRect();
+      image.remove();
+      return { width: bounds.width, height: bounds.height };
+    }));
+  });
+  expect(renderedIconSizes).toEqual([
+    { width: 16, height: 16 },
+    { width: 32, height: 32 },
+  ]);
+});
+
 test("supports password visibility and recovery entry points", async ({ page }) => {
   await page.goto("/");
   const password = page.getByLabel("密码", { exact: true });

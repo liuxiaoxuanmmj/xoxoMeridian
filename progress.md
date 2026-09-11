@@ -1,3 +1,27 @@
+## 2026-09-11 — feat-043 项目品牌 Logo 与浏览器标签页图标替换完成
+
+### 交付与范围
+
+- 按已批准的 Bounded 设计完成 `feat-043`。用户提供的 `logo_white.svg` 与 `logo_transparent.svg` 已收纳到 `public/brand/`；两份文件统一把原 `0 0 1254 1254` 收紧为等比方形 `181 170 925 925`，清理只对外部 `img`/favicon 无效的内嵌 role/title/desc，保留两条 path 的全部几何数据和 `#0e1418` 品牌色。白底版本继续保留 `#ffffff` rect，透明版本不增加背景。
+- `components/layout/BrandBadge.tsx` 使用固定 24×24、`unoptimized` 的 `next/image` 加载透明 SVG；图像为装饰性 `alt=""`/`aria-hidden`，链接的可访问名称由相邻可见 “XOXO / Meridian” 提供。原动态 `accentClass`、32×32 绿色圆角底块、文字、默认/自定义 `href` 与 hover 行为均保留，因此 `AuthPanel`、`SiteNav`、`ChatApp` 三处复用点同步更新。
+- `app/layout.tsx` 的根 `Metadata.icons` 新增 `image/svg+xml`、`sizes="any"` 的白底图标引用，真实页面生成 `/brand/logo_white.svg` 的 `rel="icon"`。没有增加 Apple touch icon、PWA manifest 或 Open Graph 图片。
+- About 页的装饰叶片和 Study “森林”主题属于内容语义，保持原状；`logo.png` 只作为用户提供的参考图留在根目录，没有加入运行时或改写。
+- 使用 `harness-creator` 维持唯一活动 feature、完成证据和重启路径；该 Skill 只影响状态纪律，没有扩大产品范围。
+
+### 验证证据
+
+- 初始 `./init.sh` exit 0：Prisma Client、资产检查、TypeScript、ESLint 与 69 文件/456 项 Vitest 全部通过。新增 `tests/component/brand-badge.test.tsx` 后，旧实现负向对照 0/1：链接的可访问名称仍为 `🌿 XOXO Meridian` 且没有新图像；实现后定向组件回归 1/1。
+- SVG 静态/渲染检查 exit 0：Sharp 能解析两份 1254×1254 SVG；两份资产均只有 `rect/g/path`（透明版本无 rect），两条 path 数据逐字一致，不含 `script`、`image`、`use`、`foreignObject`、链接、事件处理器或外部 URL。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e -- --project=public --project=authenticated --grep 'serves the shared brand mark|renders the authenticated home navigation|reuses the brand mark'` exit 0、4/4（1 条认证 setup + 3 条品牌验收）。真实 Chromium 覆盖登录页、Home 和 Chat 的共用品牌链接；确认 `rel=icon`、资源 200、`image/svg+xml`，并实际 decode/render 16px 与 32px favicon、核对 320px/1280px 品牌尺寸及视口边界。
+- 独立截图级目视复核确认：16px 和 32px 均能辨认星球、轨道与四角星；24px 透明标志在原 32px 绿色底块上对比清楚；登录页品牌在 320px/1280px 视口的尺寸和排版一致、无布局偏移。截图仅用于当轮检查，已在确认后清理。
+- `./scripts/run-node22.sh npm run check` exit 0：TypeScript、ESLint、70 文件/457 项 Vitest、Next.js 16.3.3 production build（22 个页面）与覆盖率门槛全部通过；覆盖率 statements 46.47%、branches 41.73%、functions 51.75%、lines 47.32%。最终 `./init.sh` 再次 exit 0，为 70 文件/457 项。
+
+### 清理、边界与下一步
+
+- 本次不涉及数据库模型、认证/权限语义、关键业务旅程或部署拓扑，因此按风险执行标准门禁和定向真实 Playwright，没有运行 PostgreSQL integration、`check:full` 或 Compose smoke；不把未运行层级写成通过。
+- 本轮生成的 `coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站；`/tmp` 下三张目视截图因该挂载不支持回收站而按明确路径删除。没有保留失败日志或测试凭据，用户参考图 `logo.png` 与其他既有改动保持不变。
+- 唯一推荐下一步：由产品优先级决定并登记一个新的独立 feature，确认依赖与验收标准后再启动；不要把 Apple/PWA/OG 等扩展继续并入已完成的 `feat-043`。
+
 ## 2026-09-11 — feat-042 修复 QAM-03-001 一次性任务 fireAt 被 PATCH 丢弃
 
 ### 交付与范围
