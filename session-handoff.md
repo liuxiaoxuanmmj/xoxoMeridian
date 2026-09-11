@@ -1,5 +1,19 @@
 # 会话交接
 
+## 2026-09-11 当前交接：feat-040 已完成
+
+- 状态：feat-001 至 feat-040 均 done，没有 in-progress/blocked；feat-041 为唯一 not-started 后续项。用户已明确选择两个主题均为 5%，正式文件已提升，不要再次询问选型。
+- 改动范围：components/agent-entry、app/layout.tsx、next.config.mjs、proxy.ts、资产脚本/源/正式模型/recipe、依赖锁、Docker/Compose/环境说明、Node/组件/E2E 测试及隔离 production 启动器；选型结论、指标与复建方式位于 docs/spec/agent-entry-review/README.md。
+- 最终结果：default 独立 production 16/16；生日主题 production check:full 的快速 64/409、build/coverage、PostgreSQL 18/48、生产浏览器 26/26 通过。新增真实 Next 环境配置 3/3 后，清理后的最终 ./init.sh 在同 Node 22 正常权限边界 exit 0，65 文件/412 项；完整命令、报告与早期失败见 progress 2026-09-11。跨日原 PTY ID 已失效，生日 E2E 以落盘 report stats 与 .last-run passed 复核，未伪造进程退出码。
+- 最终部署：隔离 Compose smoke exit 0，Web 140131614 bytes，仅两个正式 GLB，init/Web/Worker 旅程通过；Compose 缺省/default/birthday build args 检查通过。最终配置与布局均已纳入最后一轮镜像构建。
+- 清理：候选、临时预览、测试输出/凭据/失败日志、Buildx builder 与镜像、临时代理配置已清理；用户后续要求删除的 `docs/spec/agent-entry-review` 17 张 PNG/3 个 JSON、旧 `.next` 813 MiB 与根目录 `tsconfig.tsbuildinfo` 也已删除，统计和观测值已写回 README/progress；next-env.d.ts 恢复原内容。VS Code 终端中 2026-09-11 11:05 启动的 `npm run dev` 仍在运行并重建 `.next/dev`（盘点时 117 MiB），未中断用户进程。Docker socket 恢复后只读确认仅既有健康 xoxo-meridian-postgres、两个既有基础镜像。初次受限 Docker 命令 no new privileges、正常权限初次 socket 暂缺，已对照复核成功。
+- 权限对照：受限 ./init.sh 的 Node 子进程空 stdout 导致配置测试 3/3 失败（其余 409 通过）；获准在正常权限边界原命令复跑 65/412、exit 0。恢复时遇到同类现象按 AGENTS 复核，不改测试来绕过沙箱。
+- 风险边界：实体手机性能、系统软键盘、非零安全区尚无设备实测；当前为软件 Chromium 功能及缩短视口检查。生产依赖审计 2 high 与开发 js-yaml high 已登记 feat-041，未升级、未声称清零。
+- clean restart：依次阅读 AGENTS/feature_list/progress/本文件；使用 ./scripts/run-node22.sh 校验 Node 22.23.2/npm 10.9.8，运行 ./init.sh。需要本地预览时设置 .env 的 NEXT_PUBLIC_AGENT_ENTRY_THEME=default 或 birthday-2026，npm run dev；生产切换须重新 npm run build，Docker 按 build web agent-worker init → up -d。模型无需重新优化；只有复建资产时按评审 README 的 candidates/promote 命令执行。
+- 唯一推荐下一步：将 feat-041 标为唯一 in-progress，核对并升级 Browserslist/Nodemailer/开发依赖公告，运行邮件适配回归、审计与风险匹配门禁。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
 ## 2026-09-10 最新补充：feat-039 ScheduledJob active cap 修复完成
 
 - 当前状态：feat-001 至 feat-039 均为 `done`，没有 `in-progress` 或 `blocked`；feat-040 为唯一已登记的 `not-started` 后续项。QAM-03-002 已 resolved，QAM-03 为 81 分、Score L3、Gate/Final L2；组合平均 79.3，开放问题 P1×4/P2×31。

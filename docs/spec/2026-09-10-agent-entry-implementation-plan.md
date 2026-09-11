@@ -3,9 +3,9 @@
 - 日期：2026-09-10。
 - 输入：[原设计](../plan/2026-09-09-agent-entry-design.md)。
 - 审查结论：总体架构可行；实施前须补齐生产 CSP、Docker 构建配置与真实浏览器验证三个高优先级缺口。
-- 文档状态：实施方案已编写，产品功能尚未实施；本文中的步骤、命令和验收结果均为未来执行要求，另有明确标注的本次只读核验除外。
+- 文档状态：2026-09-11，feat-040 已实施并验收；最终证据见 [交付评审](agent-entry-review/README.md) 及 progress.md。正文审查和第 10 节保留制定计划时的历史事实；选型完成后按用户要求删除了 `docs/spec` 中的截图和 JSON 中间产物。
 - 范围：一个全局 3D 聊天导航入口，两个构建期主题，以及支撑它的资产流程、配置和测试。
-- 排期：现有 `feat-039` 已为 `in-progress`，保留其工作；Agent Entry 登记为后续 `not-started` feature，待活动 feature 收尾后再启动。两项功能没有领域技术依赖，先后顺序来自仓库单 feature 约束。
+- 排期：按单 feature 顺序先完成 feat-039，再实施 feat-040；截至 2026-09-11 两项均 done。两项之间没有领域技术依赖。
 
 ## 1. 审查依据与已确认事实
 
@@ -401,16 +401,16 @@ git status --short
 
 ## 8. 最终验收与交付物
 
-- [ ] 原设计的十项验收标准全部满足，并补齐 R01–R09 的对应行为。
-- [ ] 原始模型 hash 不变并移出 public；两个正式 GLB 均 ≤8 MiB、≤150,000 面、纹理 ≤2048，validator 无 error。
-- [ ] 两主题各有可重复 recipe、正式产物 hash、人工选择依据和桌面/移动截图。
-- [ ] 匿名/Chat 冷启动没有入口 3D 代码或 GLB 请求；登录态非 Chat 能真实绘制并导航。
-- [ ] Root Layout 与现有页面保持 Server/Client 边界；所有主题差异集中在 Registry。
-- [ ] ready 前不可见、不可聚焦、不可点击；ready 后原生键盘/触摸、tooltip、reduced-motion 和导航去重通过。
-- [ ] 模型加载失败、chunk 失败和 context-lost 不影响宿主页面，路由往返缓存和资源释放正常。
-- [ ] default/birthday 生产构建均通过真实浏览器；CSP、同源 decoder/HDR 约束和构建冻结语义有证据。
-- [ ] 安装兼容、依赖审计、`check:full`、生产主题 E2E、Compose smoke、最终 `init.sh` 均有原始命令及结果。
-- [ ] 三份状态记录同步、临时资源清理、diff/status 检查通过，才将实现 feature 标为 done。
+- [x] 原设计的十项验收标准全部满足，并补齐 R01–R09 的对应行为。
+- [x] 原始模型 hash 不变并移出 public；两个正式 GLB 均 ≤8 MiB、≤150,000 面、纹理 ≤2048，validator 无 error。
+- [x] 两主题各有可重复 recipe、正式产物 hash、人工选择依据和桌面/移动截图。
+- [x] 匿名/Chat 冷启动没有入口 3D 代码或 GLB 请求；登录态非 Chat 能真实绘制并导航。
+- [x] Root Layout 与现有页面保持 Server/Client 边界；所有主题差异集中在 Registry。
+- [x] ready 前不可见、不可聚焦、不可点击；ready 后原生键盘/触摸、tooltip、reduced-motion 和导航去重通过。
+- [x] 模型加载失败、chunk 失败和 context-lost 不影响宿主页面，路由往返缓存和资源释放正常。
+- [x] default/birthday 生产构建均通过真实浏览器；CSP、同源 decoder/HDR 约束和构建冻结语义有证据。
+- [x] 安装兼容、依赖审计、`check:full`、生产主题 E2E、Compose smoke、最终 `init.sh` 均有原始命令及结果。
+- [x] 三份状态记录同步、临时资源清理、diff/status 检查通过，才将实现 feature 标为 done。
 
 交付应包含业务实现、锁文件、两个源文件与正式 GLB、优化 recipe/预算报告、测试和配置，以及本计划关联的最终证据。不要提交敏感数据、失败调试载荷或无用途的候选大文件。
 
@@ -433,3 +433,7 @@ git status --short
 本次没有运行 `./init.sh`、`npm run check`、`npm run check:full` 或 `npm run test:compose-smoke`：用户授权范围为设计审查和实施计划，未实施产品代码，且仓库另有活动 feature。本次仅检查文档链接、feature JSON 与 diff；对应产品 feature 保持 `not-started`，不声明应用门禁通过或会话清洁退出。
 
 下一步：保留当前 `feat-039` 的实施优先级；它收尾后，按本计划 S0 启动 Agent Entry 的唯一活动 feature。
+
+## 11. 实施后的验证边界（2026-09-11）
+
+S0–S8 已完成。最终渲染使用 R3F createRoot 与 DOM useGLTF 错误边界；构建缺省值由 Next 配置在读取 .env 后提供，应用主题消费仍收敛到 resolver。窄屏底部留白解决保存/删除控件遮挡。两主题生产真实渲染、完整门禁、Compose 与最终 init 证据见交付评审；生日主题专用用例包含在 26 项 production 全量门禁中，未重复相同构建。软件 Chromium 及缩短视口不等于实体设备性能、真实系统软键盘或非零安全区验收，这些没有实机证据。依赖审计剩余 high 留独立 feat-041。

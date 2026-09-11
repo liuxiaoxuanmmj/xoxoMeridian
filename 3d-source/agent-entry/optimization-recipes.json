@@ -1,0 +1,346 @@
+{
+  "default": {
+    "source": "3d-source/agent-entry/default/source.glb",
+    "sourceSha256": "f85011629f31c036768c3fd559f354fa063fe457f2e452a631173666c6c95961",
+    "selection": {
+      "candidate": "public/.agent-entry-candidates/default/ratio-5.glb",
+      "sha256": "f8a6b76bbe0658c6f322cd7ed5989173efcafd03b6dca072e5002bac409b12d2",
+      "selectedBy": "user",
+      "reason": "2026-09-10 用户查看候选对比后明确回复：两个均选择 5%。"
+    },
+    "report": {
+      "sha256": "f8a6b76bbe0658c6f322cd7ed5989173efcafd03b6dca072e5002bac409b12d2",
+      "bytes": 1829016,
+      "triangles": 94703,
+      "textures": [
+        {
+          "index": 0,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 1,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 2,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        }
+      ],
+      "extensions": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "validator": {
+        "version": "2.0.0-dev.3.10",
+        "errors": 0,
+        "warnings": 0,
+        "messages": [
+          {
+            "code": "UNSUPPORTED_EXTENSION",
+            "message": "Cannot validate an extension as it is not supported by the validator: 'EXT_meshopt_compression'.",
+            "severity": 2,
+            "pointer": "/extensionsUsed/0",
+            "stage": "encoded",
+            "acceptedReason": "锁定 validator 不识别 Meshopt；已用 meshoptimizer 1.2.0 真解码并再次校验，解码前后实际场景面数一致；运行时另由锁定 Drei/three-stdlib 的真实浏览器验证。"
+          }
+        ]
+      },
+      "budget": {
+        "passed": true,
+        "reason": "三个硬预算均通过。"
+      }
+    },
+    "recipe": {
+      "theme": "default",
+      "source": "3d-source/agent-entry/default/source.glb",
+      "sourceSha256": "f85011629f31c036768c3fd559f354fa063fe457f2e452a631173666c6c95961",
+      "cliVersion": "4.5.0",
+      "ratio": 0.05,
+      "texturePolicy": "保留 JPEG/PNG 与贴图语义；Lanczos3 最长边 2048；只由 meshopt 执行一次量化。",
+      "steps": [
+        [
+          "weld",
+          "3d-source/agent-entry/default/source.glb",
+          "<temporary>/weld.glb"
+        ],
+        [
+          "simplify",
+          "<temporary>/weld.glb",
+          "<temporary>/simplify.glb",
+          "--ratio",
+          "0.05",
+          "--error",
+          "1"
+        ],
+        [
+          "resize",
+          "<temporary>/simplify.glb",
+          "<temporary>/resize.glb",
+          "--width",
+          "2048",
+          "--height",
+          "2048",
+          "--filter",
+          "lanczos3"
+        ],
+        [
+          "tangents",
+          "<temporary>/resize.glb",
+          "<temporary>/tangents.glb"
+        ],
+        [
+          "meshopt",
+          "<temporary>/tangents.glb",
+          "public/.agent-entry-candidates/default/ratio-5.glb",
+          "--level",
+          "high",
+          "--quantization-volume",
+          "mesh",
+          "--quantize-position",
+          "14",
+          "--quantize-normal",
+          "10",
+          "--quantize-texcoord",
+          "12",
+          "--quantize-color",
+          "8",
+          "--quantize-weight",
+          "8",
+          "--quantize-generic",
+          "12"
+        ]
+      ],
+      "candidate": "public/.agent-entry-candidates/default/ratio-5.glb",
+      "sha256": "f8a6b76bbe0658c6f322cd7ed5989173efcafd03b6dca072e5002bac409b12d2",
+      "bytes": 1829016,
+      "triangles": 94703,
+      "textures": [
+        {
+          "index": 0,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 1,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 2,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        }
+      ],
+      "extensions": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "validator": {
+        "version": "2.0.0-dev.3.10",
+        "errors": 0,
+        "warnings": 0,
+        "messages": [
+          {
+            "code": "UNSUPPORTED_EXTENSION",
+            "message": "Cannot validate an extension as it is not supported by the validator: 'EXT_meshopt_compression'.",
+            "severity": 2,
+            "pointer": "/extensionsUsed/0",
+            "stage": "encoded",
+            "acceptedReason": "锁定 validator 不识别 Meshopt；已用 meshoptimizer 1.2.0 真解码并再次校验，解码前后实际场景面数一致；运行时另由锁定 Drei/three-stdlib 的真实浏览器验证。"
+          }
+        ]
+      },
+      "budget": {
+        "passed": true,
+        "reason": "三个硬预算均通过。"
+      }
+    }
+  },
+  "birthday-2026": {
+    "source": "3d-source/agent-entry/birthday-2026/source.glb",
+    "sourceSha256": "5dd17573f77c6713b013c8f974c108c2e138afb4b63b42c159744d9aac8ea384",
+    "selection": {
+      "candidate": "public/.agent-entry-candidates/birthday-2026/ratio-5.glb",
+      "sha256": "a7ec571a233f7ae0b569a0c525cbcab6d5f33988ea005a6d940d8ce8d7c9dab1",
+      "selectedBy": "user",
+      "reason": "2026-09-10 用户查看候选对比后明确回复：两个均选择 5%。"
+    },
+    "report": {
+      "sha256": "a7ec571a233f7ae0b569a0c525cbcab6d5f33988ea005a6d940d8ce8d7c9dab1",
+      "bytes": 2046212,
+      "triangles": 97721,
+      "textures": [
+        {
+          "index": 0,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 1,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 2,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        }
+      ],
+      "extensions": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "validator": {
+        "version": "2.0.0-dev.3.10",
+        "errors": 0,
+        "warnings": 0,
+        "messages": [
+          {
+            "code": "UNSUPPORTED_EXTENSION",
+            "message": "Cannot validate an extension as it is not supported by the validator: 'EXT_meshopt_compression'.",
+            "severity": 2,
+            "pointer": "/extensionsUsed/0",
+            "stage": "encoded",
+            "acceptedReason": "锁定 validator 不识别 Meshopt；已用 meshoptimizer 1.2.0 真解码并再次校验，解码前后实际场景面数一致；运行时另由锁定 Drei/three-stdlib 的真实浏览器验证。"
+          }
+        ]
+      },
+      "budget": {
+        "passed": true,
+        "reason": "三个硬预算均通过。"
+      }
+    },
+    "recipe": {
+      "theme": "birthday-2026",
+      "source": "3d-source/agent-entry/birthday-2026/source.glb",
+      "sourceSha256": "5dd17573f77c6713b013c8f974c108c2e138afb4b63b42c159744d9aac8ea384",
+      "cliVersion": "4.5.0",
+      "ratio": 0.05,
+      "texturePolicy": "保留 JPEG/PNG 与贴图语义；Lanczos3 最长边 2048；只由 meshopt 执行一次量化。",
+      "steps": [
+        [
+          "weld",
+          "3d-source/agent-entry/birthday-2026/source.glb",
+          "<temporary>/weld.glb"
+        ],
+        [
+          "simplify",
+          "<temporary>/weld.glb",
+          "<temporary>/simplify.glb",
+          "--ratio",
+          "0.05",
+          "--error",
+          "1"
+        ],
+        [
+          "resize",
+          "<temporary>/simplify.glb",
+          "<temporary>/resize.glb",
+          "--width",
+          "2048",
+          "--height",
+          "2048",
+          "--filter",
+          "lanczos3"
+        ],
+        [
+          "tangents",
+          "<temporary>/resize.glb",
+          "<temporary>/tangents.glb"
+        ],
+        [
+          "meshopt",
+          "<temporary>/tangents.glb",
+          "public/.agent-entry-candidates/birthday-2026/ratio-5.glb",
+          "--level",
+          "high",
+          "--quantization-volume",
+          "mesh",
+          "--quantize-position",
+          "14",
+          "--quantize-normal",
+          "10",
+          "--quantize-texcoord",
+          "12",
+          "--quantize-color",
+          "8",
+          "--quantize-weight",
+          "8",
+          "--quantize-generic",
+          "12"
+        ]
+      ],
+      "candidate": "public/.agent-entry-candidates/birthday-2026/ratio-5.glb",
+      "sha256": "a7ec571a233f7ae0b569a0c525cbcab6d5f33988ea005a6d940d8ce8d7c9dab1",
+      "bytes": 2046212,
+      "triangles": 97721,
+      "textures": [
+        {
+          "index": 0,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 1,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        },
+        {
+          "index": 2,
+          "width": 2048,
+          "height": 2048,
+          "format": "jpeg",
+          "mimeType": "image/jpeg"
+        }
+      ],
+      "extensions": [
+        "EXT_meshopt_compression",
+        "KHR_mesh_quantization"
+      ],
+      "validator": {
+        "version": "2.0.0-dev.3.10",
+        "errors": 0,
+        "warnings": 0,
+        "messages": [
+          {
+            "code": "UNSUPPORTED_EXTENSION",
+            "message": "Cannot validate an extension as it is not supported by the validator: 'EXT_meshopt_compression'.",
+            "severity": 2,
+            "pointer": "/extensionsUsed/0",
+            "stage": "encoded",
+            "acceptedReason": "锁定 validator 不识别 Meshopt；已用 meshoptimizer 1.2.0 真解码并再次校验，解码前后实际场景面数一致；运行时另由锁定 Drei/three-stdlib 的真实浏览器验证。"
+          }
+        ]
+      },
+      "budget": {
+        "passed": true,
+        "reason": "三个硬预算均通过。"
+      }
+    }
+  }
+}

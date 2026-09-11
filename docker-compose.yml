@@ -131,6 +131,8 @@ services:
     build:
       context: .
       target: web-runner
+      args:
+        NEXT_PUBLIC_AGENT_ENTRY_THEME: ${NEXT_PUBLIC_AGENT_ENTRY_THEME:-default}
     container_name: xoxo-meridian-web
     restart: unless-stopped
     mem_limit: 768m

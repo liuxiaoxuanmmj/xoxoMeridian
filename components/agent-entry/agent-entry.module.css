@@ -1,0 +1,46 @@
+.entry {
+  width: var(--entry-mobile-size);
+  height: var(--entry-mobile-size);
+  right: calc(var(--entry-mobile-right) + env(safe-area-inset-right));
+  bottom: calc(var(--entry-mobile-bottom) + env(safe-area-inset-bottom));
+}
+
+.clearance {
+  height: calc(var(--entry-mobile-size) + var(--entry-mobile-bottom) + env(safe-area-inset-bottom));
+  pointer-events: none;
+}
+
+.button {
+  outline-color: var(--entry-accent);
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
+}
+
+.tooltip {
+  position: absolute;
+  right: 0;
+  bottom: 100%;
+  width: max-content;
+  max-width: min(240px, calc(100vw - 32px));
+  padding: 8px 12px;
+  border: 1px solid var(--entry-accent);
+  border-radius: 12px;
+  background: #fffdf9;
+  color: #433832;
+  font-size: 13px;
+  line-height: 1.5;
+  box-shadow: 0 4px 18px #30201912;
+}
+
+@media (min-width: 768px) {
+  .clearance {
+    height: calc(var(--entry-desktop-size) + var(--entry-desktop-bottom) + env(safe-area-inset-bottom));
+  }
+
+  .entry {
+    width: var(--entry-desktop-size);
+    height: var(--entry-desktop-size);
+    right: calc(var(--entry-desktop-right) + env(safe-area-inset-right));
+    bottom: calc(var(--entry-desktop-bottom) + env(safe-area-inset-bottom));
+  }
+}

@@ -1,8 +1,72 @@
+## 2026-09-11 — feat-040 全局 3D Agent Entry 完成（S0–S8）
+
+### 交付与范围
+
+- feat-040 已满足计划验收并标为 done；两个主题均按用户“两个均选择 5%”的决定提升正式 GLB。default：1829016 bytes / 94703 面；birthday：2046212 bytes / 97721 面；均三张 2048 JPEG、validator 0 error / 0 warning。原始源 hash 未变，8 份候选报告、可重复 recipe 与选择记录已归档，20 MB 临时候选已清理；2026-09-11 用户进一步要求删除 `docs/spec` 中用于评审的 PNG/JSON，结论和指标已并入 README 与本记录。
+- app/layout.tsx 保持 Server Component；components/agent-entry 实现 server-only resolver、序列化 Registry、匿名/Chat 冷启动零 3D 请求、认证探测取消、动态加载、真实首帧解锁、原生键盘/触摸/Tooltip/reduced-motion、Chat 往返缓存及故障隔离。使用 R3F createRoot 和 DOM useGLTF 错误边界处理锁定库版本的异步错误；Canvas 自有资源按卸载释放。
+- 窄屏布局回归发现保存按钮遮挡，Entry 就绪时增加按主题布局计算的文档末尾滚动空间；个人设置、Study、Post 详情/编辑/删除确认均已在 320/390/1280 px 浏览器验证，业务表单未修改。
+- proxy.ts 精确增加本地 Meshopt WASM 与内嵌纹理 blob 权限，生产 JavaScript unsafe-eval 仍禁用。next.config.mjs 在 Next 加载 .env* 后内联主题缺省值，Dockerfile/Compose 显式传入构建主题；运行时反转主题不会改变模型。
+- 依赖、资产脚本与 checker、组件/Node/E2E 测试、生产 E2E 启动器、Compose 资产核查和环境说明全部交付；Prisma schema/migration、Agent Runtime 与其他业务功能未改。
+
+### 最终验证证据
+
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_APP_MODE=production E2E_SOFTWARE_WEBGL=true NEXT_PUBLIC_AGENT_ENTRY_THEME=birthday-2026 npm run check:full` 各阶段通过：64 文件/409 项 Vitest、production build、覆盖率、18 文件/48 项 PostgreSQL，及生日主题 production 26/26 Playwright。跨日恢复后原 PTY ID 已失效；落盘 HTML report 的 stats 为 total=26 / expected=26 / unexpected=0 / flaky=0 / skipped=0 / ok=true / errors=[]，.last-run.json 为 passed，未虚构丢失的进程退出码。
+- 该全量运行包含生日主题专用脚本的全部 16 条及原有 10 条旅程，因此不再重复同一生日构建。default 独立命令 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e:agent-entry:production:default` 退出 0、16/16；两轮分别在启动时反转为另一主题，仍只请求构建主题的 GLB，无外部 decoder/HDR、CSP violation 或入口 pageerror。
+- 最终构建缺省值回归 `npm run test:unit -- tests/lib/agent-entry-build-config.test.ts` 为 3/3，真实 Next loadConfig 验证缺省、.env.production.local 与显式环境优先级。该测试在 full 的快速阶段后增加；最终 `./init.sh` 纳入后为 65 文件/412 项、Prisma generate、类型/lint 和正式资产全部通过（正常权限边界 exit 0）。
+- 2026-09-11 受限沙箱的首个 `./init.sh` 返回 exit 1：64 文件/409 项通过，配置测试 3 项因 Node 子进程空 stdout 在 JSON.parse 报 Unexpected end of JSON input；按 AGENTS 同一 Node 22 在正常权限边界原命令复跑 exit 0、65/412。未将沙箱差异当作代码缺陷。
+- 覆盖率 statements 44.38%、branches 38.94%、functions 48.87%、lines 45.10%，超过现有门槛。最终测试发现为 `npm run test:e2e -- --list` 的 5 文件/26 条。
+- 最终 Compose 命令为 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 DOCKER_CONFIG=/tmp/agent-entry-docker-net/docker-config BUILDX_BUILDER=agent-entry-proxy-builder npm run test:compose-smoke`，退出 0；项目 xoxo-meridian-smoke-230500-335abfd1，Web 镜像 140131614 bytes，仅两个正式 GLB。init migrate/seed exit 0、Web health/DB 探测、Worker durable plan/final/可见消息均通过，项目容器、网络、卷、镜像自动清理。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:compose-config` 退出 0，缺省/default/birthday 三组构建参数均通过。更早的 Docker Hub 连接拒绝、缺失测试配置依赖 TS2307、开发模式 Performance.measure/Study 超时与布局探测失败保留于下方阶段记录；最终生产验证未屏蔽错误、跳过用例或降低断言。
+
+### 清理、边界与下一步
+
+- 清理本次 public/.agent-entry-candidates、coverage、playwright-report、test-results（含测试凭据、失败日志与临时截图）、临时预览路由、Buildx builder/volume、导入 BuildKit 镜像及 /tmp/agent-entry-docker-net。2026-09-11 后续清理又删除 `docs/spec/agent-entry-review` 下 17 张 PNG 与 3 个 JSON，并清除 813 MiB 的旧 `.next` 和根目录 `tsconfig.tsbuildinfo`（516 KiB）；测试统计、性能观测、hash 和复建命令保留为文本，`next-env.d.ts` 恢复原内容。用户从 VS Code 终端启动的 `npm run dev` 仍在运行并重新建立 117 MiB 的 `.next/dev`，该活动服务缓存未作为 feat-040 遗留删除。
+- 跨日 Docker 复核先因沙箱 no new privileges 失败，正常权限对照又因 WSL socket 尚未恢复报 connect: no such file or directory；socket 恢复后，同一 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh docker ps -a --format '{{.Names}} {{.Image}} {{.Status}}'` 退出 0，仅既有健康 xoxo-meridian-postgres。镜像仅保留既有 postgres:16-alpine 与 testcontainers/ryuk:0.14.0，无本次临时镜像。
+- 软件 Chromium 已验证静止停止绘制、3 次路由往返单 Canvas、键盘/触摸、窄屏/横屏及输入时缩短视口；实测数据见评审目录。未取得实体手机性能、系统软键盘或非零安全区实测，不将模拟视口/软件渲染结果描述成实体设备验收。
+- 依赖审计仍有既有生产 2 high（Browserslist、Nodemailer）及开发 js-yaml high，已登记独立 feat-041，风险、原因和升级计划见该 feature；本次未声称审计清零。
+- 清理后的最终 ./init.sh（2026-09-11 11:04，正常权限边界）再次 exit 0，65 文件/412 项；harness-creator 结构核验为 100/100，JSON 状态为 40 done、1 not-started，git diff --check 与最终状态核对通过。
+- 唯一推荐下一步：按单 feature 工作流启动 feat-041，核对并升级受影响依赖，完成邮件适配回归与风险匹配门禁。
+
+以下为 2026-09-10 实施期间的阶段记录，其中“正在进行”仅描述当时状态。
+
+## 2026-09-10 — feat-040 Agent Entry 实施中（S0–S7）
+
+- 依次读取项目约束、状态、交接与原设计/实施计划；feat-039 已 done，开始时工作树干净，feat-040 为唯一 in-progress。
+- Node v22.23.2/npm 10.9.8；初始 ./init.sh 退出 0：60 文件/360 项测试、类型/lint、Prisma generate 通过。原始两个 GLB hash 与实施计划一致。
+- 锁定 Three 0.185.1、@types/three 0.185.4、R3F 9.7.0、Drei 10.7.8、server-only 0.0.1；资产 CLI/core/extensions 4.5.0、validator 2.0.0-dev.3.10、meshoptimizer 1.2.0、sharp 0.35.4。首次 npm install 因现有 ^react 被求解为 19.3.0 与 R3F <19.3 peer 不兼容而 ERESOLVE；将 React/React DOM 明确固定为既有 19.2.8 后安装成功，没有使用 force/legacy-peer-deps。
+- 以 Chromium 加载已安装 three-stdlib 的实际 MeshoptDecoder 本地模块：原 production script-src self/unsafe-inline 返回 CompileError 与 script-src violation；加入 wasm-unsafe-eval 后 decoder.ready 成功、violations=[]。proxy 仅增加 WASM 权限；security-headers 回归修复前 5/6，修复后 6/6。
+- npm ls three @react-three/fiber @react-three/drei @types/three react react-dom --depth=0 退出 0。npm audit --omit=dev 默认镜像返回 404 NOT_IMPLEMENTED；npm audit --omit=dev --registry=https://registry.npmjs.org 与全量同参数审计实际退出 1，生产 2 low/2 moderate/2 high，全量 2 low/2 moderate/3 high。既有 Browserslist 4.28.2、Nodemailer 9.0.5 和开发 js-yaml 4.3.1 公告登记为独立 feat-041；不使用旧审计结论声称本轮无 high。
+- 用户已完成两主题 5% 选型，正式资产和实现均已落盘；当前正在完成最终生产门禁与清理，feature 暂不标 done。
+
 # 进度日志
+
+### 已选正式模型与当前验证
+
+- 用户查看当时生成的候选对比与完整记录后明确回复“两个均选择 5%”；selection.json 保存精确路径/hash，两个 promote 命令成功，正式 GLB 已接入 check:quick。default：1829016 bytes、94703 面、SHA-256 f8a6b76bbe0658c6f322cd7ed5989173efcafd03b6dca072e5002bac409b12d2；birthday：2046212 bytes、97721 面、SHA-256 a7ec571a233f7ae0b569a0c525cbcab6d5f33988ea005a6d940d8ce8d7c9dab1。纹理均三张 2048 JPEG；两次完整候选生成的所有 hash 一致。评审 PNG/JSON 在选型完成后按用户要求清理。
+- 第一轮候选有 generated tangent space warning，增加显式 CLI tangents 步骤后 8 个候选 validator 0 error/0 warning；15%/10% 面数超限仅作参照，5%/7.5% 合格。GLB checker 实际解码 Meshopt 后再次 validator 并核对默认场景实例数。源 hash 未变，源与候选不进入 Docker context。
+- 真实生产浏览器发现 ImageBitmapLoader fetch(blob:) 被原 connect-src self 拦截；增加精确 blob: 权限，保留同源限制。真实 source decoder WASM 对照、GLB 纹理与初帧已实测。未创建常驻预览 flag；临时评审路由已删除，截图与参数保留。
+- R3F 9.7 内建 Canvas 的异步初始化异常不传给 DOM boundary，改用官方 createRoot + 原生 canvas 显式捕获。浏览器错误注入又证明 R3F 会把 caught error 通过 reportError 变成 pageerror；useGLTF 改在 DOM Suspense/ErrorBoundary 加载并缓存，再把独立 clone 交给 R3F primitive，避免给宿主重新报告已处理错误。
+- 阶段 npm run check 退出 0：64 文件/407 项、production build、覆盖率 43.72/37.99/48.42/44.44%；该次尚含临时评审路由，不替代最终门禁。定向 Node 32/32、组件 20/20；PostgreSQL 全量 18 文件/48 项通过。测试发现共 22 条，后新增生命周期用例总数将为 23。
+- 首轮新 E2E 8/12：匿名页测试错误地寻找不存在的 link；404/损坏暴露上述 R3F reportError；chunk 故障因 helper 错读 production manifest 未注入。已分别改为键盘滚动、DOM 加载边界、按 development 使用 .next/dev manifest，正在重跑。
+- Compose 两次在 Docker Hub auth 端点连接拒绝；创建独立 agent-entry-proxy-builder，并用临时 Docker 配置和本机代理重跑，Alpine npm ci 已通过，构建进行中。没有改变既有服务/daemon 配置或默认 builder；后续必须清理该 builder、临时配置与导入镜像。
+- 新发现既有生产 high 仍归独立 feat-041，未扩展到邮件/构建依赖升级；不宣称审计清零。
+
+
+- 默认主题 production 命令 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e:agent-entry:production:default` 退出 0，16/16 通过，包括新增 320/390/1280 px 个人设置、Study、Post 详情/编辑/删除确认控件检查。构建 default、启动 birthday 的反向配置仍只请求 default GLB。开发模式 React Performance.measure 负时间戳在该 production 运行未出现。
+- 新布局回归修复前 `env PLAYWRIGHT_BASE_URL=http://127.0.0.1:3100 E2E_EXTERNAL_ISOLATED=true E2E_APP_MODE=development NEXT_PUBLIC_AGENT_ENTRY_THEME=default E2E_SOFTWARE_WEBGL=true npm run test:e2e -- tests/e2e/agent-entry-authenticated.spec.ts --grep '页面表单' --no-deps --output=test-results/layout-probe` 为 1/3：320/390 px 保存按钮被入口拦截。Entry 就绪后增加按 Registry 尺寸计算的文档末尾滚动留白，保持业务表单不变；上面的 production 16/16 已覆盖修复。一次复用已即将退出的开发服务重跑 `--output=test-results/layout-fixed` 为 0/3，首项 ready 超时、后两项 ERR_CONNECTION_REFUSED；随后改为独立 production 启动验证。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full`：64/409、production build、coverage、PostgreSQL 18/48 通过，development Playwright 19/23；两个新测试因 ChatIndexPage Performance.measure 负时间戳失败，两个既有 Study 用例因启动请求超过 5 秒、遗留活动状态导致后续等待超时。该轮曾并行复用开发服务进行布局探测，不作为最终隔离门禁结论；当前使用 production 隔离服务重新运行完整门禁，未屏蔽 pageerror 或降低断言。
+- Compose smoke 已通过一轮：临时代理命令见下方记录，项目 xoxo-meridian-smoke-193221-00f43fcd，init exit 0、Web 健康、Worker durable plan/final/消息通过；Web 镜像 140129435 bytes，只含两个正式 GLB。第三次构建曾报 playwright.config.ts 导入的 tests/e2e/support/app-mode 不在 Docker context（TS2307），已将 Playwright 配置与测试目录一并排除；最终 UI 布局修复后正在复跑 Compose。
+- 布局修复后 `npm run check:quick` 退出 0，64 文件/409 项。完整候选 JSON 已归档到 3d-source/agent-entry/candidate-reports；当时的评审截图包含精确相机、变换和布局参数，选型完成后按用户要求删除，参数保留在 Registry 和文字记录中。
+
+
+- 最终构建缺省值放在 next.config.mjs 的 env 中：Next 读取 .env* 后才提供 default，显式进程环境仍优先；移除早先 package build 中会遮蔽 .env 的 shell 缺省值。应用运行时仍只有 server-only resolver 消费主题变量。新增 tests/lib/agent-entry-build-config.test.ts 在独立目录/进程调用锁定 Next 真实 loadConfig，缺失、文件 birthday、显式 default 覆盖三个回归 3/3；`npm run typecheck` 退出 0。后续生产 E2E 的构建及 Compose 均消费此最终配置。
+- 两次已通过的 Compose 命令均为 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env HTTP_PROXY=http://127.0.0.1:7897 HTTPS_PROXY=http://127.0.0.1:7897 NO_PROXY=localhost,127.0.0.1 DOCKER_CONFIG=/tmp/agent-entry-docker-net/docker-config BUILDX_BUILDER=agent-entry-proxy-builder npm run test:compose-smoke`；第二次项目 xoxo-meridian-smoke-220100-4182e144、Web 140131515 bytes、init/Web/Worker 全部通过且项目清理成功。此代理仅用于本机 Docker Hub 连接限制，不加入仓库运行配置；最终 Next 配置后复核使用相同命令。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:compose-config` 退出 0，缺省、default、birthday 三组均验证 4 服务、主题 build args、production runner 与 inline=false。`npm run test:e2e -- --list` 最终发现 5 文件/26 条。
+
 
 ## Current State（当前状态）
 
-Last Updated：2026-09-10。feat-001 至 feat-039 均为 `done`，当前没有 `in-progress` 或 `blocked` feature；feat-040「实现全局 3D Agent 聊天入口」为已登记的唯一 `not-started` 后续项，其设计审查与详细实施计划位于 `docs/spec/2026-09-10-agent-entry-implementation-plan.md`。QAM-03-002 已解决，QAM-03 当前为 81 分、Score L3、Gate/Final L2；组合开放问题为 P1×4/P2×31，模块平均分为 79.3。
+Last Updated：2026-09-11。feat-001 至 feat-040 均为 `done`；当前没有 `in-progress` 或 `blocked`，feat-041 为唯一已登记的 `not-started` 后续项。最新验收证据见本文件首条，其他日期记录保留历史状态。
 
 ## 2026-09-10 — feat-039 ScheduledJob active cap 并发绕过修复
 

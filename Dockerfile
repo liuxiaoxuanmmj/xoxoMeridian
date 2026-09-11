@@ -19,6 +19,8 @@ FROM node:22-alpine AS builder
 RUN apk add --no-cache openssl
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
+ARG NEXT_PUBLIC_AGENT_ENTRY_THEME=default
+ENV NEXT_PUBLIC_AGENT_ENTRY_THEME=${NEXT_PUBLIC_AGENT_ENTRY_THEME}
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 # Build-time placeholders so prisma generate / next build do not require real secrets.

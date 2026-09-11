@@ -27,7 +27,7 @@ type ComposeVolume = {
 };
 
 type ComposeService = {
-  build?: { target?: string };
+  build?: { target?: string; args?: Record<string, string> };
   container_name?: string;
   environment?: Record<string, string>;
   image?: string;
@@ -81,6 +81,7 @@ function dockerEnvironment(): NodeJS.ProcessEnv {
     "DOCKER_TLS_VERIFY",
     "DOCKER_CERT_PATH",
     "BUILDKIT_PROGRESS",
+    "BUILDX_BUILDER",
     "HTTP_PROXY",
     "HTTPS_PROXY",
     "NO_PROXY",
@@ -200,7 +201,7 @@ async function reservePort() {
   });
 }
 
-async function createContext(): Promise<SmokeContext> {
+async function createContext(theme?: "default" | "birthday-2026"): Promise<SmokeContext> {
   const suffix = `${process.pid}-${randomBytes(4).toString("hex")}`;
   const projectName = `xoxo-meridian-smoke-${suffix}`;
   const temporaryRoot = await mkdtemp(join(tmpdir(), "xoxo-meridian-compose-smoke-"));
@@ -224,6 +225,7 @@ async function createContext(): Promise<SmokeContext> {
       `INVITE_CODE=smoke-invite-${secret}`,
       `APP_BASE_URL=${baseUrl}`,
       `NEXT_PUBLIC_APP_URL=${baseUrl}`,
+      ...(theme ? [`NEXT_PUBLIC_AGENT_ENTRY_THEME=${theme}`] : []),
       "ALLOWED_ORIGINS=",
       "DEMO_ROOM_SLUG=compose-smoke-room",
       "LLM_PROVIDER=mock",
@@ -247,7 +249,7 @@ async function createContext(): Promise<SmokeContext> {
   return { baseUrl, dataRoot, envFile, projectName, temporaryRoot, webPort };
 }
 
-async function validateComposeConfig(context: SmokeContext) {
+async function validateComposeConfig(context: SmokeContext, expectedTheme = "default") {
   const rendered = await captureCompose(context, ["config", "--format", "json"]);
   const config = JSON.parse(rendered) as ComposeConfig;
   const services = config.services ?? {};
@@ -265,6 +267,23 @@ async function validateComposeConfig(context: SmokeContext) {
   }
 
   assert.equal(services.web?.build?.target, "web-runner", "Web 未构建 production runner target。");
+  assert.equal(
+    services.web?.build?.args?.NEXT_PUBLIC_AGENT_ENTRY_THEME,
+    expectedTheme,
+    "Web 构建参数没有传递实际选择的 Agent 入口主题。"
+  );
+  for (const serviceName of ["init", "web", "agent-worker"]) {
+    assert.equal(
+      services[serviceName]?.environment?.NEXT_PUBLIC_AGENT_ENTRY_THEME,
+      undefined,
+      `${serviceName} 不应将 Agent 入口主题暴露为运行时可变配置。`
+    );
+  }
+  assert.equal(
+    services["agent-worker"]?.build?.args?.NEXT_PUBLIC_AGENT_ENTRY_THEME,
+    undefined,
+    "Agent Worker 不应接收 Web 入口主题构建参数。"
+  );
   assert.equal(
     services["agent-worker"]?.build?.target,
     "worker-runner",
@@ -321,7 +340,7 @@ async function validateComposeConfig(context: SmokeContext) {
   }
 
   console.log(
-    `[compose-config] 已验证 ${context.projectName}：4 个服务、隔离卷/目录、production runner target 与 inline=false。`
+    `[compose-config] 已验证 ${context.projectName}：theme=${expectedTheme}、4 个服务、隔离卷/目录、production runner target 与 inline=false。`
   );
 }
 
@@ -409,6 +428,48 @@ async function assertProductionProcesses(context: SmokeContext) {
   const workerState = asRecord(worker.State, "Agent Worker inspect.State 缺失。");
   assert.equal(workerState.Running, true, "Agent Worker 容器未保持运行。 ");
   console.log(`[compose-smoke] production processes：web="${webCommand}"；worker="${workerCommand}"。`);
+}
+
+async function assertWebImageAssets(context: SmokeContext) {
+  const webContainer = await serviceContainerId(context, "web");
+  const imageAssets = JSON.parse(await captureDocker([
+    "exec", webContainer, "node", "--input-type=module", "-e",
+    `import { existsSync, readdirSync, statSync } from "node:fs";
+     import { join, relative } from "node:path";
+     const files = [];
+     function visit(directory) {
+       for (const item of readdirSync(directory, { withFileTypes: true })) {
+         const path = join(directory, item.name);
+         if (item.isDirectory()) {
+           if (item.name !== "node_modules" && item.name !== ".next") visit(path);
+         } else files.push({ path: relative("/app", path), bytes: statSync(path).size });
+       }
+     }
+     visit("/app");
+     console.log(JSON.stringify({ sourceDirectory: existsSync("/app/3d-source"), files }));`
+  ])) as { sourceDirectory: boolean; files: Array<{ path: string; bytes: number }> };
+  assert.equal(imageAssets.sourceDirectory, false, "Web 镜像不得包含 3d-source 原始资产。");
+  const glbs = imageAssets.files.filter((file) => file.path.endsWith(".glb"));
+  assert.deepEqual(
+    glbs.map((file) => file.path).sort(),
+    [
+      "public/models/agent-entry/birthday-2026/scene.glb",
+      "public/models/agent-entry/default/scene.glb"
+    ],
+    "Web 镜像必须只含两个已提升的正式 GLB，不得包含原始模型或临时候选。"
+  );
+  for (const file of glbs) {
+    assert(file.bytes > 20 && file.bytes <= 8 * 1024 * 1024, `${file.path} 不满足 8 MiB 资产预算。`);
+  }
+  assert.equal(
+    imageAssets.files.some((file) => /(?:^|\/)(?:3d-source|[^/]*candidates?[^/]*)(?:\/|$)/u.test(file.path)),
+    false,
+    "Web 镜像不得包含临时候选目录。"
+  );
+  const web = await inspectContainer(context, "web");
+  const imageId = asString(web.Image, "Web inspect.Image 缺失。");
+  const imageBytes = (await captureDocker(["image", "inspect", "--format", "{{.Size}}", imageId])).trim();
+  console.log(`[compose-smoke] Web 镜像 ${imageBytes} bytes；正式 GLB：${JSON.stringify(glbs)}。`);
 }
 
 async function jsonRequest(
@@ -666,6 +727,7 @@ async function runSmoke(context: SmokeContext) {
     await runCompose(context, ["up", "--detach", "--no-build", "web", "agent-worker"]);
     await waitForHealthyWeb(context);
     await assertProductionProcesses(context);
+    await assertWebImageAssets(context);
     await exerciseWorkerThroughWeb(context);
   } catch (error) {
     failure = error;
@@ -686,14 +748,22 @@ async function runSmoke(context: SmokeContext) {
 }
 
 async function main() {
-  const context = await createContext();
+  if (configOnly) {
+    for (const theme of [undefined, "default", "birthday-2026"] as const) {
+      const context = await createContext(theme);
+      try {
+        await validateComposeConfig(context, theme ?? "default");
+      } finally {
+        await rm(context.temporaryRoot, { force: true, recursive: true });
+      }
+    }
+    console.log("[compose-config] 缺省值及两主题的静态配置门禁通过；该命令未访问 Docker daemon。");
+    return;
+  }
+  const context = await createContext("default");
   try {
     await validateComposeConfig(context);
-    if (configOnly) {
-      console.log("[compose-config] 静态配置门禁通过；该命令未访问 Docker daemon。");
-    } else {
-      await runSmoke(context);
-    }
+    await runSmoke(context);
   } finally {
     await rm(context.temporaryRoot, { force: true, recursive: true });
   }

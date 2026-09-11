@@ -111,7 +111,8 @@ function getLoginVisualImageSources() {
 
 export function buildContentSecurityPolicy(): string {
   const loginVisualImageSources = getLoginVisualImageSources();
-  const scriptSrc = ["script-src", "'self'", "'unsafe-inline'"];
+  // Meshopt uses bundled WebAssembly; JavaScript eval remains development-only.
+  const scriptSrc = ["script-src", "'self'", "'unsafe-inline'", "'wasm-unsafe-eval'"];
   if (process.env.NODE_ENV === "development") {
     scriptSrc.push("'unsafe-eval'");
   }
@@ -125,7 +126,8 @@ export function buildContentSecurityPolicy(): string {
     "font-src 'self' data:",
     "style-src 'self' 'unsafe-inline'",
     scriptSrc.join(" "),
-    "connect-src 'self'",
+    // GLTFLoader 的 ImageBitmapLoader 会 fetch 内嵌纹理生成的本地 blob URL。
+    "connect-src 'self' blob:",
     "form-action 'self'",
   ].join("; ");
 }

@@ -17,8 +17,10 @@ prisma/migrations/*/migration_lock.toml
 data/chat-logs/
 data/atlas-uploads/
 
-# 3D agent-entry scenes are too large for GitHub (50MB limit); keep them local
-public/models/agent-entry/**/*.glb
+# Agent Entry 候选和原始源模型仅供本地评审，正式优化模型纳入版本管理。
+public/.agent-entry-candidates/
+3d-source/agent-entry/default/source.glb
+3d-source/agent-entry/birthday-2026/source.glb
 
 # Superpowers brainstorm sessions
 .superpowers/

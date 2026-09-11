@@ -64,4 +64,16 @@ describe("security headers", () => {
 
     expect(scriptSrc).not.toContain("'unsafe-eval'");
   });
+
+  it("allows the bundled Meshopt WebAssembly decoder under production CSP", () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const csp = buildContentSecurityPolicy();
+    const scriptSrc = getDirective(csp, "script-src");
+
+    expect(scriptSrc.split(" ")).toContain("'wasm-unsafe-eval'");
+    expect(scriptSrc.split(" ")).not.toContain("'unsafe-eval'");
+    expect(getDirective(csp, "connect-src")).toBe("connect-src 'self' blob:");
+    expect(getDirective(csp, "default-src")).toBe("default-src 'self'");
+  });
 });

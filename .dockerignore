@@ -24,3 +24,6 @@ tsconfig.tsbuildinfo
 .eslintrc.json
 vitest.config.ts
 vitest.integration.config.ts
+playwright.config.ts
+3d-source/
+public/.agent-entry-candidates/
