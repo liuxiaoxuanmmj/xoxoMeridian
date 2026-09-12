@@ -5,53 +5,53 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-06 空间画布与媒体资产 |
-| 快照日期 | 2026-09-07 |
+| 快照日期 | 2026-09-12 |
 | 审查 Skill | [`xoxo-qam-06-spatial-media-review`](../../.agents/skills/xoxo-qam-06-spatial-media-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-06、Cross-cutting Concerns、共享映射、BU-01/BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+7（QAM-06-003 resolved；64→71）` |
-| 当前基线命令 | `npm run check`：通过；TypeScript、ESLint、59 个文件/346 项 Vitest、Next.js 生产构建与覆盖率通过；`npm run test:integration`：9 个文件/20 项真实 PostgreSQL 测试通过；`npm run test:e2e`：9 项 Playwright 通过 |
-| 风险匹配命令 | `npm run test:component -- tests/component/home-timeline-board-drag.test.tsx`：2/2 通过，修复前第一项因找不到失败提示而失败；`npm run test:integration -- tests/integration/home-drag-persistence.integration.test.ts`：1/1 通过，两个独立 Node 进程在写入前读取旧坐标，随后均通过实际 Home snapshot 路径收敛到 PostgreSQL 最终坐标 |
-| 证据纪律 | E3 为本轮实际执行的测试或可复现实验；E2 为源码、schema、迁移与测试实现的交叉证据；未把 mock Route 结果写成真实 PostgreSQL、浏览器或多实例验证 |
+| 本轮 Delta | `+9（QAM-06-009 resolved；65→74）` |
+| 当前基线命令 | 开始与状态落盘后的 `./init.sh` 均退出 0，72 个测试文件/472 项通过；`./scripts/run-node22.sh npm run check:quick` 退出 0，TypeScript、ESLint 与同一组 72/472 Vitest 全部通过 |
+| 风险匹配命令 | `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次退出 0：快速门禁 72 文件/472 项、Next.js production build、覆盖率 48.21/42.92/53.41/49.09、20 文件/61 项真实 PostgreSQL、30/30 Playwright；其中 [`home-board-authorization.integration.test.ts`](../../tests/integration/home-board-authorization.integration.test.ts#L88-L260) 1/1 与浏览器跨房间旅程 [`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts#L27-L203) 均通过 |
+| 证据纪律 | E3 为本轮实际执行的 Route/领域行为测试、真实 PostgreSQL 双 Room 回归、真实 HTTP/浏览器载荷与完整门禁；E2 为源码与 Prisma 查询 contract 交叉证据。修复前同一 PostgreSQL 测试明确观察到隐藏 anchor/connection 出现在 snapshot、PATCH/POST/DELETE 返回 200/201/200 且产生持久写入；修复后原场景 404/数据库不变。未把 Prisma mock 参数或源码字符串写成授权结论 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **71 / 100** |
+| Score | **74 / 100** |
 | Score Level | **L2** |
 | Gate Level | **L2** |
 | Final Level | **L2** |
-| Trend | `+7（64→71；较 baseline +14）` |
-| Evidence Confidence | 中等（Home 最终拖动写入已有组件失败注入、串行竞态和真实 PostgreSQL 跨进程 E3；Atlas 首次建板、SSE 生命周期、DB/blob 失败和浏览器媒体旅程仍没有风险匹配 E3） |
+| Trend | `+9（65→74；较 baseline +17）` |
+| Evidence Confidence | 中高（Home snapshot 与写接口的房间授权已有修复前负向对照、真实 PostgreSQL 双 Room 和真实浏览器/HTTP E3；Atlas 首次建板、SSE、DB/blob 与浏览器媒体旅程仍缺风险匹配 E3） |
 | 当前开放问题 | 6 项（P2×6；无开放 P0/P1） |
 
-当前产品入口以 `/home` 中嵌入的空间画布为准，旧 Atlas 页面虽已弃用，其 API 仍按既有安全边界处理。Home 照片拖动结束现在把最终坐标放入按元素串行且只保留最新目标的写队列；非 2xx 或网络失败会显示可访问错误并保留同坐标重试，成功后才清除待保存状态。真实 PostgreSQL 回归还证明两个独立 Home snapshot 进程最终读取到相同持久坐标；首次 Atlas 建板、上传 DB/blob 补偿、multipart 文件信任和 Atlas SSE 生命周期仍缺少可靠失败语义。
+当前产品入口仍以 `/home` 中嵌入的空间画布为准。QAM-06-009 已由单一 Home spatial access predicate 关闭：snapshot 仅返回共享照片、全局 `user_post` anchor 与当前用户可见的 `agent_log` anchor，connection 两端也必须可见；element/connection 写入口在实际数据库条件中复用同一规则。真实 PostgreSQL 和 Playwright 均证明非成员看不到隐藏标识、三个写请求稳定 404 且数据库不变，同时成员、全局 Post anchor 与共享照片仍可操作。首次 Atlas 建板、上传 DB/blob 补偿、multipart 文件信任、Home 其他 mutation 和 Atlas SSE 生命周期仍是六个独立 P2。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
-| 架构与责任边界 | 10 | 14 | Home 是当前空间画布产品入口；同一 `AtlasElement` 仍承载 legacy global Atlas 与 Home Post anchor，但共享的 `ATLAS_GLOBAL_BOARD_ID` 已成为旧 Atlas mutation 的明确边界。URL `roomId` 不参与实际 global board 访问仍按 BU-01 保留。[`atlas-board.ts`](../../lib/atlas-board.ts#L1-L9)、[`HomeTimelineBoard`](../../components/home/HomeTimelineBoard.tsx#L279-L315)（E2/E3） |
+| 架构与责任边界 | 10 | 14 | Home 是当前空间画布产品入口；[`getHomeBoardElementAccessWhere()`](../../lib/home-board.ts#L18-L33) 与 connection 派生谓词把 QAM-05 Post 可见性显式提升为空间读写边界，Home page 与三个 mutation 入口共用，不再各自推断成员资格。legacy Atlas 与 Home board 的固定 ID 边界、BU-01 global Atlas 语义保持不变（E2/E3）。 |
 | 代码结构与复杂度 | 7 | 10 | 入口文件可定位，连接、上传和删除的分支较短；上传/删除在 Atlas 与 Home 重复，异步 SSE、optimistic state 和 drag cache 的责任分散在多个文件（E2）。 |
-| 抽象与复用 | 5 | 8 | `AtlasStorage`、key normalization、Home spatial helper 和 `getOrCreateHomeBoard` 复用有效；Atlas/Home 上传及 DB/blob 补偿没有共享边界，连接重复约束也分别实现（E2）。 |
-| 数据流与状态一致性 | 9 | 12 | Prisma 是持久事实源，跨 board mutation 已隔离；当前 Home 拖动的最终 PATCH 经过串行 latest-target 队列，失败保留待重试坐标，两个独立 snapshot 进程有最终读取同一 DB 坐标的 E3。Atlas 首次创建和上传 DB/blob 补偿仍开放（QAM-06-002/004）。 |
-| 接口与依赖关系 | 8 | 10 | JSON body 有 Zod 校验、Home connection 有 board/type 检查；legacy Atlas element PATCH/DELETE 与 connection DELETE 现同时限定 global board，Home 目标稳定返回 404。multipart 字段未经过 schema，Atlas connection 反向重复仍会落入 500/重复记录（QAM-06-005/006，E2/E3）。 |
-| 健壮性、并发与生命周期 | 7 | 14 | Home 最终拖动写入对非 2xx/网络错误进入显式 failed→retry，并把同一元素的重复拖动严格串行、合并到最新目标，避免旧请求后完成覆盖新坐标（E3）。Atlas 建板、800ms SSE lifecycle 和 DB/blob 部分失败仍没有足够恢复控制（QAM-06-002/004/008，E2）。 |
+| 抽象与复用 | 6 | 8 | `AtlasStorage`、key normalization、Home spatial helper 和 `getOrCreateHomeBoard` 复用有效；本轮新增的 element access predicate 被 snapshot 与多个 Route 共用，connection access 从两端 element contract 派生。Atlas/Home 上传及 DB/blob 补偿仍没有共享边界，连接重复约束也分别实现（E2/E3）。 |
+| 数据流与状态一致性 | 10 | 12 | Prisma 是持久事实源，跨 board mutation 已隔离，Home 最终 PATCH 仍以串行 latest-target 队列收敛；`posts`、`initialSnapshot` 与实际 mutation 现在消费相同 Post/Room 可见性。真实 PostgreSQL 证明非成员的 PATCH/POST/DELETE 不改变 anchor/connection，成员与共享对象行为保持（E3）。Atlas 首次创建和上传 DB/blob 补偿仍开放（QAM-06-002/004，E2）。 |
+| 接口与依赖关系 | 8 | 10 | JSON body 有 Zod 校验；Home snapshot、element Route 与 connection Route 共用 QAM-05 的 Post 可见性 contract，connection 还要求两端同时可见并保留 board/type 约束。multipart 字段未经过 schema，Atlas connection 反向重复仍会落入 500/重复记录（QAM-06-005/006，E2/E3）。 |
+| 健壮性、并发与生命周期 | 8 | 14 | Home 最终拖动写入保持显式 failed→retry 和 per-element 串行；element PATCH/DELETE 以扩展 unique 条件写、connection DELETE 以 `deleteMany` 条件写、connection POST 以条件 nested connect 在实际写语句重检授权，成员变化或资源竞态不会退回裸 ID 写入（E2/E3）。Atlas 建板、800ms SSE lifecycle 和 DB/blob 部分失败仍没有足够恢复控制（QAM-06-002/004/008）。 |
 | 性能与资源使用 | 6 | 8 | board/坐标/z-index 索引和可见元素渲染路径合理；每个 Atlas SSE 连接每 800ms 做完整元素/连接查询，且没有 in-flight guard，慢查询时工作与连接数线性放大（E2）。 |
-| 安全与隐私 | 7 | 10 | 所有主要读取/写入入口要求认证；legacy Atlas mutation 已通过 `boardId` 条件和 `postId: null` 排除 Home/Post anchor。路径遍历、外域清理和私有缓存头有测试；上传仍只信任客户端 MIME（QAM-06-005，E2/E3）。实际 global scope 是否意图跨房间按 BU-01 保留，不据此另行扣分。 |
-| 可测试性与验证可信度 | 7 | 8 | Home drag 组件测试覆盖真实 pointer 结束、503、可访问重试及连续拖动串行；真实 PostgreSQL 测试用两个独立进程执行 Home snapshot 读取验证最终收敛。仍缺 Atlas SSE、建板、DB/blob 和浏览器媒体旅程 E3。 |
+| 安全与隐私 | 7 | 10 | 主要入口均要求认证；Home 的 room-scoped `agent_log` anchor 与关联 connection 现按当前用户 RoomParticipant 事实过滤，未授权读写统一表现为 404，且实际数据库写条件也复核授权。legacy Atlas board/Post-anchor 隔离、storage key 与私有读取缓存仍有效；上传只信任客户端 MIME 仍由 QAM-06-005 追踪（E2/E3）。 |
+| 可测试性与验证可信度 | 7 | 8 | 新回归先在未修复代码上同时收集 snapshot、三个 HTTP 状态和数据库终态，明确复现隐藏 ID、200/201/200 与持久副作用；修复后同一真实 PostgreSQL A/B 场景 1/1、真实浏览器载荷及 HTTP mutation 1/1、完整 integration 20/61 与 Playwright 30/30 通过。Atlas SSE、建板、DB/blob 和浏览器媒体旅程仍缺 E3，因此未给满分。 |
 | 可维护性、演进与技术债 | 5 | 6 | 最终位置的 saving/failed/retry 与按元素队列集中在 `HomeTimelineBoard`，拖动变化保持局部；其他 Home mutation 和 Atlas SSE/资源补偿仍没有统一失败策略（E2/E3）。 |
-| **合计** | **71** | **100** | 算术核对：10+7+5+9+8+7+6+7+7+5 = 71。 |
+| **合计** | **74** | **100** | 算术核对：10+7+6+10+8+8+6+7+7+5 = 74。 |
 
 ## Level Gate
 
 | 门禁 | 结果 | 证据与原因 |
 | --- | --- | --- |
-| 开放 P0 | 通过 | 本轮未确认权限突破、Post 不可恢复删除或支持启动路径整体失效。`AtlasElement.post` 的 FK 方向是 `AtlasElement.postId → Post.id`；`ON DELETE CASCADE` 表示删除 Post 时删除 anchor，不表示删除 anchor 时删除 Post（schema/迁移为 E2）。 |
-| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-06-001 与 QAM-06-003 均已解决并有风险匹配 E3；当前无开放 P1。 |
-| 最高风险不变量有风险匹配行为验证 | 未通过 | Home board scope 与拖动最终持久化已有真实 PostgreSQL E3，但上传 DB/blob 部分失败和 Atlas SSE 生命周期仍缺风险匹配验证。 |
-| L4 要求 | 未通过 | 虽无开放 P0/P1，关键资源部分失败和 SSE 生命周期仍没有完整 E3。 |
+| 开放 P0 | 通过 | 当前无开放 P0；`AtlasElement.post` 的 FK 方向仍为 `AtlasElement.postId → Post.id`，没有把删除 anchor 错写成删除 Post。 |
+| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-06-009 已解决，QAM-06 当前无开放 P1；未授权 snapshot 与三个 mutation 均由真实 PostgreSQL/HTTP 证据关闭。 |
+| 最高风险不变量有风险匹配行为验证 | 未通过 | Home 跨房间授权、跨 board 条件写与最终拖动持久化已有 PostgreSQL/浏览器 E3，但上传 DB/blob 部分失败和 Atlas SSE 生命周期仍缺风险匹配验证，因此 Gate 不高于 L2。 |
+| L4 要求 | 未通过 | 六个 P2 仍包含资源部分失败、输入信任和 SSE 生命周期缺口，且对应风险匹配 E3 不完整。 |
 | **最终判定** | **L2** | Score Level=L2；Gate Level=L2；Final Level=min(L2,L2)=L2。 |
 
 ## Critical Issues
@@ -61,6 +61,17 @@
 当前无开放项。`AtlasElement.post` 的 `onDelete: Cascade` 方向已核正：删除 Post 会删除子级 anchor，删除 anchor 不会删除 Post。
 
 ### P1
+
+当前无开放项。
+
+#### QAM-06-009：Home snapshot 与 mutation 未继承 room-scoped Post anchor 的成员授权
+
+- **状态**：`resolved`（2026-09-12）
+- **问题**：修复前，Home 的 Post 列表已按 Room 成员过滤，但 snapshot 仍返回固定 board 的全部 anchor/connection，element PATCH 和 connection POST/DELETE 也只按 board/type 或裸 connection ID 授权。非成员因此可观察隐藏 `agent_log` 的空间标识，并形成持久跨房间写入。
+- **修复前负向证据**：新增的 [`home-board-authorization.integration.test.ts`](../../tests/integration/home-board-authorization.integration.test.ts#L88-L251) 在旧实现上一次性收集全部结果：A 的 snapshot 实际含 B 的隐藏 anchor 与 connection，PATCH/POST/DELETE 分别返回 200/201/200，隐藏 x 被写为 999、原 connection 被删除，并新增一条未授权 connection；测试按预期失败 0/1（E3）。
+- **已实施修正**：[`getHomeBoardElementAccessWhere()`](../../lib/home-board.ts#L18-L33) 统一表达“固定 Home board + 共享 photo 或当前用户可见 Post”，[`getHomeBoardConnectionAccessWhere()`](../../lib/home-board.ts#L35-L46) 要求两端都满足同一谓词；[`getHomeBoardSnapshot()`](../../lib/home-board.ts#L95-L108) 在数据库查询阶段过滤。Home element PATCH/DELETE 的实际扩展 unique 条件、connection DELETE 的实际 `deleteMany` 和 connection POST 的实际 nested connect 均复用该谓词，竞争窗口内失配映射为 404（E2/E3）。
+- **验收证据**：修复后同一真实 PostgreSQL A/B 回归 1/1：A snapshot 只含共享照片、全局 `user_post` 与 Room A anchor，隐藏 connection 被过滤，三个 mutation 全为 404 且数据库不变；B 仍可 PATCH/POST/DELETE，全局 anchor 与照片仍可 PATCH。Playwright [`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts#L27-L203) 从真实 `/home` 响应验证隐藏 Post/anchor/connection ID 均不在载荷，并通过真实 HTTP 重证三个 404 与数据库终态；完整门禁为 20 文件/61 项 PostgreSQL、30/30 Playwright（E3）。
+- **影响范围**：QAM-06 直接负责 Home snapshot 与空间 mutation 授权；QAM-05 提供 Post 可见性 contract，QAM-02 提供 RoomParticipant 事实，不重复登记内容读取缺陷。
 
 #### QAM-06-001：Atlas mutation 缺少 board scope，可破坏 Home anchor 的位置与连接
 
@@ -145,7 +156,11 @@
   │    ├─ drag POST ──> 当前 Web 进程 Map ──> Atlas SSE 快照覆盖坐标
   │    └─ PATCH/DELETE ──> AtlasElement / AtlasConnection
   └─ /home
-       ├─ Post ──> ensureHomePostElements ──> home-board AtlasElement(postId)
+       ├─ getPostVisibilityWhere(userId) ──> 当前用户可见 Post
+       ├─ 可见 Post ──> ensureHomePostElements ──> home-board AtlasElement(postId)
+       ├─ Home spatial access predicate
+       │      ├─ snapshot ──> 共享 photo + 可见 Post anchor + 两端可见 connection
+       │      └─ element/connection actual write ──> 同一 board/Post/Room 条件 ──> 失配 404
        └─ HomeTimelineBoard drag latest-target queue
             ├─ 2xx ──> PostgreSQL 最终坐标 ──> 独立 Home snapshot 读取收敛
             └─ 非 2xx/网络失败 ──> failed 状态 ──> 用户显式重试
@@ -154,25 +169,28 @@ Atlas/Home photo upload：File/FormData ──> storage.save(blob) ──> Atlas
 图片读取：认证 ──> /api/atlas/uploads/:filename ──> key normalize ──> local/OSS read
 ```
 
-Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。当前产品入口 `/home` 不消费 legacy Atlas drag Map/SSE；Home 的乐观位置只负责即时显示，最终位置必须经过串行 PATCH 的 2xx 确认，否则保留失败与重试状态。两个独立进程已通过实际 Home snapshot 读取证明成功写入后以 PostgreSQL 坐标收敛。`AtlasElement.postId` 把 Home 空间锚点与 Post 生命周期相连，legacy Atlas element/connection 写入口仍在实际条件写中限定 global board。固定 global board 的 URL room scope 不一致按 BU-01 保留；Atlas stream 的 abort/interval 独立生命周期问题仍由 QAM-06-008 追踪。
+Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。当前产品入口 `/home` 不消费 legacy Atlas drag Map/SSE；Home 的乐观位置只负责即时显示，最终位置必须经过串行 PATCH 的 2xx 确认，否则保留失败与重试状态。两个独立进程已通过实际 Home snapshot 读取证明成功写入后以 PostgreSQL 坐标收敛。`AtlasElement.postId` 把 Home 空间锚点与 QAM-05 Post 生命周期和可见性相连；空间 snapshot 与 mutation 现通过单一谓词消费相同成员条件，connection 由两端可见性派生。legacy Atlas element/connection 写入口仍在实际条件写中限定 global board；其 URL room scope 不一致按 BU-01 保留，Atlas stream 的 abort/interval 问题继续由 QAM-06-008 追踪。
 
-剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；Home 的缩放、标题和删除 mutation 被静默拒绝；Atlas SSE 慢查询/关闭竞态。Home 最终拖动 PATCH 失败与乱序覆盖已由队列、失败状态和重试关闭。旧 Atlas mutation 误命中 Home anchor/connection 的路径已由条件写关闭。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束，但资源读取只做认证检查符合当前“受认证读取”实现，未推断额外用户所有权模型。
+剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；multipart 内容信任不足；Home 的缩放、标题和删除 mutation 被静默拒绝；Atlas connection 冲突与 SSE 慢查询/关闭竞态。Home 最终拖动 PATCH 失败与乱序覆盖已由队列、失败状态和重试关闭，旧 Atlas mutation 跨 board 路径与 Home anchor 跨房间路径也已由条件写关闭。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束；普通 global Atlas/共享照片读取只做认证仍符合当前 global 实现，room-scoped `agent_log` anchor 则由 RoomParticipant 事实授权。
 
 ## Verified Strengths
 
 - Home board 使用固定 ID 的 `upsert`，`ensureHomePostElements` 依靠 `postId @unique` 与 `skipDuplicates` 避免同一 Post anchor 重复；相关 helper 测试通过（E3）。
+- Home spatial access predicate 复用 `getPostVisibilityWhere()`，同时约束 snapshot、element 条件写与 connection 两端；真实 PostgreSQL 和浏览器证明非成员看不到隐藏标识、无法写入，成员、全局 `user_post` 与共享照片行为保持（E3）。
 - Home 拖动最终写入按元素串行并合并最新目标；非 2xx/网络失败保留可访问错误与重试，连续拖动不会并发写回旧坐标。组件失败注入和 deferred 竞态 2/2 通过（E3）。
 - Home Route 写入后，两个在变更前启动的独立 Node 进程分别执行 `getHomeBoardSnapshot()`，均最终读取 PostgreSQL 的目标坐标；这验证了当前产品路径不依赖进程内 cache 收敛（E3）。
+- Post 列表/首页内容与 Home spatial 查询现在复用 `getPostVisibilityWhere()`，QAM-05 内容可见性与 QAM-06 派生空间资源之间只有一个成员规则，不把同一已解决根因重复计为缺陷（E2/E3）。
 - legacy Atlas element PATCH/DELETE 和 connection DELETE 的实际数据库条件均绑定 `atlas-global-board`；Post anchor 还通过 `postId: null` 明确排除。真实 PostgreSQL Route Handler 回归证明 Home 的 Post、完整布局和 connection 不受影响，global board 正常写入保持可用（E3）。
 - Home connection POST 验证两端均属 Home board、拒绝自连接和 Post-to-Post，并检查正反方向重复；连接外键 cascade 可清理删除元素后的关系（E2/E3 mock）。
 - storage adapter 通过随机 UUID + 清理后的 basename 生成 key，统一拒绝 prefix 外、`..`、反斜杠和本地 root 外路径；本地 save/read/delete 与路径遍历测试通过（E3）。
 - 图片读取要求当前认证会话，使用 `Cache-Control: private`、`Vary: Cookie` 和 immutable 响应，存储缺失/非法 key 映射 404；本轮定向 Route 测试通过（E3）。
 - Atlas element/connection 创建的两端 board 检查、JSON 输入的有限数/长度约束、Home 照片尺寸 clamp 及 canvas 原生 wheel listener 清理均有清楚落点（E2）。
-- 定向验证共覆盖 storage/drag/Home helper 25 项、Atlas/Home storage Route 14 项、Atlas canvas/Home search 组件 3 项，均通过；这证明正常 helper 与局部 UI 行为可测试，但不替代下述真实数据库/多实例验证。
+- 本轮定向 Route/helper 2 文件/10 项、相关 PostgreSQL 4 文件/5 项与定向浏览器 2/2（含 setup）均通过；完整门禁进一步通过 72/472 Vitest、20/61 PostgreSQL 和 30/30 Playwright。QAM-06-005 的 MIME 伪造历史 E3 保持，Atlas SSE、DB/blob 与媒体旅程仍需各自风险匹配验证。
 
 ## Recommended Improvements
 
-1. 治理 **QAM-06-002/004/005/006/007/008（P2）**：按成本优先补 fixed-ID 建板幂等、DB/blob 补偿、文件内容校验、稳定连接冲突响应、Home 非拖动 mutation 回滚/重试和 Atlas SSE 串行/关闭保护；QAM-02-006 仅作为 Room stream 的关联复审入口。
+1. 治理 **QAM-06-002/004/005（P2）**：按风险收益补 fixed-ID 建板幂等、DB/blob 补偿与文件内容/表单字段校验。
+2. 治理 **QAM-06-006/007/008（P2）**：补稳定的无向连接冲突响应、Home 非拖动 mutation 回滚/重试及 Atlas SSE 串行/关闭保护；QAM-02-006 仅作为 Room stream 的关联复审入口。
 
 以上均保持现有 global Atlas、Home board、元素类型、连线类型和存储供应商边界，不新增画布或协作功能。
 
@@ -193,6 +211,7 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 
 | ID | Priority | 状态 | 解决证据 | 直接责任 | 关联责任 |
 | --- | --- | --- | --- | --- | --- |
+| QAM-06-009 | P1 | `resolved` | 单一 Home spatial access predicate 约束 snapshot 与实际 element/connection 写；真实 PostgreSQL 负向对照复现 200/201/200 与持久副作用，修复后双 Room 1/1、真实载荷/HTTP 旅程通过，非成员统一 404 且数据库不变（E3） | QAM-06 Home snapshot/access | QAM-05 Post visibility；QAM-02 RoomParticipant |
 | QAM-06-001 | P1 | `resolved` | Atlas element PATCH/DELETE 与 connection DELETE 使用 board-scoped 条件写；真实 PostgreSQL Route Handler 回归证明 Home anchor/布局/连接/Post 保留，global mutation 正常（E3） | QAM-06 Atlas mutation boundary | QAM-05 Post 生命周期 |
 | QAM-06-003 | P1 | `resolved` | Home 最终拖动 PATCH 按元素串行、只保留最新目标；503/网络失败显示可访问错误并可重试，两个独立 Home snapshot 进程最终读取相同 PostgreSQL 坐标（E3） | QAM-06 drag/persistence protocol | QAM-09 多实例拓扑 |
 
@@ -201,6 +220,7 @@ Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追�
 ### 复审触发条件
 
 - 修改 Atlas/Home board Route、`AtlasElement`/`AtlasConnection` schema 或迁移、global/home board service、Post/anchor 生命周期或上传/读取 key contract。
+- 修改 `getPostVisibilityWhere()`、`agent_log.roomId`/RoomParticipant 语义、Home spatial predicate、initial snapshot 或 Home element/connection Route 时，必须复跑 QAM-06-009 的双 Room 可见性与 mutation 授权回归；只证明 `props.posts` 已过滤不能维持 resolved 结论。
 - 修改 Atlas SSE、optimistic reconciliation、drag cache、Home mutation 状态、storage adapter 或 Web 多实例部署方式。
 - 完成 QAM-06-002 的并发建板或 QAM-06-004 的 DB/blob 故障验证；若修改 Home 拖动队列/元素 PATCH，复跑 QAM-06-003 的失败、串行与跨进程收敛回归；若修改 legacy Atlas mutation 条件，复跑 QAM-06-001 的真实 PostgreSQL 跨 board 回归。
 - 修改或修复 QAM-06-008 后，重新执行 Atlas stream 的 abort、慢查询重入、乱序和 controller close 验收；QAM-02-006 的 Room SSE 测试不能代替 Atlas 验证。
@@ -214,5 +234,7 @@ Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追�
 | 2026-09-06 | 57 | L0 | L1 | L0 | `0（SSE 归属复核）` | 对比 Room stream 与 Atlas stream：两者为不同 Route/实现；Atlas 的初始 abort、await 后 closed 检查、raw enqueue 和 800ms async interval 独立登记为 QAM-06-008 P2；分数与 Gate 不变。 |
 | 2026-09-07 | 64 | L1 | L2 | L1 | `+7（QAM-06-001 resolved）` | legacy Atlas element PATCH/DELETE 与 connection DELETE 以条件写限定 `atlas-global-board`，并排除 Post anchor；真实 PostgreSQL Route Handler 测试修复前复现 Home PATCH 返回 200，修复后 2/2 证明 Home anchor/完整布局/connection/Post 保留且 global mutation 正常。`npm run check:full` 通过：58 文件/344 项 Vitest、生产构建、覆盖率、8 文件/19 项 PostgreSQL、9 项 Playwright。 |
 | 2026-09-07 | 71 | L2 | L2 | L2 | `+7（QAM-06-003 resolved）` | 当前产品 `/home` 的最终拖动写入改为 per-element latest-target 串行队列；组件回归修复前因无失败提示而失败，修复后 2/2 覆盖 503→重试与 deferred 连续拖动最大并行数 1。真实 PostgreSQL 1/1 证明两个独立 Home snapshot 进程从旧坐标最终收敛到 `(420,315)`。`npm run check`、9 文件/20 项集成测试和 9 项 Playwright 分别通过。 |
+| 2026-09-12 | 65 | L1 | L1 | L1 | `-6（新增 QAM-06-009）` | 2026-09-08 建立的 Post 房间可见性只约束 `posts` 查询；复审确认 Home snapshot 仍序列化全部 board anchor/connection，Home element/connection mutation 也未复核关联 Post 成员资格，形成跨房间空间资源写入（E2）。根会话 `./init.sh` 通过 72 文件/472 项；本轮定向 Node 7 文件/40 项、组件 3 文件/5 项通过，MIME 伪造仍可复现；未运行 Docker/PostgreSQL/Playwright/`check:full`。 |
+| 2026-09-12 | 74 | L2 | L2 | L2 | `+9（QAM-06-009 resolved）` | 单一 Home spatial predicate 复用 Post/Room 可见性并约束 snapshot、connection 两端和实际 element/connection 写。未修复 PostgreSQL 负向对照 0/1：隐藏 ID 可见，PATCH/POST/DELETE 为 200/201/200，坐标与连接发生持久变化；修复后同场景 1/1、真实浏览器载荷/HTTP 旅程通过。`npm run check:full` 单次退出 0：72/472 Vitest、production build/coverage、20/61 PostgreSQL、30/30 Playwright。 |
 
 复审时保留上述稳定 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate 与 Final。

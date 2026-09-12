@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { callLLM } from "@/lib/llm";
 import { deduplicatedMemoryWrite } from "@/agent/memory-dedup";
+import {
+  SHARED_MEMORY_OWNER_KEY,
+  SYSTEM_MEMORY_OWNER_KEY,
+  sharedMemoryIdentity
+} from "@/agent/memory-identity";
 
 const EXTRACTION_MESSAGE_CADENCE = 10;
 const MAX_CONSECUTIVE_EMPTY = 3;
@@ -24,7 +29,13 @@ type ExtractionAction = {
 
 export async function checkAndExtractMemories(roomId: string): Promise<void> {
   const stateRow = await prisma.memory.findUnique({
-    where: { roomId_key: { roomId, key: STATE_KEY } }
+    where: {
+      roomId_ownerKey_key: {
+        roomId,
+        ownerKey: SYSTEM_MEMORY_OWNER_KEY,
+        key: STATE_KEY
+      }
+    }
   });
 
   let state: ExtractionState = stateRow
@@ -55,7 +66,7 @@ export async function checkAndExtractMemories(roomId: string): Promise<void> {
   });
 
   const existingMemories = await prisma.memory.findMany({
-    where: { roomId, NOT: { key: { startsWith: "_system." } } },
+    where: { roomId, ownerKey: SHARED_MEMORY_OWNER_KEY },
     select: { key: true, value: true }
   });
 
@@ -114,14 +125,19 @@ export async function checkAndExtractMemories(roomId: string): Promise<void> {
       await deduplicatedMemoryWrite(
         prisma,
         roomId,
-        action.key,
+        sharedMemoryIdentity(action.key),
         action.value,
-        "auto-extraction",
-        null
+        "auto-extraction"
       );
       written++;
     } else if (action.action === "delete") {
-      await prisma.memory.deleteMany({ where: { roomId, key: action.key } });
+      await prisma.memory.deleteMany({
+        where: {
+          roomId,
+          ownerKey: SHARED_MEMORY_OWNER_KEY,
+          key: action.key
+        }
+      });
       written++;
     }
   }
@@ -132,8 +148,20 @@ export async function checkAndExtractMemories(roomId: string): Promise<void> {
   };
 
   await prisma.memory.upsert({
-    where: { roomId_key: { roomId, key: STATE_KEY } },
+    where: {
+      roomId_ownerKey_key: {
+        roomId,
+        ownerKey: SYSTEM_MEMORY_OWNER_KEY,
+        key: STATE_KEY
+      }
+    },
     update: { value: JSON.stringify(newState), source: "system" },
-    create: { roomId, key: STATE_KEY, value: JSON.stringify(newState), source: "system" }
+    create: {
+      roomId,
+      ownerKey: SYSTEM_MEMORY_OWNER_KEY,
+      key: STATE_KEY,
+      value: JSON.stringify(newState),
+      source: "system"
+    }
   });
 }

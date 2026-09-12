@@ -2,9 +2,9 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 
 import { Prisma, PrismaClient } from "@prisma/client";
-import { expect, test } from "@playwright/test";
+import { expect, request as playwrightRequest, test } from "@playwright/test";
 
-import { E2E_USERS } from "./support/credentials";
+import { E2E_PASSWORD, E2E_USERS } from "./support/credentials";
 
 test("renders the authenticated home navigation", async ({ page }) => {
   await page.goto("/home");
@@ -24,6 +24,184 @@ test("renders the authenticated home navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: E2E_USERS[0].displayName })).toBeVisible();
 });
 
+test("keeps room-scoped Home anchors out of non-member payloads and mutations", async ({
+  baseURL,
+  page,
+}) => {
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required for Home board authorization");
+  }
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const e2ePrisma = new PrismaClient({
+    datasources: { db: { url: databaseUrl } },
+  });
+  const suffix = Date.now().toString(36);
+  const privateRoomId = `e2e-home-private-room-${suffix}`;
+  const hiddenPostId = `e2e-home-hidden-post-${suffix}`;
+  const globalPostId = `e2e-home-global-post-${suffix}`;
+  const hiddenAnchorId = `e2e-home-hidden-anchor-${suffix}`;
+  const globalAnchorId = `e2e-home-global-anchor-${suffix}`;
+  const photoOneId = `e2e-home-photo-one-${suffix}`;
+  const photoTwoId = `e2e-home-photo-two-${suffix}`;
+  const hiddenConnectionId = `e2e-home-hidden-connection-${suffix}`;
+  const visibleConnectionId = `e2e-home-visible-connection-${suffix}`;
+
+  try {
+    const users = await e2ePrisma.user.findMany({
+      where: { email: { in: E2E_USERS.map((user) => user.email) } },
+      select: { id: true, email: true },
+    });
+    const userByEmail = new Map(users.map((user) => [user.email, user]));
+    const currentUser = userByEmail.get(E2E_USERS[0].email);
+    const otherUser = userByEmail.get(E2E_USERS[1].email);
+    expect(currentUser).toBeDefined();
+    expect(otherUser).toBeDefined();
+    if (!currentUser || !otherUser) return;
+
+    await e2ePrisma.room.create({
+      data: {
+        id: privateRoomId,
+        slug: `e2e-home-private-${suffix}`,
+        name: "E2E private Home room",
+        participants: { create: { userId: otherUser.id } },
+      },
+    });
+    await e2ePrisma.atlasBoard.upsert({
+      where: { id: "home-board" },
+      update: {},
+      create: { id: "home-board" },
+    });
+    await e2ePrisma.post.createMany({
+      data: [
+        {
+          id: hiddenPostId,
+          slug: `e2e-home-hidden-${suffix}`,
+          title: "Hidden room agent log",
+          content: "This content and its spatial anchor are room scoped.",
+          type: "agent_log",
+          roomId: privateRoomId,
+          publishedAt: new Date(),
+        },
+        {
+          id: globalPostId,
+          slug: `e2e-home-global-${suffix}`,
+          title: "Visible global user post",
+          content: "User posts remain globally visible.",
+          type: "user_post",
+          authorId: otherUser.id,
+          roomId: privateRoomId,
+          publishedAt: new Date(),
+        },
+      ],
+    });
+    await e2ePrisma.atlasElement.createMany({
+      data: [
+        {
+          id: hiddenAnchorId,
+          boardId: "home-board",
+          type: "note",
+          postId: hiddenPostId,
+          x: 10,
+          y: 20,
+        },
+        {
+          id: globalAnchorId,
+          boardId: "home-board",
+          type: "note",
+          postId: globalPostId,
+          x: 30,
+          y: 40,
+        },
+        {
+          id: photoOneId,
+          boardId: "home-board",
+          type: "photo",
+          imageUrl: "/api/atlas/uploads/atlas%2Fe2e-home-one.jpg",
+          x: 50,
+          y: 60,
+          createdById: otherUser.id,
+        },
+        {
+          id: photoTwoId,
+          boardId: "home-board",
+          type: "photo",
+          imageUrl: "/api/atlas/uploads/atlas%2Fe2e-home-two.jpg",
+          x: 70,
+          y: 80,
+          createdById: otherUser.id,
+        },
+      ],
+    });
+    await e2ePrisma.atlasConnection.createMany({
+      data: [
+        {
+          id: hiddenConnectionId,
+          boardId: "home-board",
+          fromId: hiddenAnchorId,
+          toId: photoOneId,
+        },
+        {
+          id: visibleConnectionId,
+          boardId: "home-board",
+          fromId: globalAnchorId,
+          toId: photoOneId,
+        },
+      ],
+    });
+
+    const homeResponse = await page.goto("/home");
+    expect(homeResponse?.ok()).toBe(true);
+    const homePayload = await homeResponse?.text();
+    expect(homePayload).toContain(globalAnchorId);
+    expect(homePayload).toContain(photoOneId);
+    expect(homePayload).toContain(visibleConnectionId);
+    expect(homePayload).not.toContain(hiddenPostId);
+    expect(homePayload).not.toContain(hiddenAnchorId);
+    expect(homePayload).not.toContain(hiddenConnectionId);
+
+    const requestHeaders = { origin: baseURL };
+    const patchResponse = await page.request.patch(
+      `/api/home-board/elements/${hiddenAnchorId}`,
+      { headers: requestHeaders, data: { x: 999 } },
+    );
+    const createResponse = await page.request.post("/api/home-board/connections", {
+      headers: requestHeaders,
+      data: { fromId: hiddenAnchorId, toId: photoTwoId },
+    });
+    const deleteResponse = await page.request.delete(
+      `/api/home-board/connections?id=${hiddenConnectionId}`,
+      { headers: requestHeaders },
+    );
+
+    expect(patchResponse.status()).toBe(404);
+    expect(createResponse.status()).toBe(404);
+    expect(deleteResponse.status()).toBe(404);
+    await expect(e2ePrisma.atlasElement.findUniqueOrThrow({
+      where: { id: hiddenAnchorId },
+    })).resolves.toMatchObject({ x: 10, y: 20 });
+    await expect(e2ePrisma.atlasConnection.findUnique({
+      where: { id: hiddenConnectionId },
+    })).resolves.not.toBeNull();
+    await expect(e2ePrisma.atlasConnection.count({
+      where: {
+        boardId: "home-board",
+        fromId: hiddenAnchorId,
+        toId: photoTwoId,
+      },
+    })).resolves.toBe(0);
+  } finally {
+    await e2ePrisma.post.deleteMany({
+      where: { id: { in: [hiddenPostId, globalPostId] } },
+    });
+    await e2ePrisma.atlasElement.deleteMany({
+      where: { id: { in: [photoOneId, photoTwoId] } },
+    });
+    await e2ePrisma.room.deleteMany({ where: { id: privateRoomId } });
+    await e2ePrisma.$disconnect();
+  }
+});
+
 test("reuses the brand mark in the chat navigation", async ({ page }) => {
   await page.goto("/chat");
 
@@ -37,6 +215,97 @@ test("reuses the brand mark in the chat navigation", async ({ page }) => {
     "background-color",
     "rgb(125, 168, 120)",
   );
+});
+
+test("resolves life panel identity for the second room participant", async ({
+  baseURL,
+  browser,
+}) => {
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required for the second participant journey");
+  }
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const e2ePrisma = new PrismaClient({
+    datasources: { db: { url: databaseUrl } },
+  });
+  const authContext = await playwrightRequest.newContext({
+    baseURL,
+    extraHTTPHeaders: { origin: baseURL },
+    storageState: { cookies: [], origins: [] },
+  });
+  const loginResponse = await authContext.post("/api/auth/login", {
+    data: {
+      email: E2E_USERS[1].email,
+      password: E2E_PASSWORD,
+    },
+  });
+  expect(loginResponse.status()).toBe(200);
+  const context = await browser.newContext({
+    baseURL,
+    storageState: await authContext.storageState(),
+  });
+  await authContext.dispose();
+
+  try {
+    const users = await e2ePrisma.user.findMany({
+      where: { email: { in: E2E_USERS.map((user) => user.email) } },
+      select: { id: true, email: true },
+    });
+    const userByEmail = new Map(users.map((user) => [user.email, user]));
+    const firstUser = userByEmail.get(E2E_USERS[0].email);
+    const secondUser = userByEmail.get(E2E_USERS[1].email);
+    expect(firstUser).toBeDefined();
+    expect(secondUser).toBeDefined();
+    if (!firstUser || !secondUser) return;
+
+    const participant = await e2ePrisma.roomParticipant.findFirstOrThrow({
+      where: { userId: secondUser.id },
+      select: { roomId: true },
+    });
+    await Promise.all([
+      e2ePrisma.userProfile.update({
+        where: { userId: firstUser.id },
+        data: { city: "Tokyo", timezone: "Asia/Tokyo" },
+      }),
+      e2ePrisma.userProfile.update({
+        where: { userId: secondUser.id },
+        data: { city: "London", timezone: "Europe/London" },
+      }),
+    ]);
+
+    const page = await context.newPage();
+    const weatherResponsePromise = page.waitForResponse((response) =>
+      new URL(response.url()).pathname === `/api/rooms/${participant.roomId}/weather`
+    );
+    await page.goto(`/chat/${participant.roomId}`);
+
+    const weatherResponse = await weatherResponsePromise;
+    const weatherPayload = await weatherResponse.json() as {
+      results: Array<{ subject: string; displayName: string; city: string }>;
+    };
+    expect(weatherPayload.results[0]).toMatchObject({
+      subject: "partner",
+      displayName: E2E_USERS[0].displayName,
+      city: "Tokyo",
+    });
+
+    const timeSection = page.getByRole("heading", { name: "两地时间" }).locator("..");
+    const timeTexts = await timeSection.locator("p").allTextContents();
+    expect(timeTexts.indexOf(E2E_USERS[1].displayName)).toBeLessThan(
+      timeTexts.indexOf(E2E_USERS[0].displayName)
+    );
+
+    await page.getByTitle("新建任务").click();
+    await expect(page.getByRole("combobox")).toHaveValue("Europe/London");
+  } finally {
+    await e2ePrisma.userProfile.updateMany({
+      where: { user: { email: { in: E2E_USERS.map((user) => user.email) } } },
+      data: { city: "—", timezone: "Asia/Shanghai" },
+    });
+    await context.close();
+    await e2ePrisma.$disconnect();
+  }
 });
 
 test("keeps private profile fields out of Chat and Study browser payloads", async ({ page }) => {

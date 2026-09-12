@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "updatedAt": "2026-09-11",
+  "updatedAt": "2026-09-12",
   "features": [
     {
       "id": "feat-001",
@@ -669,6 +669,121 @@
         "组件测试和 Playwright 覆盖品牌链接/文字、新图标与浏览器 icon 的可观察行为，npm run check、最终 init.sh、状态记录与工作树检查通过"
       ],
       "evidence": "2026-09-11 完成：将用户提供的两份 SVG 收纳到 public/brand/，统一使用等比方形 viewBox=181 170 925 925，保留两条 path 的几何与 #0e1418 品牌色；logo_white.svg 保留白色 rect，logo_transparent.svg 保持透明，静态检查确认无脚本、外链、事件处理器且两份几何路径一致。BrandBadge 以 24×24 next/image 替换叶子 emoji，仍位于原动态 accentClass 的 32×32 绿色圆角底块内，并保留 XOXO / Meridian、默认/自定义链接和由可见文字提供的可访问名称；AuthPanel、SiteNav、ChatApp 三处共用点同步生效。根 Metadata.icons 以 image/svg+xml、sizes=any 指向白底 SVG。新增组件行为回归修复前 0/1（链接名仍为“🌿 XOXO Meridian”、无 img），修复后 1/1；定向真实 Playwright 4/4（含 setup）覆盖登录页、Home、Chat、rel=icon、资源 200/MIME、16/32px 解码及 320/1280px 布局。截图级目视确认小尺寸清晰、站内 24px 标志在原绿色底块上对比明确且两个视口无偏移。npm run check exit 0：70 文件/457 项 Vitest、Next.js 16.3.3 production build和覆盖率门槛通过（46.47/41.73/51.75/47.32）；开始基线 ./init.sh 为 69/456，最终 ./init.sh 为 70/457，均 exit 0。About/Study 内容型叶子与 Apple/PWA/OG 范围未改，测试/截图工件已清理，logo.png 作为用户提供的未跟踪参考图保留。"
+    },
+    {
+      "id": "feat-044",
+      "name": "修复 QAM-03-003 参与者身份顺序依赖",
+      "description": "让 LifePanel、计划默认时区及 Agent 天气/时区工具按显式当前用户 ID 解析本人和伙伴，不再把参与者数组位置当作身份协议。",
+      "status": "done",
+      "dependencies": [
+        "feat-043"
+      ],
+      "acceptanceCriteria": [
+        "LifePanel 与 ScheduledJobModal 接收显式当前用户 ID，并在当前用户位于参与者数组第二位时仍正确呈现本人/伙伴与选择本人的默认时区",
+        "Agent weather.get 与 timezone.compare 使用 requestedById 解析本人和伙伴；显式 city/timezone 输入仍优先，缺失身份或档案时保持稳定回退语义",
+        "组件与 Agent 行为回归覆盖第二位参与者，并证明 Weather Route 与 Agent Tool 对同一双人资料的 self/partner 对象解析一致",
+        "不修改参与者排序、Room snapshot transport、QAM-04 调度触发或新增生活功能；风险匹配门禁、QAM-03 复审与会话记录完整"
+      ],
+      "evidence": "2026-09-12 完成：新增 lib/participant-resolution.ts，以显式 currentUserId/requestedById 查找 self 与另一参与者；缺失或不匹配时返回空 pair，不回退到数组位置。ChatApp 将 currentUser.id 传入 LifePanel 与 ScheduledJobModal，时间顺序、伙伴天气请求及计划默认时区按 ID 解析；weather.get、timezone.compare 与 schedule 工具复用同一 helper，显式 city/timezone/label 保持优先，中性 fallback 稳定。未修复负向对照：组件 2/5 失败（第二参与者仍显示 Alice/Bob、默认 Asia/Shanghai），Agent 2/6 失败（伙伴天气误取 London、时区比较误把 Alice/Shanghai 当本人）；修复后组件 7/7、Agent/Server 4 文件/35 项通过，Weather Route 与 Tool 对第二参与者均解析伙伴 Alice/Shanghai。新增真实 Chromium 第二参与者旅程，验证伙伴天气 Tokyo、本人时间在伙伴之前、计划默认 Europe/London；API 登录 request context 显式空 storageState，防止单活 Session 污染后续 authenticated 用例。独立 node_modules、无 .next 的隔离副本中，sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 exit 0：TypeScript、ESLint、72 文件/466 项 Vitest、Next.js 16.3.3 production build、覆盖率 48.18/42.99/53.42/49.10、19 文件/57 项真实 PostgreSQL 与 29/29 Playwright；清理后根仓库最终 ./init.sh exit 0、72/466。QAM-03-003 resolved，QAM-03 更新为 92 分、Score/Gate/Final L4；未改参与者排序、RoomSnapshot transport、schema/migration 或 QAM-04 触发。"
+    },
+    {
+      "id": "feat-045",
+      "name": "修复 QAM-04-001 near-term timer 旧快照提前触发",
+      "description": "让 near-term timer 与 polling 在共享 claim 边界复核持久化 Job 的当前启用状态、期望 nextRunAt 和 wall-clock due 条件，避免改期、停用或时钟回拨后提前派生任务。",
+      "status": "done",
+      "dependencies": [
+        "feat-044"
+      ],
+      "acceptanceCriteria": [
+        "near-term timer 携带期望 nextRunAt，回调重新读取后仅在 Job 仍启用、版本未变且当前 wall clock 已到期时进入原子 claim；polling 与 timer 共用同一 due/旧版本语义",
+        "行为回归覆盖 timer 注册后的改期、停用、重新启用与 wall-clock backward，提前时刻不创建 AgentTask，新的到期时刻至多派生一次",
+        "真实 PostgreSQL 回归证明旧 timer/旧 nextRunAt claim 不会覆盖改期后的持久化状态，并补足多 Worker 竞争下一个到期 Job 只生成一个 Task 与 fired EventLog 的证据",
+        "不处理 QAM-04-002 run-once missed-window、QAM-04-003 shutdown 或新增调度能力；风险匹配完整门禁、QAM-04 复审及会话记录完成"
+      ],
+      "evidence": "2026-09-12 完成：agent/scheduler-tick.ts 将 activeJobTimers 从裸 Timeout 升级为 jobId + expectedNextRunAtMs 版本化条目；重复 tick 会清除并替换已改期 timer，callback 重新读取 Job 并要求 enabled 且 nextRunAt 与期望一致，timer/polling 最终共用 claimAndDispatchScheduledJob 的 wall-clock due 早期检查与 transaction 内 enabled + nextRunAt equals/lte now + lastRunAt + failCount CAS。修复前定向 Node 负向对照为 1 文件/15 项中 3 failed：改期、停用后按新时间重启用和 clock backward 均在旧时刻错误创建 Task；修复后 Scheduler 16/16，并覆盖改早时主动替换 timer。真实 PostgreSQL 定向 3/3：旧 timer 不创建 Task/Event 且不覆盖新 Job，两个并发 tick 只创建一个 Task 与 fired Event，Event 插入故障仍完整回滚。正常权限快速门禁 72 文件/470 项通过；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 exit 0：TypeScript、ESLint、72 文件/470 项 Vitest、Next.js 16.3.3 production build、覆盖率 48.22/43.18/53.42/49.15、19 文件/59 项 PostgreSQL、29/29 Playwright（5.5 分钟）；清理后最终 ./init.sh exit 0、72/470。QAM-04-001 resolved，QAM-04 更新为 84 分、Score L3、Gate/Final L2；QAM-04-002/003 保持独立开放。"
+    },
+    {
+      "id": "feat-046",
+      "name": "修复 QAM-04-002 一次性任务 missed-window 重放",
+      "description": "让超过 missed window 的 run-once ScheduledJob 进入禁用终态且不创建 AgentTask，避免在下一 cron 周期重放。",
+      "status": "done",
+      "dependencies": [
+        "feat-045"
+      ],
+      "acceptanceCriteria": [
+        "超过一小时 missed window 的 runOnce Job 在共享 claim 事务内禁用且不创建 AgentTask 或 fired Event，周期 Job 继续按现有策略推进 nextRunAt",
+        "fake-clock 行为回归证明窗口外一次性 Job 只进入一次禁用终态，推进到下一 cron 周期也不会重放；窗口内一次性成功与失败重试语义保持不变",
+        "真实 PostgreSQL 回归覆盖 fireAt 合成 cron 的窗口外 Job，证明 Job 禁用、Task/Event 为零且后续 tick 不产生副作用",
+        "不处理 QAM-04-003 shutdown、不新增补发策略或修改 QAM-03 authoring 契约；风险匹配完整门禁、QAM-04 复审和会话状态记录完整"
+      ],
+      "evidence": "2026-09-12 完成：agent/scheduler-tick.ts 在既有共享 transaction claim 中将 runOnce Job 统一写为 enabled=false；超过一小时 missed window 时 claim 后直接返回 skipped，不创建 AgentTask 或 fired Event，周期 Job 仍 enabled 并按 computeNextRun 推进。窗口内派生失败会回滚 claim，既有 failCount/retry 语义保持。修复前新增 fake-clock 回归为 1 文件/17 项中 1 failed，真实 PostgreSQL 定向为 1 文件/4 项中 1 failed，均观察到下一合成 cron 周期错误 fired:1；修复后 Scheduler Node 18/18，PostgreSQL 4/4 使用 resolveOneShotSchedule 合成 fireAt 日 cron，证明窗口外 Job disabled、Task/Event 为零且下一日无副作用，并覆盖周期 Job missed-window 推进。初始 ./init.sh exit 0、72 文件/470 项；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 exit 0：TypeScript、ESLint、72 文件/472 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.27% / branches 43.21% / functions 53.42% / lines 49.15%、19 文件/60 项真实 PostgreSQL 与 29/29 Playwright（4.8 分钟）。QAM-04-002 resolved，QAM-04 更新为 87 分、Score/Gate/Final L3；组合均分 81.9，开放 P1 清零、P2×31。未修改 QAM-03 authoring/schema/migration、QAM-04-003 shutdown 或补发策略；coverage/Playwright/test-results 已移入回收站，最终 ./init.sh exit 0、72/472，harness validator 100/100，git diff 检查通过。"
+    },
+    {
+      "id": "feat-047",
+      "name": "全量复审 QAM-01～QAM-10 并建立 3D Agent Entry 模块治理",
+      "description": "为每个现有 QAM 派发一个独立子 Agent 并调用对应审查 Skill，按当前源码与证据更新九份持续质量报告；同时依据现行粒度判断 3D Agent Entry 是否构成独立模块并纳入同等治理。",
+      "status": "done",
+      "dependencies": [
+        "feat-046"
+      ],
+      "acceptanceCriteria": [
+        "QAM-01～QAM-09 各由一个独立子 Agent 显式使用对应 xoxo-qam 审查 Skill，按当前源码、测试和历史证据复审，保留稳定问题 ID 并分别更新九份质量报告",
+        "由独立子 Agent 依据代码的责任、状态、接口、依赖、变化驱动和风险面判断 3D Agent Entry 是否达到当前 QAM 粒度；若是则建立同等模块视图与审查 Skill，并再由独立子 Agent完成质量报告，若否则明确归属和复审触发条件",
+        "PROJECT_VIEW.md、module-quality-overview.md、feature_list.json、progress.md 与 session-handoff.md 对模块数量、评分、问题状态和边界结论保持一致",
+        "不修改业务实现或顺带修复审查发现；文档结构、链接、JSON、harness、git diff 和风险匹配门禁完成并记录证据"
+      ],
+      "evidence": "2026-09-12 完成：QAM-01～QAM-09 各由一个独立子 Agent 显式使用对应审查 Skill，分别只维护自己的持续质量报告；QAM-01/02/04/05/07 保持 87/L3、90/L4、87/L3、73/L2、85/L2，QAM-03 因新增无 offset fireAt、跨入口 contract 与 a11y 问题由 92/L4 调整为 85/L2，QAM-06 因 Home board 未继承 room-scoped Post anchor 授权由 71/L2 调整为 65/L1，QAM-08 因 Planner/Memory 缺稳定请求者身份由 74/L2 调整为 70/L1，QAM-09 仅按直接交付证据由 78/L2 调整为 82/L2。独立边界 Agent 依据责任、资产/状态、接口、变化驱动和风险面判定 3D Agent Entry 应升格为 QAM-10；PROJECT_VIEW 新增完整模块规范与 BU-11～14，统一标准扩至 QAM-10，skill-creator 建立并验证 xoxo-qam-10-agent-entry-review，随后由第十个独立子 Agent完成初审：84/L2、P2×5。总览为十模块均分 80.8，Final L1×2/L2×5/L3×2/L4×1，开放 P1×3/P2×38。开始与收尾 ./init.sh 均 exit 0、72/472；各模块定向验证与可复现实验详见报告；npm run check exit 0，含资产检查、TypeScript、ESLint、72 文件/472 项 Vitest、Next.js 16.3.3 production build与覆盖率 48.27/43.21/53.42/49.15。结构/算术/524 个相对链接/JSON/skill 校验通过，harness 100/100，coverage 已移入回收站，next-env.d.ts 已恢复；本轮未改业务实现，也未运行 check:full/Compose smoke，不把三个新 P1 或 QAM-10 当前 production E3 缺口写成已修复。"
+    },
+    {
+      "id": "feat-048",
+      "name": "修复 QAM-06-009 Home 空间锚点跨房间授权",
+      "description": "让 Home board snapshot 与 element/connection mutation 复用 room-scoped Post 可见性，阻止非成员读取或修改隐藏 agent_log 的空间锚点与连接。",
+      "status": "done",
+      "dependencies": [
+        "feat-047"
+      ],
+      "acceptanceCriteria": [
+        "建立单一 Home spatial access contract：snapshot 仅返回共享照片、全局 user_post anchor 与当前用户可见的 agent_log anchor，并过滤任一端不可见的 connection",
+        "Home element PATCH 与 connection POST/DELETE 在实际数据库读写边界复用同一 Post 可见性/成员授权；非成员请求稳定返回 404 且不改变 anchor 或 connection",
+        "真实 PostgreSQL 双 Room 回归证明隐藏 anchor/connection 对非成员不可见且不可写，成员仍可操作，全局 user_post 与共享照片既有行为保持不变",
+        "Playwright 验证非成员 Home 浏览器载荷不含隐藏 anchor 标识，并通过真实 HTTP mutation 证明跨房间写入被拒绝",
+        "不处理 QAM-06 其余 P2、QAM-03-004 或 QAM-08-006；风险匹配完整门禁、QAM-06 复审、总览与会话记录完成"
+      ],
+      "evidence": "2026-09-12 完成：lib/home-board.ts 新增单一 Home spatial access contract，固定 home board 下只允许共享 photo、全局 user_post anchor 和当前用户通过 RoomParticipant 可见的 agent_log anchor，connection 必须两端都可见；Home page snapshot、element PATCH/DELETE、connection POST/DELETE 全部复用该谓词，实际 update/deleteMany/nested connect 也携带授权条件，失配稳定返回 404。真实 PostgreSQL 双 Room 负向对照在旧实现上 0/1：A snapshot 实际含 B 隐藏 anchor/connection，PATCH/POST/DELETE 为 200/201/200，隐藏 x 写成 999、原连接被删除并新增未授权连接；修复后同场景 1/1，A 载荷过滤且数据库不变，B、全局 user_post 与共享照片仍可操作。真实 Playwright 从 /home 响应验证隐藏 Post/anchor/connection ID 均缺席，并通过真实 HTTP 重证三个 404 与数据库终态。定向 Route/helper 2 文件/10 项、相关 PostgreSQL 4 文件/5 项、定向浏览器 2/2 均通过；npm run check:quick exit 0（72/472），最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 exit 0：72/472 Vitest、Next.js production build、覆盖率 48.21/42.92/53.41/49.09、20/61 PostgreSQL、30/30 Playwright。QAM-06-009 resolved，QAM-06 更新为 74 分、Score/Gate/Final L2；组合均分 81.7、开放 P1×2/P2×38。未修改 schema/migration、依赖、共享照片语义、QAM-06 其余 P2、QAM-03-004 或 QAM-08-006；测试工件清理、最终 init、Harness 与 diff/status 证据见 progress/session-handoff。"
+    },
+    {
+      "id": "feat-049",
+      "name": "修复 QAM-03-004 Agent 一次性计划时刻漂移",
+      "description": "统一 Agent 与 HTTP 对一次性计划 fireAt 的绝对时刻输入契约，阻止无 offset 时间按 Worker 本地时区被静默持久化。",
+      "status": "done",
+      "dependencies": [
+        "feat-048"
+      ],
+      "acceptanceCriteria": [
+        "Agent schedule.create/update 的运行时 contract 与 HTTP 一致要求 fireAt 为带 offset 的 ISO datetime，并稳定拒绝 fireAt 与 cron 同时出现",
+        "共享一次性时间 resolver 防御性拒绝无 offset fireAt，不依赖 Worker TZ 猜测业务时刻；合法 offset、五分钟宽限、cron 合成与 QAM-04 触发策略保持不变",
+        "跨进程时区行为回归证明相同合法 offset 输入产生相同绝对时刻，无 offset 输入在任何 Worker TZ 下都不会进入 Tool execute 或 ScheduledJob 写入",
+        "真实 PostgreSQL Route/Agent parity 回归回读 nextRunAt、cron 与 runOnce，并覆盖 create/update 两条 Agent 入口",
+        "不处理 QAM-03-005/006、QAM-08-006 或其他 QAM；风险匹配完整门禁、QAM-03 复审和会话状态记录完整"
+      ],
+      "evidence": "2026-09-12 完成：lib/scheduled-job-one-shot.ts 导出并拥有带 offset 的 ISO datetime schema、create 恰一 trigger 与 update 至多一项 trigger 谓词；lib/validation.ts 与 agent/tool-contracts.ts 共同复用，resolver 在 new Date 前保留防御校验。Tool Registry 因而在 execute 和 ScheduledJob 写入前稳定拒绝 schedule.create/update 的无 offset fireAt 与 fireAt+cron；合法 offset、五分钟宽限、cron 合成及 QAM-04 CAS/missed-window 策略未改。修复前新增定向套件 2 文件/50 项中 6 failed：resolver 在 Asia/Shanghai 与 America/Los_Angeles 进程下将同一无 offset 字符串解释为不同绝对时刻，四组非法 Agent trigger 越过 Registry validation；修复后 50/50，合法 2030-05-09T20:40:00+01:00 在两个进程均为 19:40Z，无 offset 均抛 ScheduledJobFireAtError，四组 Registry 输入均为 ToolValidationError、execute 未调用且无 ScheduledJob 写入。真实 PostgreSQL 定向 11/11，回读 Agent create/update 与 Route POST/PATCH 的 nextRunAt、cron、payload.runOnce 一致，并确认非法输入不改变 Job、无 ToolCall。typecheck、lint、check:quick 72/480 均通过；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full 单次 exit 0，含 Next.js production build、覆盖率 48.26/42.98/53.55/49.14、20/63 PostgreSQL 与 30/30 Playwright（7.2 分钟）。QAM-03-004 resolved，QAM-03 更新为 90 分、Score/Gate/Final L4；组合均分 82.2，开放 P1×1/P2×38。QAM-03-005/006、QAM-08-006 及其他 QAM 未处理；测试工件、最终 init、Harness 与 diff/status 证据见 progress/session-handoff。"
+    },
+    {
+      "id": "feat-050",
+      "name": "修复 QAM-08-006 Planner 与 Memory 请求者身份隔离",
+      "description": "让 Planner、Tool 与长期 Memory 共用稳定请求者身份，并以绝对成员所有权隔离双人房间中的个人记忆。",
+      "status": "done",
+      "dependencies": [
+        "feat-049"
+      ],
+      "acceptanceCriteria": [
+        "buildAgentContext 接收 requestedById，并以稳定 userId 生成显式 requester/self/partner 视图；mock 与真实 Planner 共用该 contract，第二位成员的天气/时区计划正确，缺失请求者时不按参与者数组位置猜测",
+        "个人 me/her Memory 在写入时规范化为绝对 owner 与稳定存储 key，唯一、upsert、相似值去重、recall 和 context 投影均按 owner 隔离；shared 与 _system Memory 继续保持房间级语义",
+        "新增时间戳迁移更新 Memory 约束与索引；已知 owner 的旧个人记录无损规范化，owner 歧义或规范化冲突的旧记录保留为可审计 legacy，不静默归属或删除，并保持 prisma migrate deploy/init 兼容",
+        "真实 PostgreSQL 双成员回归证明同名及相似个人 key 互不覆盖或删除，切换请求者后 aboutMe/aboutHer 与 recall 始终对应绝对 owner；Runtime 回归覆盖第二位请求者 Planner 到 Tool 全链路及 requestedById=null 中性行为",
+        "不处理 QAM-08-001～005、QAM-03-005/006 或其他 QAM；风险匹配完整门禁、QAM-08 持续复审、总览与会话状态记录完整"
+      ],
+      "evidence": "2026-09-12 完成：buildAgentContext 由 AgentTask.requestedById 派生显式 userId/self/partner，Runtime、mock/真实 Planner 与 Tool 共用 requester-aware contract；空或非成员请求者保持中性，不按 participant 顺序猜测。新增 agent/memory-identity.ts，将个人 me/her 写入规范化为 user:<id> owner + person.* key，shared/_system 使用 room scope；schema 改为 (roomId,ownerKey,key) 唯一，upsert、相似值去重、recall、context 投影与 extractor 均按 owner 隔离。时间戳迁移对已知 owner 无损规范化；规范化冲突、owner 歧义和未知 key 的旧行全部保留为带 ownerMigration 原因的 legacy:<id>，并增加 owner/user/key check。修复前 agent-runtime Node 回归 2 failed/13 passed，第二请求者错误使用第一成员且 null 请求者被猜测；真实 PostgreSQL requester-memory 回归 3/3 failed，复现跨成员覆盖/删除、错投影和 null 个人写入。修复后定向 Node 3 文件/20 项、requester-memory PostgreSQL 4/4、独立旧迁移临时库 1/1 均通过；迁移测试证明 8/8 旧行保留且复合唯一/check 拒绝非法写，Runtime 第二请求者 Bob/London→Alice/Shanghai 与 null Tool input={} 正确。npm run check:quick 为 72/482；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full exit 0，含 production build、覆盖率 47.73/42.56/52.71/48.54、22 文件/68 项真实 PostgreSQL、30/30 Playwright。首轮 check:full 在无关 home-board-routes coverage 用例发生一次 5 秒超时；同文件立即 8/8、完整 coverage 72/482、第二轮全门禁通过，未修改该用例。QAM-08-006 resolved，QAM-08 更新为 80 分、Score L3、Gate/Final L2；组合均分 83.2，开放 P0×0/P1×0/P2×38。未处理 QAM-08-001～005、QAM-03-005/006、部署或依赖；清理、最终 init、Harness 与 diff/status 证据见 progress/session-handoff。"
     }
   ]
 }

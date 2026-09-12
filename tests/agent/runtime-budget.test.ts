@@ -50,6 +50,9 @@ function createRequest(): LLMPlanRequest {
     prompt: "完成一个简短任务",
     roomContext: {
       room: { name: "Test", slug: "test" },
+      requestedById: null,
+      self: null,
+      partner: null,
       participants: [],
       recentMessages: [],
       pinnedMemos: [],

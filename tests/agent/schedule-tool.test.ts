@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
+import { ToolValidationError } from "@/agent/tool-errors";
 import { ToolRegistry } from "@/agent/tool-registry";
 import {
   createScheduleCancelTool,
@@ -7,6 +8,10 @@ import {
   createScheduleListTool,
   createScheduleUpdateTool
 } from "@/agent/tools/schedule-tool";
+import {
+  scheduledJobPatchSchema,
+  scheduledJobPostSchema,
+} from "@/lib/validation";
 
 type MockJob = {
   id: string;
@@ -120,6 +125,30 @@ describe("schedule.create", () => {
       makeContext(prisma)
     )) as { timezone: string };
     expect(result.timezone).toBe("Asia/Shanghai");
+  });
+
+  it("finds the requester timezone when the requester is the second participant", async () => {
+    const context = makeContext(prisma);
+    context.requestedById = "user-2";
+    context.runtimeContext = {
+      participants: [
+        {
+          userId: "user-1",
+          user: { profile: { timezone: "Asia/Shanghai" } },
+        },
+        {
+          userId: "user-2",
+          user: { profile: { timezone: "Europe/London" } },
+        },
+      ],
+    } as never;
+
+    const result = (await createScheduleCreateTool().execute(
+      { cron: "0 9 * * *", prompt: "晨间播报" },
+      context
+    )) as { timezone: string };
+
+    expect(result.timezone).toBe("Europe/London");
   });
 
   it("persists runOnce=true into payload and returns it", async () => {
@@ -380,6 +409,121 @@ describe("schedule tool contracts", () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.data).toMatchObject({ fireAt: "2030-05-09T22:15:00+08:00" });
+  });
+
+  it.each([
+    {
+      label: "schedule.create without an offset",
+      toolName: "schedule.create",
+      toolInput: {
+        fireAt: "2030-05-09T20:40:00",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+      httpSchema: scheduledJobPostSchema,
+      httpInput: {
+        fireAt: "2030-05-09T20:40:00",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+    },
+    {
+      label: "schedule.create with fireAt and cron",
+      toolName: "schedule.create",
+      toolInput: {
+        fireAt: "2030-05-09T20:40:00+01:00",
+        cron: "40 20 * * *",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+      httpSchema: scheduledJobPostSchema,
+      httpInput: {
+        fireAt: "2030-05-09T20:40:00+01:00",
+        cron: "40 20 * * *",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+    },
+    {
+      label: "schedule.update without an offset",
+      toolName: "schedule.update",
+      toolInput: { jobId: "job-1", fireAt: "2030-05-09T20:40:00" },
+      httpSchema: scheduledJobPatchSchema,
+      httpInput: { fireAt: "2030-05-09T20:40:00" },
+    },
+    {
+      label: "schedule.update with fireAt and cron",
+      toolName: "schedule.update",
+      toolInput: {
+        jobId: "job-1",
+        fireAt: "2030-05-09T20:40:00+01:00",
+        cron: "40 20 * * *",
+      },
+      httpSchema: scheduledJobPatchSchema,
+      httpInput: {
+        fireAt: "2030-05-09T20:40:00+01:00",
+        cron: "40 20 * * *",
+      },
+    },
+  ])("rejects $label before Tool execution, matching HTTP", async ({
+    toolName,
+    toolInput,
+    httpSchema,
+    httpInput,
+  }) => {
+    const registry = registerScheduleTools();
+    const execute = vi.spyOn(registry.get(toolName), "execute");
+    const prisma = makeMockPrisma();
+    const context = makeContext(prisma);
+    const event = vi.fn(async () => undefined);
+    context.tracer = { event } as never;
+
+    expect(httpSchema.safeParse(httpInput).success).toBe(false);
+    await expect(
+      registry.execute(toolName, toolInput, context, { stepKey: "tool:" + toolName }),
+    ).rejects.toBeInstanceOf(ToolValidationError);
+    expect(execute).not.toHaveBeenCalled();
+    expect(prisma.scheduledJob.create).not.toHaveBeenCalled();
+    expect(prisma.scheduledJob.update).not.toHaveBeenCalled();
+    expect(event).toHaveBeenCalledWith(
+      "agent.tool.validation.failed",
+      expect.objectContaining({ toolName, direction: "input" }),
+    );
+  });
+
+  it.each([
+    {
+      label: "schedule.create",
+      toolName: "schedule.create",
+      toolInput: {
+        fireAt: "2030-05-09T20:40:00+01:00",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+      httpSchema: scheduledJobPostSchema,
+      httpInput: {
+        fireAt: "2030-05-09T20:40:00+01:00",
+        timezone: "Europe/London",
+        prompt: "提醒用户休息",
+      },
+    },
+    {
+      label: "schedule.update",
+      toolName: "schedule.update",
+      toolInput: { jobId: "job-1", fireAt: "2030-05-09T20:40:00+01:00" },
+      httpSchema: scheduledJobPatchSchema,
+      httpInput: { fireAt: "2030-05-09T20:40:00+01:00" },
+    },
+  ])("accepts an offset-bearing fireAt for $label in both contracts", ({
+    toolName,
+    toolInput,
+    httpSchema,
+    httpInput,
+  }) => {
+    const registry = registerScheduleTools();
+
+    expect(httpSchema.safeParse(httpInput).success).toBe(true);
+    expect(registry.get(toolName).inputSchema.safeParse(toolInput).success).toBe(true);
   });
 });
 

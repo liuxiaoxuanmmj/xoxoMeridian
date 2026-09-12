@@ -1,3 +1,211 @@
+## 2026-09-12 — feat-050 完成（QAM-08-006 resolved）
+
+### 交付与范围
+
+- 按启动顺序完整读取 `AGENTS.md`、`feature_list.json`、`progress.md` 与 `session-handoff.md`；确认 feat-049 完成后，只登记 feat-050 为 `in-progress`，再运行 `./init.sh` 建立 72 文件/480 项基线。`xoxo-qam-08-agent-runtime-review` 用于保持稳定问题 ID、QAM-08/QAM-01/02/03 责任边界、E3 纪律与只重算受影响评分；`harness-creator` 用于维护单一 feature、门禁、清理和三份状态记录闭环。
+- [`agent/context-builder.ts`](agent/context-builder.ts) 现在接收 `requestedById`，复用 [`lib/participant-resolution.ts`](lib/participant-resolution.ts) 以稳定 userId 派生显式 `requestedById/self/partner`；[`agent/agent-runtime.ts`](agent/agent-runtime.ts) 从 Task 传入请求者，把有效请求者写入 Durable Plan input，并把同一有效身份交给 Tool。[`agent/types.ts`](agent/types.ts) 为参与者保留 userId；[`agent/llm-provider.ts`](agent/llm-provider.ts) 的 mock 和真实提示都只认 self/partner，空或非成员请求者不按数组位置猜城市、时区、姓名或个人 Memory。
+- 新增 [`agent/memory-identity.ts`](agent/memory-identity.ts) 作为 Memory identity 单一事实源：`me.*`/`her.*` 在写入时解析为 `user:<id>` owner 与 `person.*` canonical key，`shared.*`/`_system.*` 分别使用 `scope:shared`/`scope:system`；相对 me/her 只在 recall/context 输出时按当前请求者投影。Memory set、owner 内相似值去重、recall、context builder 与 extractor 都复用该协议；空请求者可读写 shared，但个人写入稳定拒绝且个人读取为空。
+- [`prisma/schema.prisma`](prisma/schema.prisma) 新增必填 `ownerKey` 与 `(roomId,ownerKey,key)` 唯一键；时间戳迁移 [`20260912175500_add_memory_owner_key`](prisma/migrations/20260912175500_add_memory_owner_key/migration.sql) 在锁定 Memory 表的事务中规范化已知 owner。不同 owner 可保留同一 canonical key；同 owner 规范化冲突、缺 owner 的个人行及未知 key 均不删除、不猜归属，而是保留为带 `ownerMigration` 原因的 `legacy:<id>`；新增 check 约束保护 shared/system/user/legacy 形态并保持 `migrate deploy` 兼容。
+- 只处理 QAM-08-006；没有处理 QAM-08-001～005、QAM-03-005/006、Trace、post-task lifecycle、Tool lease、依赖或部署。工作树中 feat-044～049、QAM-10、既有 `docs/optimization/agent-runtime-review.md` 删除状态及其他用户改动全部保留。
+
+### 负向对照与风险匹配回归
+
+- 修复前 `./scripts/run-node22.sh npm run test:unit -- tests/agent/agent-runtime.test.ts` 为 **2 failed/13 passed**：第二位请求者 Bob 的天气/时区计划仍使用第一位 Alice/London，`requestedById=null` 也从 participant 顺序猜出 London/默认时区，而非中性 `{}`。
+- 修复前 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/agent-requester-memory.integration.test.ts` 为 **3/3 failed**：Alice 的个人行被 Bob 的同名/相似事实覆盖或去重删除，双方 context/recall 投影错位，空请求者还能写入无法确定 owner 的个人事实。
+- 修复后 Node 定向 3 文件/20 项通过。真实 PostgreSQL [`agent-requester-memory.integration.test.ts`](tests/integration/agent-requester-memory.integration.test.ts) 4/4：双方同名 `preference`、相同值不同 owner、owner 内相似事实均按预期保留/合并；切换请求者后 aboutMe/aboutHer 与 recall 双向正确；空请求者只看 shared；完整 Runtime 从第二请求者 Bob/London 规划并执行到 Alice/Shanghai，Durable Plan 记录有效请求者，空请求者的 Tool input 为 `{}`。集成 global setup 显式固定 `LLM_PROVIDER=mock` 并清空 API key；首轮全链路诊断曾暴露测试会继承开发 `.env` 的真实 provider 并发出网络请求，该次结果不计为通过，修正后测试不再依赖真实网络或凭据。
+- 新增 [`memory-owner-migration.integration.test.ts`](tests/integration/memory-owner-migration.integration.test.ts) 在 Testcontainer 内创建隔离临时数据库，先部署全部旧迁移、植入 8 条已知 owner/跨 owner 同 key/同 owner 冲突/shared/system/歧义/未知数据，再部署新迁移：1/1 通过，8/8 行保留；已知行正确规范化，冲突与歧义行保留完整 metadata，复合唯一及 owner check 均拒绝非法 SQL。测试 finally 终止该数据库连接、删除精确临时库和临时 schema 目录。
+
+### 门禁、复审与清理
+
+- `npm run db:generate`、`npm run typecheck`、`npm run lint`、`npm run check:quick` 均通过；快速门禁为 72 文件/482 项。定向 requester-memory PostgreSQL 4/4、迁移 1/1，最终全量 PostgreSQL 为 22 文件/68 项。
+- 首轮 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 的 quick 与 production build 通过，仅 coverage 阶段的无关 `tests/server/home-board-routes.test.ts` “uploads a home photo...” 在 5000ms 超时而 exit 1；该文件立即按原命令定向重跑 8/8，完整 `npm run test:coverage` 重跑 72/482，证明不是稳定代码失败，且没有修改该无关用例。随后一轮 `check:full` 全链路 exit 0；差异审计再将 Tool 的原始 Task 请求者收紧为 context 已验证的有效请求者后，Node 20/20，并再次运行最终 `check:full` **exit 0**：TypeScript、ESLint、72/482 Vitest、Next.js 16.3.3 production build、覆盖率 statements 47.73% / branches 42.56% / functions 52.71% / lines 48.54%、22/68 真实 PostgreSQL、30/30 Playwright（5.9 分钟）。既有占位图片、THREE.Clock、Reduced Motion 与故障注入日志未形成失败；未改部署拓扑，故未运行 Compose smoke，也不声称其通过。
+- QAM-08-006 已按原 ID 移入 resolved；只重算身份/owner contract 直接改变的架构、状态一致性、接口、健壮性、隐私与验证可信度，QAM-08 由 70/L1 更新为 **80（Score L3、Gate/Final L2）**。QAM-08-001～005 保持开放 P2；十模块总分 832、均分 83.2，Final 分布 L0×0/L1×0/L2×6/L3×2/L4×2，开放 P0×0/P1×0/P2×38。
+- 最终门禁生成的 `coverage/`、`playwright-report/` 与含临时认证状态的 `test-results/` 已按明确路径移入系统回收站，可恢复；`next-env.d.ts` 无差异。迁移测试临时数据库/目录均由 finally 清理；Docker 仅保留会话前既有健康 `xoxo-meridian-postgres`，没有 Testcontainers 残留。
+- 状态落盘后最终 `./init.sh` exit 0：Prisma Client、两主题正式资产、TypeScript、ESLint 与 72 文件/482 项 Vitest 全部通过。Harness validator 100/100；50 个 feature ID 连续且全 `done`；QAM-08 十维合计 80、总览十模块总分 832/均分 83.2；质量文档相对链接全部可解析，`feature_list.json` 可解析，`git diff --check` exit 0，最终 status 无本轮测试报告、临时认证目录或迁移临时库。
+
+### 状态与唯一下一步
+
+- feat-001 至 feat-050 均为 `done`，没有 `not-started`、`in-progress` 或 `blocked` feature；当前没有开放 P0/P1，仓库可从四份启动文件与 `./init.sh` 清洁恢复。
+- 唯一推荐下一步：由产品优先级登记一个新的独立 feature；当前没有 P1，不在本 feature 内自动扩展到 QAM-08-001～005 或其他 P2。
+
+## 2026-09-12 — feat-049 完成（QAM-03-004 resolved）
+
+### 交付与范围
+
+- 按启动顺序完整读取 `AGENTS.md`、`feature_list.json`、`progress.md` 与 `session-handoff.md`；确认 feat-048 完成后，只登记 feat-049 为 `in-progress`，再以 `./init.sh` 建立 72 文件/472 项基线。`xoxo-qam-03-life-plan-review` 用于保持稳定问题 ID、QAM-03/QAM-04/QAM-08 责任边界、E3 纪律与只重算受影响维度；`harness-creator` 用于维护单一 feature、门禁、清理和三份状态记录闭环。
+- [`lib/scheduled-job-one-shot.ts`](lib/scheduled-job-one-shot.ts) 现在导出带 offset 的 ISO datetime Zod schema、create “`fireAt`/`cron` 恰一”与 update “至多一项”谓词；resolver 在构造 `Date` 前再次校验 offset，不能再按 Worker `TZ` 猜测业务时刻。[`lib/validation.ts`](lib/validation.ts) 与 [`agent/tool-contracts.ts`](agent/tool-contracts.ts) 共同引用这一领域 contract，HTTP 和 Agent `schedule.create/update` 不再平行解释 trigger。
+- Tool Registry 会在 Tool execute 与 `ScheduledJob` 写入之前拒绝无 offset `fireAt` 和 `fireAt+cron`。合法 offset、五分钟宽限、cron 合成、active cap、QAM-04 的 CAS/run-once missed-window 及 Tool 通用事务/trace 策略均保持；没有修改 schema/migration、依赖或部署配置。
+- 只修改上述三个实现文件及 one-shot、schedule Tool、真实 PostgreSQL parity 回归；没有处理 QAM-03-005 字段上限、QAM-03-006 表单可访问名称、QAM-08-006 Memory 身份或其他 QAM。工作树中 feat-044～048、QAM-10 文件、既有 `docs/optimization/agent-runtime-review.md` 删除状态和其他用户改动均保留。
+
+### 负向对照与回归证据
+
+- 修复前运行 `./scripts/run-node22.sh npm run test:unit -- tests/lib/scheduled-job-one-shot.test.ts tests/agent/schedule-tool.test.ts`：2 文件/50 项中 **6 failed、44 passed**。resolver 未拒绝无 offset；实际 Node+tsx 子进程在 `TZ=Asia/Shanghai` 与 `TZ=America/Los_Angeles` 下分别把 `2030-05-09T20:40:00` 解释为 `12:40Z` 与次日 `03:40Z`。四组 Agent create/update 的无 offset 或 `fireAt+cron` 越过 Registry validation，随后才因测试 Task 外键在执行层失败，实际得到 `ToolExecutionError` 而非期望的 `ToolValidationError`。
+- 修复后同一命令 exit 0、50/50。合法 `2030-05-09T20:40:00+01:00` 在两个进程 TZ 下均得到 `2030-05-09T19:40:00.000Z` 与 `40 20 * * *`；无 offset 在两边均抛 `ScheduledJobFireAtError`。四组非法 Agent 输入均由 Registry 抛 `ToolValidationError`，Tool execute spy 未调用、无 `ScheduledJob` create/update，并留下既有 validation Event；两组合法 offset contract 由 HTTP/Agent 同时接受。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/scheduled-job-one-shot-fireat.integration.test.ts` exit 0、11/11。真实 PostgreSQL 回读 Agent create/update 与 Route POST/PATCH 的 `nextRunAt`、`cron`、`payload.runOnce` parity；四组非法 Agent trigger 均在写入前失败，原 Job 不变且无 ToolCall。测试验证持久化可观察行为，不用源码扫描或低层 mock 代替数据库证据。
+
+### 门禁、复审与清理
+
+- `npm run typecheck`、`npm run lint -- --no-cache`、`npm run check:quick` 均 exit 0；快速门禁为 72 文件/480 项 Vitest。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` **单次 exit 0**：TypeScript、ESLint、72 文件/480 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.26% / branches 42.98% / functions 53.55% / lines 49.14%、20 文件/63 项真实 PostgreSQL、30/30 Playwright（7.2 分钟）。既有占位图片、THREE.Clock、Reduced Motion 等服务警告未形成失败；未修改部署路径，故未运行 Compose smoke，也不声称其通过。
+- QAM-03-004 已按原 ID 移入 resolved；只重算 trigger contract 直接改变的架构、状态一致性、接口、健壮性与验证可信度，各 +1，QAM-03 由 85/L2 更新为 **90（Score/Gate/Final L4）**。QAM-03-005/006 保持开放 P2；组合总分 822、均分 82.2，Final 分布 L1×1/L2×5/L3×2/L4×2，开放 P0×0/P1×1/P2×38。
+- `coverage/`、`playwright-report/` 与含测试认证状态的 `test-results/` 已按明确路径移入系统回收站，可恢复；`next-env.d.ts` 未产生差异。Docker 只保留会话前既有且健康的 `xoxo-meridian-postgres`，没有 Testcontainers 残留。
+- 状态落盘后最终 `./init.sh` exit 0：Prisma Client、两主题正式资产、TypeScript、ESLint 与 72 文件/480 项 Vitest 全部通过。Harness validator 100/100；49 个 feature ID 连续且全 `done`；QAM-03 十维为 90/100，总览十模块总分 822/均分 82.2；`feature_list.json` 可解析。首轮通用链接脚本把 QAM-05 报告的历史 `javascript:...` 安全示例误判为本地文件而 exit 1；按 URI scheme 规则修正只读检查后，11 份质量文档的 521 个相对链接全部可解析。`git diff --check` exit 0，最终 status 无本轮测试报告或临时认证目录。
+
+### 状态与唯一下一步
+
+- feat-001 至 feat-049 均为 `done`，没有 `not-started`、`in-progress` 或 `blocked` feature；仓库可从四份启动文件与 `./init.sh` 清洁恢复。
+- 唯一推荐下一步：另行登记并只修复当前唯一开放 P1 `QAM-08-006`，为 Planner/Memory 建立稳定请求者身份并验证双成员隔离；不要并入 QAM-03-005/006 或其他 QAM。
+
+## 2026-09-12 — feat-048 完成（QAM-06-009 resolved）
+
+### 交付与范围
+
+- 按启动顺序完整读取 `AGENTS.md`、`feature_list.json`、`progress.md` 与 `session-handoff.md`，确认 feat-047 已完成后登记 feat-048 为唯一 `in-progress`，再运行 `./init.sh` 建立 72 文件/472 项基线。`xoxo-qam-06-spatial-media-review` 用于保持稳定问题 ID、模块边界、E3 纪律与只重算受影响评分；`harness-creator` 用于维护单一 feature、门禁和三份状态记录闭环。
+- [`lib/home-board.ts`](lib/home-board.ts) 新增单一 Home spatial access contract：固定 `home-board` 下，element 只允许共享 `photo`（`postId=null`）或满足 `getPostVisibilityWhere(userId)` 的 Post anchor；connection access 从两端 element access 派生，任一端不可见即不可读写。`/home` 的 `initialSnapshot` 现在携带当前用户 ID，在数据库查询阶段过滤 element 与 connection。
+- Home element PATCH/DELETE 和 connection POST/DELETE 全部复用同一 access predicate；授权不只停留在预读：element 使用带条件的扩展 unique update/delete，connection DELETE 使用带两端可见性的 `deleteMany`，connection POST 使用条件 nested connect，竞争窗口中的成员资格/资源变化映射为 404。固定 board、共享照片、全局 `user_post`、Post-to-Post 禁连与现有连接类型均保持。
+- 只修改 Home snapshot/access、对应 Route 与回归；没有修改 Prisma schema/migration、依赖、上传、Atlas SSE、QAM-06 其余 P2、QAM-03-004 或 QAM-08-006。现有 feat-044～047 与其他用户未提交改动均保留。
+
+### 负向对照与回归证据
+
+- 新增真实 PostgreSQL [`home-board-authorization.integration.test.ts`](tests/integration/home-board-authorization.integration.test.ts)，先在未修复实现上运行并一次性收集全部可观察结果，避免首个断言遮蔽后续写入：测试 0/1；A 的 snapshot 实际含 B 的隐藏 anchor 与 connection，PATCH/POST/DELETE 实际为 200/201/200，隐藏 anchor 的 x 从 30 写为 999、原隐藏 connection 被删除，并新增 1 条未授权 connection。
+- 修复后同一双 Room 场景 1/1：A snapshot 只含共享照片、全局 `user_post` 与 Room A anchor，隐藏 connection 被过滤；三个 mutation 均为 404，坐标、原 connection 与新增 connection count 全部不变。切换到 B 后隐藏 anchor 的 PATCH、connection POST/DELETE 仍为 200/201/200；全局 anchor 与共享照片 PATCH 仍为 200。
+- 新增 Playwright 真实旅程，从 `/home` 的实际响应载荷断言隐藏 Post/anchor/connection ID 均不存在、可见全局 anchor/照片/connection 仍存在，再以已登录浏览器发真实 PATCH/POST/DELETE，断言三个 404 与 PostgreSQL 终态。定向命令 2/2（含 setup）通过；测试在 `finally` 清理其 Post、照片与 Room。
+- Route/helper 定向回归 2 文件/10 项通过；相关真实 PostgreSQL bundle（新授权、Post visibility、Home drag、Atlas board scope）4 文件/5 项通过。observer fixture 随新的 snapshot contract 显式传入 `userId`，既有双进程 Home drag 收敛继续通过。
+
+### 门禁、复审与清理
+
+- `npm run typecheck`、`npm run lint` 与 `npm run check:quick` 均 exit 0；快速门禁为 72 文件/472 项 Vitest。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` **单次 exit 0**：TypeScript、ESLint、72 文件/472 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.21% / branches 42.92% / functions 53.41% / lines 49.09%、20 文件/61 项真实 PostgreSQL、30/30 Playwright（5.1 分钟）。故障注入的 Prisma 错误、既有占位图片与 THREE.Clock 提示均未形成失败；未修改部署路径，因此未运行 Compose smoke，也不声称其通过。
+- QAM-06-009 已移入 resolved；只重算访问边界、复用、数据一致性、接口、竞态防护、安全和验证可信度，QAM-06 由 65/L1 更新为 **74（Score/Gate/Final L2）**。六个既有 P2 原样开放；组合总分 817、均分 81.7，Final 分布 L1×1/L2×6/L3×2/L4×1，开放 P0×0/P1×2/P2×38。
+- 完整门禁生成的 `coverage/`、`playwright-report/` 与含临时认证状态的 `test-results/` 已按明确路径移入系统回收站，可恢复；`next-env.d.ts` 未产生差异。Docker 只保留会话前既有且健康的 `xoxo-meridian-postgres`，没有 Testcontainers 残留。状态落盘后最终 `./init.sh` exit 0、72/472；Harness validator 100/100，48 个 feature 连续且全 `done`，QAM-06 十维合计 74、组合总分 817/均分 81.7、521 个报告相对链接均可解析，`git diff --check` 通过。
+
+### 状态与唯一下一步
+
+- feat-001 至 feat-048 均为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature；仓库可从四份启动文件与 `./init.sh` 清洁恢复。
+- 唯一推荐下一步：另行登记并只修复 `QAM-03-004`，统一 Agent 无 offset `fireAt` 的绝对时刻解析语义并用 Route/Agent 跨进程、时区差异回归保护；不要并入 QAM-08-006 或 QAM-06 的 P2。
+
+## 2026-09-12 — feat-047 完成（QAM-01～QAM-10 全量独立复审）
+
+### 范围与模块治理
+
+- 按用户修正后的范围，对 QAM-01～QAM-09 各派发一个独立子 Agent；每个 Agent 均显式使用对应 `xoxo-qam-*-review` Skill，只修改自己的详细质量报告。主线程完整读取全部九个 Skill、统一标准和仓库上下文，负责组合一致性、模块边界与 Harness 收尾，没有修改业务实现。
+- 另派独立边界 Agent 按核心责任、owned state/assets、接口、依赖/被依赖、变化驱动、风险面和测试边界审查 `3D Agent Entry`。结论为应升格 **QAM-10「全局 3D Agent 入口与模型资产生命周期」**：该能力拥有版本化源/正式 GLB、selection/recipe/candidate report、可执行资产晋升接口、WebGL/首帧/缓存/释放状态机和专属风险面，不能由通用应用壳或 QAM-09 完整吸收。
+- `PROJECT_VIEW.md` 已增加 QAM-10 的完整 In/Out Scope、接口、资产/状态、依赖、代码映射、变化驱动、质量风险、Quality Tracking，以及 BU-11～BU-14；统一标准的适用范围扩至 QAM-10。使用 `skill-creator` 新建并验证 `.agents/skills/xoxo-qam-10-agent-entry-review/SKILL.md`，再由第十个独立子 Agent 显式调用该 Skill 建立首次质量报告。
+
+### 复审结果
+
+| QAM | Score | Score / Gate / Final | 本轮变化 | 开放问题 |
+| --- | ---: | --- | --- | --- |
+| QAM-01 | 87 | L3 / L4 / L3 | 0 | P2×3 |
+| QAM-02 | 90 | L4 / L4 / L4 | 0 | P2×2 |
+| QAM-03 | 85 | L3 / L2 / L2 | -7；新增 QAM-03-004/005/006 | P1×1、P2×2 |
+| QAM-04 | 87 | L3 / L3 / L3 | 0 | P2×1 |
+| QAM-05 | 73 | L2 / L2 / L2 | 0 | P2×7 |
+| QAM-06 | 65 | L1 / L1 / L1 | -6；新增 QAM-06-009 | P1×1、P2×6 |
+| QAM-07 | 85 | L3 / L2 / L2 | 0 | P2×2 |
+| QAM-08 | 70 | L2 / L1 / L1 | -4；新增 QAM-08-006 | P1×1、P2×5 |
+| QAM-09 | 82 | L3 / L2 / L2 | +4；只计 build/image/Compose 直接责任 | P2×5 |
+| QAM-10 | 84 | L3 / L2 / L2 | baseline | P2×5 |
+
+- 十模块均分为 **80.8**；Final 分布 L0×0/L1×2/L2×5/L3×2/L4×1；开放问题 P0×0/P1×3/P2×38，另有 QAM-02-005 `not-reproduced` 历史项不计开放问题。
+- 三个新增开放 P1 均有明确直接 owner：`QAM-03-004` 复现 Agent 无 offset `fireAt` 按 Worker 时区持久化错误时刻；`QAM-06-009` 发现 Home board snapshot/mutation 未继承 room-scoped Post anchor 成员授权；`QAM-08-006` 发现 Planner/Memory 缺稳定请求者身份，个人相对 key 可跨成员覆盖/错读。本轮仅登记和评分，不顺带修复。
+- QAM-09 在新增 QAM-10 后由原审查 Agent 再次复核 BU-12/13：其 +4 只来自 build arg/runtime 隔离、Web image 打包与 Compose/build parity；GLB provenance/预算、WebGL 生命周期、入口交互和 decoder/CSP 直接证据归 QAM-10，未重复计分。
+
+### 验证、边界与清理
+
+- 开始基线 `./init.sh` exit 0：Prisma Client、两主题正式资产、TypeScript、ESLint、72 文件/472 项 Vitest 全部通过。九个既有 QAM 的定向验证分别记录于各报告；其中 QAM-01 为 6 文件/57 项、QAM-02 5/17、QAM-03 9/77、QAM-04 1/18、QAM-05 Node 7/49 + component 2/3、QAM-06 Node 7/40 + component 3/5、QAM-07 8/52、QAM-08 15/124，QAM-09 的构建配置/CSP/资产为 26/26 且三组 Compose config 通过。
+- QAM-10 本轮 `check:agent-entry-assets` 两主题通过；定向 Node 31/31、component 20/20、CSP 6/6 与三组 Compose config 通过，四份源/正式 GLB hash 与当前记录一致。feat-040 的两主题 production/Compose 和 feat-046 的完整门禁只标历史 E3；本轮未把 jsdom 写成 WebGL/CSP 证据，也未把软件 Chromium写成实体设备证据。
+- 标准门禁 `./scripts/run-node22.sh npm run check` exit 0：两主题资产、TypeScript、ESLint、72 文件/472 项 Vitest、Next.js 16.3.3 production build 和覆盖率全部通过；覆盖率 statements 48.27%、branches 43.21%、functions 53.42%、lines 49.15%。状态落盘与清理后最终 `./init.sh` 再次 exit 0、72/472。`npm run check:full` 与 `npm run test:compose-smoke` 未运行：本 feature 只修改质量治理文档/Skill，不修改数据库、认证、业务、运行配置或部署实现；不把未运行层级标成通过。
+- 组合校验确认 10 份报告固定章节、十维合计、总览 Score/Gate/Final、总分 808/均分 80.8、524 个相对链接和 47 个全 `done` feature 一致；首次链接脚本误把报告中的 `javascript:...` 安全示例当本地文件，修正为只检查相对路径后通过。QAM-10 Skill `quick_validate` 通过，Harness validator 100/100，`git diff --check` 通过。
+- `npm run check` 产生的 `coverage/` 已移入系统回收站；`next-env.d.ts` 已恢复会话前 dev types。未删除既有 `.next`、容器、用户源码或未提交改动；`docs/optimization/agent-runtime-review.md` 的既有删除状态保持，未恢复或纳入本 feature。
+
+### 唯一推荐下一步
+
+- 另行登记并只修复 `QAM-06-009`：让 Home board snapshot 与 element/connection mutation 复用 room-scoped Post anchor 可见性/成员授权，以真实 PostgreSQL 与 Playwright 证明非成员既看不到隐藏 anchor ID，也不能跨房间修改 anchor 或连接；不要同时处理 QAM-03 fireAt 或 QAM-08 Memory 身份问题。
+
+## 2026-09-12 — feat-046 完成（QAM-04-002 resolved，开放 P1 清零）
+
+### 交付与范围
+
+- 完成最后一个开放 P1 `QAM-04-002`。`agent/scheduler-tick.ts` 的共享 `claimAndDispatchScheduledJob()` 事务现在对所有 `runOnce` Job 写入 `enabled=false`：超过一小时 missed window 时成功 claim 后返回 `skipped`，不创建 AgentTask 或 `scheduler.job.fired` Event；周期 Job 仍保持 enabled 并按 `computeNextRun()` 推进 `nextRunAt`。
+- 窗口内 run-once 仍先执行同一原子 claim/Task/Event 路径；若 Task 或 Event 写入失败，整个 transaction 回滚，Job 保持 enabled，既有外部 stale-failure CAS 与 failCount/retry 语义不变。没有增加补发策略、外部调度能力或第二个状态分支。
+- 没有修改 QAM-03 的 fireAt/cron authoring 契约、Prisma schema/migration、`QAM-04-003` Worker shutdown、QAM-08 Task 执行或 Docker/Compose。`xoxo-qam-04-scheduler-review` 用于按稳定问题 ID 与 E3 证据复评；`harness-creator` 用于维持单一活动 feature、验证门禁和三份状态记录闭环。
+
+### 负向对照与回归证据
+
+- 修复前，`./scripts/run-node22.sh npm run test:unit -- tests/agent/scheduler-tick.test.ts` exit 1：1 文件/17 项中 1 failed、16 passed；fake clock 将窗口外 run-once 推进到下一日同一 cron 时刻，实际得到 `{ fired: 1 }` 而非零副作用。修复后同命令 exit 0、18/18；新增回归同时证明窗口外 run-once 只禁用一次，以及窗口外周期 Job 仍 enabled、推进到下一小时且不写 Task/Event。
+- 修复前，`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/scheduler-atomic-dispatch.integration.test.ts` exit 1：1 文件/4 项中 1 failed、3 passed，真实 PostgreSQL 的下一日 tick 同样实际 `fired: 1`。修复后同命令 exit 0、4/4；测试使用 QAM-03 共享 `resolveOneShotSchedule()` 从 `fireAt` 合成 `0 10 * * *`，断言窗口外 Job disabled、failCount=0、lastRunAt=null、Task/Event 均为零，下一合成 cron 周期不重放。
+- 新增测试验证的是 Job、Task、Event 和 tick 结果的可观察行为，不扫描源码字符串；既有窗口内成功、派生失败回滚、并发 CAS、旧 timer 隔离与失败回写回归均继续通过。
+
+### 门禁、复审与清理
+
+- 开始基线 `./init.sh` exit 0：Prisma Client、正式资产、TypeScript、ESLint 与 72 文件/470 项 Vitest 全部通过。
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` **单次 exit 0**：TypeScript、ESLint、72 文件/472 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.27% / branches 43.21% / functions 53.42% / lines 49.15%、19 文件/60 项真实 PostgreSQL、29/29 Playwright（4.8 分钟）。故障注入中的 Prisma `P0001`、无效占位图片与 THREE deprecation 未导致门禁失败，不在本 feature 扩大处理。
+- `npm run test:compose-smoke` 未运行：本轮未修改 Worker/Compose 启动路径或部署配置，不把未运行层级标记为通过。完整门禁生成的 `coverage/`、`playwright-report/` 与含临时认证状态的 `test-results/` 已按核对后的明确路径移入系统回收站，可恢复；没有清理 `.next`、用户源码或既有容器。
+- QAM-04 只重算本轮证据改变的数据一致性、健壮性和验证可信度，各 +1，由 84 更新为 **87（Score/Gate/Final L3）**；`QAM-04-002` 标为 resolved。总览同步为九模块均分 81.9、Final L2×5/L3×2/L4×2，开放问题 P0×0/P1×0/P2×31。L4 仍受开放 P2 `QAM-04-003` 的 shutdown/in-flight 生命周期 E3 缺口限制。
+- 工作树中会话开始前的 feat-044/045 改动全部保留；无关的 `docs/optimization/agent-runtime-review.md` 删除状态未恢复、覆盖或纳入本 feature。清理及文档落盘后，最终 `./init.sh` exit 0、72 文件/472 项；harness validator 100/100，46 个 feature ID 连续且全部 done，跨文件语义断言与 `git diff --check` 通过。最终 `git status --short` 仅显示本 feature 文件和会话开始前已存在的未提交改动，没有生成报告或临时认证目录。
+
+### 状态与下一步
+
+- `feature_list.json` 中 feat-046 已标为 `done`；feat-001 至 feat-046 全部完成，没有 `not-started`、`in-progress` 或 `blocked` feature，当前九个 QAM 报告中没有开放 P0/P1。
+- 唯一推荐下一步：若继续治理 QAM-04，另行登记并只修复 P2 `QAM-04-003`，为 Scheduler in-flight callback 增加可等待的有界 shutdown，并以 Worker 信号行为与真实 PostgreSQL 重启恢复验证；不要并入 QAM-08 lease、QAM-09 Compose 拓扑或新调度功能。
+
+## 2026-09-12 — feat-045 完成（QAM-04-001 resolved）
+
+### 交付与范围
+
+- 完成当前首要 P1 `QAM-04-001`。`agent/scheduler-tick.ts` 的 `activeJobTimers` 现在保存 `expectedNextRunAtMs`：相同版本继续去重，重复 tick 看到 Job 改期会清除并替换旧 timer；callback 删除自身条目前核对它仍是当前 timer，再以 `jobId + expectedNextRunAt` 重读持久化 Job。
+- `fireJobNow()` 要求 Job 当前仍启用且 `nextRunAt` 与 timer 期望一致；timer 与 polling 都调用 `claimAndDispatchScheduledJob()`，后者统一做 wall-clock due 早期检查，并在 transaction 的 `updateMany` 中再次要求 `enabled=true`、`nextRunAt equals expected/lte now`、`lastRunAt` 与 `failCount` 全部匹配。改晚、改早、停用后按新时间重启用、时钟回拨及并发 claim 都落在同一持久化事实边界。
+- 没有修改 Prisma schema/migration、QAM-03 Job authoring/Route/Tool、Worker lifecycle、run-once missed-window 策略或部署拓扑；`QAM-04-002` 与 `QAM-04-003` 保持独立开放。`xoxo-qam-04-scheduler-review` 用于核对范围、证据和持续评分，`harness-creator` 用于保持单 feature、门禁与交接闭环。
+
+### 负向对照与回归证据
+
+- 未修复实现上，新增定向 Node 回归为 1 文件/15 项中 **3 failed / 12 passed**：已注册 timer 后把 Job 改晚、停用后按新时间重启用、或 wall clock 回拨，旧 callback 均在原时刻创建了 1 个 AgentTask。修复后 Scheduler 测试扩展为 16/16；新增的第四种交错证明 Job 改早并再次 tick 时会主动替换旧 timer，在新到期时刻派生且没有等到旧时间。
+- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/scheduler-atomic-dispatch.integration.test.ts` exit 0、3/3：真实 PostgreSQL 中，改期后的旧 timer 不创建 Task/Event、不覆盖 `nextRunAt`/`lastRunAt`/`failCount`；两个并发 tick 的独立 transaction 只有一个获得 claim，只生成 1 个 Task 和 1 个 `scheduler.job.fired` Event；既有 Event 插入故障仍让 Job/Task/Event 一起回滚。
+- 定向 `npm run typecheck`、`npm run lint -- --no-cache` 与 Scheduler 16/16 通过。受限 `check:quick` 仅 `agent-entry-build-config` 3/3 因已知子进程空 stdout 症状失败，其余 71 文件/467 项通过；相同 Node 22.23.2/npm 10.9.8 在正常权限边界复跑原命令 exit 0、72 文件/470 项。
+
+### 门禁、复审与清理
+
+- 最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` **单次 exit 0**：TypeScript、ESLint、72 文件/470 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.22% / branches 43.18% / functions 53.42% / lines 49.15%、19 文件/59 项真实 PostgreSQL、29/29 Playwright（5.5 分钟）。故障注入的 Prisma `P0001`、无效占位图片、stream 故障和 THREE deprecation 均未导致门禁失败，不在本 feature 扩大处理。
+- QAM-04 只重算有证据变化的代码结构、复用、状态一致性、健壮性与可测试性维度，由 75（L2）升至 **84（Score L3、Gate/Final L2）**；`QAM-04-001` 标为 resolved，总览更新为九模块均分 81.6、开放 P1×1/P2×31。Gate 仍为 L2，因为 `QAM-04-002` 的 run-once missed-window 缺陷和长停机/下一 cron 周期 E3 尚未解决。
+- `coverage/`、`playwright-report/` 与含临时认证状态的 `test-results/` 均为本轮生成；系统回收站因只读文件系统不可用后，按已核对的明确路径永久删除。没有清理 `.next` 或用户源码。最终正常权限 `./init.sh` exit 0、72/470；`git diff --check` 与最终 harness/status 检查见本条后续收尾证据。
+- 工作树中既有 `feat-044` 改动全部保留；盘点中另见与本 feature 无关的 `docs/optimization/agent-runtime-review.md` 删除状态，本轮未恢复、覆盖或纳入验收。
+
+### 状态与下一步
+
+- `feature_list.json` 中 feat-045 已标为 `done`；feat-001 至 feat-045 全部完成，无 `not-started`、`in-progress` 或 `blocked` feature。
+- 唯一推荐下一步：另行登记并只修复 `QAM-04-002`，让超过 missed window 的 run-once Job 进入 disabled 终态，并以 fake clock + 真实 PostgreSQL 证明不创建 Task、不会在下一 cron 周期重放；不要并入 `QAM-04-003` shutdown 或新的补发策略。
+
+## 2026-09-12 — feat-044 完成（QAM-03-003 resolved）
+
+### 交付与范围
+
+- 完成当前首要 P1 `QAM-03-003`。新增 `lib/participant-resolution.ts`：调用方提供参与者数组、显式当前用户 ID 和 ID 取值函数，返回匹配的 `self` 与另一参与者 `partner`；当前用户 ID 缺失或不匹配时两者均为空，不把数组位置当作身份协议。
+- `components/chat/ChatApp.tsx` 将 `currentUser.id` 贯穿 `LifePanel`；`LifePanel.tsx` 按 ID 排列本人/伙伴并把 ID 传给 `ScheduledJobModal`；`LifePanelModals.tsx`/`TimezoneSelector.tsx` 按本人 profile 选择默认时区，身份无法确认时保留浏览器时区回退。
+- `agent/tools/weather-tool.ts` 与 `timezone-tool.ts` 按 `context.requestedById` 解析本人/伙伴，显式 city/timezone/label 继续优先，身份无法确认时使用 Beijing、Asia/Shanghai、Europe/London 及“本人/对方”等中性默认，不猜参与者顺序；`schedule-tool.ts` 的既有请求者时区查找也复用同一 helper，语义不变。
+- 没有修改参与者排序、RoomSnapshot/AgentContext transport、API 产品契约、Prisma schema/migration、QAM-04 scheduler tick 或新增生活功能；本次只收敛 QAM-03 UI/Agent 的对象解析与回归证据。`harness-creator` 用于维持单 feature、证据与交接闭环；`xoxo-qam-03-life-plan-review` 用于按十维标准重算有证据变化的维度，没有扩大范围。
+
+### 负向对照与回归证据
+
+- 未修复组件上，`life-panel-weather`/`life-panel-modals` 合计 2/5 失败：当前用户为第二位时“两地时间”仍按 Alice/Bob 展示而非 Bob/Alice，新建计划默认 `Asia/Shanghai` 而非本人的 `Europe/London`；修复后两文件 7/7。
+- 未修复 Agent 实现上，第二参与者回归 2/6 失败：`weather.get` 将请求者自己的 London 当成伙伴城市，`timezone.compare` 将 Alice/Shanghai 当成本人；修复后 weather/timezone/schedule 及 Route/Tool 一致性合计 4 文件/35 项 Node 测试通过。`tests/server/weather-participant-resolution.test.ts` 用同一双人资料证明 Weather Route 与 Agent Tool 对 requester=`u2` 都解析伙伴 Alice/Shanghai。
+- `tests/e2e/authenticated.spec.ts` 新增真实第二参与者旅程：独立登录 E2E Two，确认伙伴天气对象为 E2E One/Tokyo、两地时间先本人后伙伴、新建计划默认 `Europe/London`。登录用的 API request context 显式设置空 `storageState`，避免单活 Session 逻辑删除共享 `user-one` 会话；完整顺序下该旅程及其后的私密载荷、Post、Study、消息旅程全部通过。
+
+### 门禁、失败复核与环境结论
+
+- 初始受限 `./init.sh`：仅 `tests/lib/agent-entry-build-config.test.ts` 3/3 因子进程空 stdout 失败，其余 69 文件/454 项通过，符合 AGENTS 记录的受限沙箱症状；同 Node 22.23.2/npm 10.9.8 在获准正常权限边界重跑原命令 exit 0，70 文件/457 项通过。
+- 定向实现后：组件 2 文件/7 项、Node 4 文件/35 项、`npm run typecheck` 与 `npm run lint` 均 exit 0。隔离数据库/浏览器中的第二参与者定向旅程 setup + test 为 2/2；修复测试 Session 隔离后，独立完整 `npm run test:e2e` 为 29/29。
+- 根目录直接 E2E 首次在测试收集前因既有 `.next/dev/lock` 报 “Another next dev server is already running”（报告 PID 180869，复核时进程已不存在）；未中断或删除用户进程，改用隔离副本。
+- symlink 依赖隔离副本中的两次默认 `check:full` 均先通过 72/466、production build、覆盖率和 PostgreSQL 19/57，随后 Next dev 持续报 `Cannot find module '../../module.compiled'`，私密载荷旅程收到非 2xx，最终均为 28/29、exit 1。只读 bundle 对照显示同一真实 Next 目录被生成两种不一致的 webpack module ID：调用方为 `(ssr)/./home/...`、目标为 `(ssr)/../../home/...`；这是临时项目根与 symlink 真实依赖根混用造成的验证拓扑故障，不在正常 npm 安装/容器拓扑内。一次 production-mode 尝试复用了已污染 `.next`，在 `_global-error` prerender 同样因该相对模块缺失 exit 1；没有以产品代码绕过。
+- 最终在无 `.next`、且把锁定 `node_modules` 独立复制到项目内的隔离副本执行 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full`，**单次 exit 0**：TypeScript、ESLint、72 文件/466 项 Vitest、Next.js 16.3.3 production build、覆盖率 statements 48.18% / branches 42.99% / functions 53.42% / lines 49.10%、19 文件/57 项真实 PostgreSQL、29/29 Playwright（4.9 分钟）。这组正向结果同时证明 symlink 故障不在仓库正常依赖拓扑中。
+- 删除根目录 Playwright 报告与 1.9 GiB 最终隔离副本后，获准正常权限边界的最终根仓库 `./init.sh` exit 0：Prisma Client、正式资产、TypeScript、ESLint 与 72 文件/466 项 Vitest 全部通过。
+
+### 复审、状态与下一步
+
+- `docs/optimization/qam-03-life-plan-quality-review.md` 将 QAM-03-003 标为 resolved；仅架构边界、数据一致性、接口依赖和健壮性各 +1，QAM-03 从 88（Score L3、Gate/Final L2）更新为 **92（Score/Gate/Final L4）**。总览同步为九模块均分 80.6、Final L2×6/L3×1/L4×2、开放问题 P1×2/P2×31。
+- `feature_list.json` 中 feat-044 已标为 `done`，feat-001 至 feat-044 全部完成；无 `not-started`、`in-progress` 或 `blocked` feature。
+- 唯一推荐下一步：另行登记一个 QAM-04 调度器质量复审 feature，使用 `xoxo-qam-04-scheduler-review` 核对 feat-042 已命中的 `nextRunAt`/runOnce 时间语义复审触发条件；只审查既有 scheduler 实现，不把 QAM-03 状态转移重构或新调度功能并入同一 feature。
+
 ## 2026-09-11 — feat-043 项目品牌 Logo 与浏览器标签页图标替换完成
 
 ### 交付与范围

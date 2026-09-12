@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+
 import { describe, expect, it } from "vitest";
 
 import {
@@ -11,6 +14,55 @@ import {
 } from "@/lib/scheduled-job-one-shot";
 
 const TZ = "Asia/Shanghai";
+const exec = promisify(execFile);
+
+async function resolveInWorkerTimezone(workerTimezone: string) {
+  const moduleUrl = new URL("../../lib/scheduled-job-one-shot.ts", import.meta.url).href;
+  const script = [
+    "const { resolveOneShotSchedule } = await import(" + JSON.stringify(moduleUrl) + ");",
+    "const valid = resolveOneShotSchedule({",
+    "  fireAt: '2030-05-09T20:40:00+01:00',",
+    "  timezone: 'Europe/London',",
+    "  now: Date.parse('2030-05-09T10:00:00.000Z')",
+    "});",
+    "let offsetless;",
+    "try {",
+    "  const accepted = resolveOneShotSchedule({",
+    "    fireAt: '2030-05-09T20:40:00',",
+    "    timezone: 'Europe/London',",
+    "    now: Date.parse('2030-05-09T10:00:00.000Z')",
+    "  });",
+    "  offsetless = { accepted: true, nextRunAt: accepted.nextRunAt.toISOString() };",
+    "} catch (error) {",
+    "  offsetless = {",
+    "    accepted: false,",
+    "    name: error instanceof Error ? error.name : 'unknown',",
+    "    reason: typeof error === 'object' && error !== null && 'reason' in error",
+    "      ? error.reason",
+    "      : null",
+    "  };",
+    "}",
+    "process.stdout.write(JSON.stringify({",
+    "  valid: { nextRunAt: valid.nextRunAt.toISOString(), cron: valid.cron },",
+    "  offsetless",
+    "}));",
+  ].join("\n");
+  const { stdout } = await exec(
+    process.execPath,
+    ["--import", "tsx", "--input-type=module", "--eval", script],
+    { env: { ...process.env, TZ: workerTimezone } },
+  );
+
+  return JSON.parse(stdout) as {
+    valid: { nextRunAt: string; cron: string };
+    offsetless: {
+      accepted: boolean;
+      nextRunAt?: string;
+      name?: string;
+      reason?: string | null;
+    };
+  };
+}
 
 describe("resolveOneShotSchedule", () => {
   it("uses the requested instant as nextRunAt", () => {
@@ -125,6 +177,32 @@ describe("resolveOneShotSchedule", () => {
 
     expect(caught).toBeInstanceOf(ScheduledJobFireAtError);
     expect((caught as ScheduledJobFireAtError).reason).toBe("invalid");
+  });
+
+  it("rejects a parseable datetime without an explicit offset", () => {
+    expect(() =>
+      resolveOneShotSchedule({
+        fireAt: "2030-05-09T20:40:00",
+        timezone: "Europe/London",
+        now: Date.parse("2030-05-09T10:00:00.000Z"),
+      }),
+    ).toThrow(ScheduledJobFireAtError);
+  });
+
+  it("keeps absolute-time semantics independent of the Worker process timezone", async () => {
+    const results = await Promise.all([
+      resolveInWorkerTimezone("Asia/Shanghai"),
+      resolveInWorkerTimezone("America/Los_Angeles"),
+    ]);
+
+    expect(results.map((result) => result.valid)).toEqual([
+      { nextRunAt: "2030-05-09T19:40:00.000Z", cron: "40 20 * * *" },
+      { nextRunAt: "2030-05-09T19:40:00.000Z", cron: "40 20 * * *" },
+    ]);
+    expect(results.map((result) => result.offsetless)).toEqual([
+      { accepted: false, name: "ScheduledJobFireAtError", reason: "invalid" },
+      { accepted: false, name: "ScheduledJobFireAtError", reason: "invalid" },
+    ]);
   });
 
   it("rejects an unknown timezone even when a valid cron is supplied", () => {

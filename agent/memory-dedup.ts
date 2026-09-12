@@ -1,19 +1,25 @@
 import type { Prisma } from "@prisma/client";
 
+import type { MemoryIdentity } from "@/agent/memory-identity";
+
 const SIMILARITY_THRESHOLD = 0.5;
 
 export async function deduplicatedMemoryWrite(
   prisma: Prisma.TransactionClient,
   roomId: string,
-  key: string,
+  identity: MemoryIdentity,
   value: string,
-  source: string,
-  userId?: string | null
+  source: string
 ): Promise<{ memoryId: string; merged?: string }> {
-  const scope = key.split(".")[0];
+  const storageScope = identity.storageKey.split(".")[0];
 
   const existing = await prisma.memory.findMany({
-    where: { roomId, key: { startsWith: `${scope}.` }, NOT: { key } }
+    where: {
+      roomId,
+      ownerKey: identity.ownerKey,
+      key: { startsWith: `${storageScope}.` },
+      NOT: { key: identity.storageKey }
+    }
   });
 
   let mergedKey: string | undefined;
@@ -27,19 +33,26 @@ export async function deduplicatedMemoryWrite(
   }
 
   const memory = await prisma.memory.upsert({
-    where: { roomId_key: { roomId, key } },
+    where: {
+      roomId_ownerKey_key: {
+        roomId,
+        ownerKey: identity.ownerKey,
+        key: identity.storageKey
+      }
+    },
     update: {
       value,
       source,
-      userId: userId ?? undefined,
+      userId: identity.userId,
       metadata: mergedKey ? { mergedFrom: mergedKey } : undefined
     },
     create: {
       roomId,
-      key,
+      ownerKey: identity.ownerKey,
+      key: identity.storageKey,
       value,
       source,
-      userId,
+      userId: identity.userId,
       metadata: mergedKey ? { mergedFrom: mergedKey } : undefined
     }
   });

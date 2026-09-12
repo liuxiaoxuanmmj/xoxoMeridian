@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  hasAtMostOneScheduledJobTrigger,
+  hasExactlyOneScheduledJobTrigger,
+  scheduledJobFireAtSchema,
+} from "@/lib/scheduled-job-one-shot";
+
 const emptyInput = z.object({}).strict();
 const id = z.string().min(1).max(200);
 const isoDateString = z.string().min(1).max(100);
@@ -87,12 +93,14 @@ export const BUILT_IN_TOOL_CONTRACTS = {
   "schedule.create": {
     inputSchema: z.object({
       cron: z.string().min(1).max(200).optional(),
-      fireAt: z.string().min(1).max(100).optional(),
+      fireAt: scheduledJobFireAtSchema.optional(),
       timezone: z.string().min(1).max(200),
       prompt: z.string().min(1).max(500),
       description: z.string().max(500).optional(),
       runOnce: z.boolean().optional()
-    }).strict(),
+    }).strict().refine(hasExactlyOneScheduledJobTrigger, {
+      message: "Exactly one of fireAt or cron is required",
+    }),
     outputSchema: scheduleSummary.omit({ prompt: true })
   },
   "schedule.list": {
@@ -110,12 +118,14 @@ export const BUILT_IN_TOOL_CONTRACTS = {
     inputSchema: z.object({
       jobId: id,
       cron: z.string().min(1).max(200).optional(),
-      fireAt: z.string().min(1).max(100).optional(),
+      fireAt: scheduledJobFireAtSchema.optional(),
       timezone: z.string().min(1).max(200).optional(),
       prompt: z.string().min(1).max(500).optional(),
       description: z.string().max(500).optional(),
       runOnce: z.boolean().optional()
-    }).strict(),
+    }).strict().refine(hasAtMostOneScheduledJobTrigger, {
+      message: "fireAt and cron cannot be provided together",
+    }),
     outputSchema: scheduleSummary.omit({ prompt: true })
   },
   "timezone.compare": {

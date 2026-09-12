@@ -16,7 +16,7 @@ vi.mock("@/lib/auth", () => ({
 
 const activeObservers = new Set<ChildProcessWithoutNullStreams>();
 
-function startPositionObserver(elementId: string, x: number, y: number) {
+function startPositionObserver(elementId: string, x: number, y: number, userId: string) {
   const child = spawn(
     process.execPath,
     [
@@ -26,6 +26,7 @@ function startPositionObserver(elementId: string, x: number, y: number) {
       elementId,
       String(x),
       String(y),
+      userId,
     ],
     {
       cwd: process.cwd(),
@@ -111,8 +112,8 @@ describe("Home drag persistence", () => {
     });
 
     const observers = [
-      startPositionObserver(photo.id, 420, 315),
-      startPositionObserver(photo.id, 420, 315),
+      startPositionObserver(photo.id, 420, 315, user.id),
+      startPositionObserver(photo.id, 420, 315, user.id),
     ];
     await Promise.all(observers.map((observer) => observer.ready));
 

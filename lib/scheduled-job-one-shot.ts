@@ -1,4 +1,5 @@
 import { CronExpressionParser } from "cron-parser";
+import { z } from "zod";
 
 /**
  * The single source of truth for how a scheduled job's stored trigger fields
@@ -13,6 +14,25 @@ import { CronExpressionParser } from "cron-parser";
 // the time planning latency finishes — fire it anyway, but refuse anything that
 // is clearly too stale to be what the user meant.
 export const FIRE_AT_GRACE_MS = 5 * 60 * 1000;
+
+export const scheduledJobFireAtSchema = z.string().datetime({ offset: true });
+
+type ScheduledJobTriggerInput = {
+  fireAt?: unknown;
+  cron?: unknown;
+};
+
+export function hasExactlyOneScheduledJobTrigger(
+  input: ScheduledJobTriggerInput,
+): boolean {
+  return (input.fireAt !== undefined) !== (input.cron !== undefined);
+}
+
+export function hasAtMostOneScheduledJobTrigger(
+  input: ScheduledJobTriggerInput,
+): boolean {
+  return !(input.fireAt !== undefined && input.cron !== undefined);
+}
 
 export type ScheduledJobFireAtReason = "invalid" | "too-old";
 
@@ -126,10 +146,11 @@ export function resolveOneShotSchedule(input: {
   onGracePast?: "push-one-second" | "keep";
 }): { nextRunAt: Date; cron: string; runOnce: true } {
   const { fireAt, timezone } = input;
-  const requested = new Date(fireAt);
-  if (Number.isNaN(requested.getTime())) {
+  const parsedFireAt = scheduledJobFireAtSchema.safeParse(fireAt);
+  if (!parsedFireAt.success) {
     throw new ScheduledJobFireAtError("invalid", fireAt);
   }
+  const requested = new Date(parsedFireAt.data);
   // Checked before the cron is chosen: the zone is persisted either way and the
   // scheduler reads it back, so a bad one has to fail even alongside a valid cron.
   if (!isValidTimezone(timezone)) {

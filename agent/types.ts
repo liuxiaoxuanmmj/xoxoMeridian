@@ -19,14 +19,20 @@ export type LLMToolDescriptor = {
   schema: unknown;
 };
 
+export type StructuredRoomParticipant = {
+  userId: string;
+  displayName: string;
+  city: string | null;
+  timezone: string | null;
+  profileNote: string | null;
+};
+
 export type StructuredRoomContext = {
   room: { name: string; slug: string };
-  participants: Array<{
-    displayName: string;
-    city: string | null;
-    timezone: string | null;
-    profileNote: string | null;
-  }>;
+  requestedById: string | null;
+  self: StructuredRoomParticipant | null;
+  partner: StructuredRoomParticipant | null;
+  participants: StructuredRoomParticipant[];
   recentMessages: Array<{ from: string; content: string; at: string }>;
   pinnedMemos: Array<{ title: string; content: string }>;
   activeSchedules: Array<{

@@ -50,6 +50,16 @@ const participants = [
   },
 ];
 
+const twoParticipants = [
+  ...participants,
+  {
+    id: "user-2",
+    displayName: "Bob",
+    avatarLabel: "B",
+    profile: { city: "London", country: "GB", timezone: "Europe/London" },
+  },
+];
+
 describe("LifePanel modals", () => {
   it("restores memo values after the modal closes and reopens", async () => {
     const memo = {
@@ -99,6 +109,7 @@ describe("LifePanel modals", () => {
       <ScheduledJobModal
         isOpen
         roomId="room-1"
+        currentUserId="user-1"
         participants={participants}
         job={oneShotJob()}
         {...modalCallbacks}
@@ -130,6 +141,7 @@ describe("LifePanel modals", () => {
       <ScheduledJobModal
         isOpen
         roomId="room-1"
+        currentUserId="user-1"
         participants={participants}
         job={oneShotJob()}
         {...modalCallbacks}
@@ -165,15 +177,8 @@ describe("LifePanel modals", () => {
       <ScheduledJobModal
         isOpen
         roomId="room-1"
-        participants={[
-          ...participants,
-          {
-            id: "user-2",
-            displayName: "Bob",
-            avatarLabel: "B",
-            profile: { city: "London", country: "GB", timezone: "Europe/London" },
-          },
-        ]}
+        currentUserId="user-1"
+        participants={twoParticipants}
         job={oneShotJob()}
         {...modalCallbacks}
       />
@@ -193,5 +198,19 @@ describe("LifePanel modals", () => {
       fireAt: "2026-08-28T08:30:00.000Z",
       timezone: "Europe/London",
     });
+  });
+
+  it("defaults a new job to the current user's timezone when they are second", () => {
+    render(
+      <ScheduledJobModal
+        isOpen
+        roomId="room-1"
+        currentUserId="user-2"
+        participants={twoParticipants}
+        {...modalCallbacks}
+      />
+    );
+
+    expect(screen.getByRole("combobox")).toHaveValue("Europe/London");
   });
 });

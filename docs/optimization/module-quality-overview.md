@@ -2,28 +2,29 @@
 
 > 评分标准：[`module-quality-review-standard.md`](./module-quality-review-standard.md)
 > 模块边界：[`PROJECT_VIEW.md`](../../PROJECT_VIEW.md)
-> 当前状态：QAM-01～QAM-09 独立初审基线已完成；后续只在代码或风险匹配证据变化时复审。
+> 当前状态：QAM-01～QAM-10 已按当前快照完成独立 Skill 复审；后续只在代码、资产或风险匹配证据变化时复审。
 
 ## Current Quality Baseline
 
 | QAM | Module | Score | Score Level | Gate / Final | Trend | Open Issues | Last Review | Report | Skill |
 | --- | --- | ---: | --- | --- | --- | --- | --- | --- | --- |
-| QAM-01 | 身份、会话与个人档案 | 87 | L3 | L4 / L3 | +4 | 3（P2×3） | 2026-09-08 | [报告](./qam-01-identity-quality-review.md) | [`$xoxo-qam-01-identity-review`](../../.agents/skills/xoxo-qam-01-identity-review/SKILL.md) |
-| QAM-02 | 私密房间与实时消息 | 90 | L4 | L4 / L4 | +4 | 2（P2×2） | 2026-09-09 | [报告](./qam-02-room-message-quality-review.md) | [`$xoxo-qam-02-room-message-review`](../../.agents/skills/xoxo-qam-02-room-message-review/SKILL.md) |
-| QAM-03 | 双人生活信息与计划管理 | 88 | L3 | L2 / L2 | +7 | 1（P1×1） | 2026-09-11 | [报告](./qam-03-life-plan-quality-review.md) | [`$xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
-| QAM-04 | 定时任务触发与派生 | 75 | L2 | L2 / L2 | baseline | 3（P1×2，P2×1） | 2026-09-06 | [报告](./qam-04-scheduler-quality-review.md) | [`$xoxo-qam-04-scheduler-review`](../../.agents/skills/xoxo-qam-04-scheduler-review/SKILL.md) |
-| QAM-05 | 内容发布与时间线 | 73 | L2 | L2 / L2 | +9 | 7（P2×7） | 2026-09-08 | [报告](./qam-05-content-timeline-quality-review.md) | [`$xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
-| QAM-06 | 空间画布与媒体资产 | 71 | L2 | L2 / L2 | +7 | 6（P2×6） | 2026-09-07 | [报告](./qam-06-spatial-media-quality-review.md) | [`$xoxo-qam-06-spatial-media-review`](../../.agents/skills/xoxo-qam-06-spatial-media-review/SKILL.md) |
-| QAM-07 | 专注学习与伙伴状态 | 85 | L3 | L2 / L2 | +8 | 2（P2×2） | 2026-09-09 | [报告](./qam-07-study-quality-review.md) | [`$xoxo-qam-07-study-review`](../../.agents/skills/xoxo-qam-07-study-review/SKILL.md) |
-| QAM-08 | Agent 任务执行与工具治理 | 74 | L2 | L2 / L2 | baseline | 5（P2×5） | 2026-09-06 | [报告](./qam-08-agent-runtime-quality-review.md) | [`$xoxo-qam-08-agent-runtime-review`](../../.agents/skills/xoxo-qam-08-agent-runtime-review/SKILL.md) |
-| QAM-09 | 应用交付与进程拓扑 | 78 | L2 | L2 / L2 | baseline | 5（P2×5） | 2026-09-06 | [报告](./qam-09-delivery-quality-review.md) | [`$xoxo-qam-09-delivery-review`](../../.agents/skills/xoxo-qam-09-delivery-review/SKILL.md) |
+| QAM-01 | 身份、会话与个人档案 | 87 | L3 | L4 / L3 | 0 | 3（P2×3） | 2026-09-12 | [报告](./qam-01-identity-quality-review.md) | [`$xoxo-qam-01-identity-review`](../../.agents/skills/xoxo-qam-01-identity-review/SKILL.md) |
+| QAM-02 | 私密房间与实时消息 | 90 | L4 | L4 / L4 | 0 | 2（P2×2） | 2026-09-12 | [报告](./qam-02-room-message-quality-review.md) | [`$xoxo-qam-02-room-message-review`](../../.agents/skills/xoxo-qam-02-room-message-review/SKILL.md) |
+| QAM-03 | 双人生活信息与计划管理 | 90 | L4 | L4 / L4 | +5 | 2（P2×2） | 2026-09-12 | [报告](./qam-03-life-plan-quality-review.md) | [`$xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
+| QAM-04 | 定时任务触发与派生 | 87 | L3 | L3 / L3 | 0 | 1（P2×1） | 2026-09-12 | [报告](./qam-04-scheduler-quality-review.md) | [`$xoxo-qam-04-scheduler-review`](../../.agents/skills/xoxo-qam-04-scheduler-review/SKILL.md) |
+| QAM-05 | 内容发布与时间线 | 73 | L2 | L2 / L2 | 0 | 7（P2×7） | 2026-09-12 | [报告](./qam-05-content-timeline-quality-review.md) | [`$xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
+| QAM-06 | 空间画布与媒体资产 | 74 | L2 | L2 / L2 | +9 | 6（P2×6） | 2026-09-12 | [报告](./qam-06-spatial-media-quality-review.md) | [`$xoxo-qam-06-spatial-media-review`](../../.agents/skills/xoxo-qam-06-spatial-media-review/SKILL.md) |
+| QAM-07 | 专注学习与伙伴状态 | 85 | L3 | L2 / L2 | 0 | 2（P2×2） | 2026-09-12 | [报告](./qam-07-study-quality-review.md) | [`$xoxo-qam-07-study-review`](../../.agents/skills/xoxo-qam-07-study-review/SKILL.md) |
+| QAM-08 | Agent 任务执行与工具治理 | 80 | L3 | L2 / L2 | +10 | 5（P2×5） | 2026-09-12 | [报告](./qam-08-agent-runtime-quality-review.md) | [`$xoxo-qam-08-agent-runtime-review`](../../.agents/skills/xoxo-qam-08-agent-runtime-review/SKILL.md) |
+| QAM-09 | 应用交付与进程拓扑 | 82 | L3 | L2 / L2 | +4 | 5（P2×5） | 2026-09-12 | [报告](./qam-09-delivery-quality-review.md) | [`$xoxo-qam-09-delivery-review`](../../.agents/skills/xoxo-qam-09-delivery-review/SKILL.md) |
+| QAM-10 | 全局 3D Agent 入口与模型资产生命周期 | 84 | L3 | L2 / L2 | baseline | 5（P2×5） | 2026-09-12 | [报告](./qam-10-agent-entry-quality-review.md) | [`$xoxo-qam-10-agent-entry-review`](../../.agents/skills/xoxo-qam-10-agent-entry-review/SKILL.md) |
 
 ## Portfolio Snapshot
 
-- 九个模块简单平均分：`80.1/100`。该数值只用于观察全局趋势，不替代模块 Gate，也不用于比较产品价值或团队绩效。
-- Final Level 分布：L0×0、L1×0、L2×7、L3×1、L4×1。
-- 当前开放问题：34 项，其中 P0×0、P1×3、P2×31；另有 QAM-02-005 一项 `not-reproduced` 历史记录，不计入开放项。
-- 当前首要风险簇：QAM-03 参与者身份语义，以及 QAM-04 调度触发可靠性；QAM-02 只剩消息 trace 投影与实时收敛 P2。修复必须分别回到对应稳定问题 ID，不从总览直接推导改造范围。
+- 十个模块简单平均分：`83.2/100`。该数值只用于观察全局趋势，不替代模块 Gate，也不用于比较产品价值或团队绩效。
+- Final Level 分布：L0×0、L1×0、L2×6、L3×2、L4×2。
+- 当前开放问题：38 项，其中 P0×0、P1×0、P2×38；另有 QAM-02-005 一项 `not-reproduced` 历史记录，不计入开放项。
+- 当前没有开放 P0/P1。`QAM-08-006` 已由显式 requester/self/partner contract、绝对 Memory owner、无损迁移及真实 PostgreSQL/Planner→Tool 回归关闭；`QAM-03-004` 与 `QAM-06-009` 的既有关闭结论保持。QAM-10 已作为独立模块纳入持续治理；其首次审查无 P0/P1，当前五个 P2 聚焦资产 provenance、Theme 单一契约、认证显示缓存、实体设备证据和当前 production E3 缺口。
 
 ## 使用规则
 
@@ -51,3 +52,10 @@
 | 2026-09-09 | QAM-02 | QAM-02-004 已解决；QAM-02 由 86/L1 提升至 90/L4（Score/Gate/Final L4），组合平均分 78.0，开放问题降为 P1×5/P2×31 | feat-038、User 行锁与事务内成员资格/count/delete、真实 PostgreSQL 修复前并发 `[200,200]` 删除全部房间、修复后 `[200,409]` 且 `/chat` 解析剩余默认房间、完整门禁 17 文件/45 项 PostgreSQL 与 11/11 Playwright |
 | 2026-09-10 | QAM-03 | QAM-03-002 已解决；QAM-03 由 69/L1 提升至 81/L2（Score L3、Gate L2），组合平均分 79.3，开放问题降为 P1×4/P2×31 | feat-039、共享 ScheduledJob authoring service、Room 行锁与事务内 active count/write；真实 PostgreSQL 无锁负向对照 0/2、修复后 Route/Agent create/re-enable/active edit 3/3，完整门禁 18 文件/48 项 PostgreSQL 与 11/11 Playwright |
 | 2026-09-11 | QAM-03 | QAM-03-001 已解决；QAM-03 由 81/L2 提升至 88/L2（Score L3、Gate L2，Final 因开放 P1 仍为 L2），组合平均分 80.1，开放问题降为 P1×3/P2×31 | feat-042、一次性 `fireAt` 与墙上时间收敛为 `lib/` 单一事实来源并由 Route/Agent 共用；未修复组件负向对照 3/4 失败（−480 分钟）、修复后 4/4；真实 PostgreSQL 9/9 含 Route 与 Agent 同一 `fireAt` 一致性；完整门禁 70 文件/457 项 Vitest、19 文件/57 项 PostgreSQL 与 26/26 Playwright |
+| 2026-09-12 | QAM-03 | QAM-03-003 已解决；QAM-03 由 88/L2 提升至 92/L4（Score/Gate/Final L4），组合平均分 80.6，开放问题降为 P1×2/P2×31 | feat-044、显式 currentUserId/requestedById 与共享 participant resolver；未修复组件 2/5、Agent 2/6 失败，修复后组件 7/7、Agent/Server 4 文件/35 项；Weather Route/Tool 一致性与第二参与者真实 Chromium 旅程；完整门禁 72 文件/466 项 Vitest、19 文件/57 项 PostgreSQL 与 29/29 Playwright |
+| 2026-09-12 | QAM-04 | QAM-04-001 已解决；QAM-04 由 75/L2 提升至 84/L2（Score L3、Gate/Final L2），组合平均分 81.6，开放问题降为 P1×1/P2×31 | feat-045、期望 `nextRunAt` timer 与共享 due/CAS；修复前 Node 负向对照 3/15 失败，修复后 Scheduler 16/16；真实 PostgreSQL 3/3 覆盖旧 timer 隔离、并发单 Task/Event 与故障回滚；完整门禁 72 文件/470 项 Vitest、19 文件/59 项 PostgreSQL 与 29/29 Playwright |
+| 2026-09-12 | QAM-04 | QAM-04-002 已解决；QAM-04 由 84/L2 提升至 87/L3（Score/Gate/Final L3），组合平均分 81.9，开放问题降为 P1×0/P2×31 | feat-046、run-once 统一禁用 claim；修复前 Node 1/17、PostgreSQL 1/4 均在下一日错误 fired，修复后 Scheduler 18/18、PostgreSQL 4/4 覆盖 fireAt 合成 cron 禁用终态与零 Task/Event；完整门禁 72 文件/472 项 Vitest、19 文件/60 项 PostgreSQL 与 29/29 Playwright |
+| 2026-09-12 | QAM-01～QAM-10 | 10 个模块分别由独立子 Agent 显式调用对应 Skill 复审；3D Agent Entry 经独立边界分析升格为 QAM-10 并建立专用 Skill/初审报告。组合均分 80.8，开放 P1×3/P2×38，Final 分布 L1×2/L2×5/L3×2/L4×1 | feat-047；QAM-01/02/04/05/07 持平，QAM-03 新增错误 `fireAt`/contract/a11y 问题降 7，QAM-06 新增 Home anchor 授权 P1 降 6，QAM-08 新增 Planner/Memory 身份 P1 降 4，QAM-09 因直接交付证据升 4，QAM-10 baseline 84/L2；各报告记录本轮定向命令和未运行层级 |
+| 2026-09-12 | QAM-06 | QAM-06-009 已解决；QAM-06 由 65/L1 提升至 74/L2（Score/Gate/Final L2），组合均分 81.7，开放问题降为 P1×2/P2×38 | feat-048、共享 Home spatial access predicate 与实际条件写；未修复 PostgreSQL 负向对照复现隐藏 ID、200/201/200 和持久副作用，修复后双 Room 1/1、完整门禁 20 文件/61 项 PostgreSQL 与 30/30 Playwright |
+| 2026-09-12 | QAM-03 | QAM-03-004 已解决；QAM-03 由 85/L2 提升至 90/L4（Score/Gate/Final L4），组合均分 82.2，开放问题降为 P1×1/P2×38 | feat-049、HTTP/Agent 共享 offset datetime 与 trigger 组合谓词、resolver 防御校验；修复前跨进程/Registry 2 文件/50 项中 6 项失败，修复后 50/50；真实 PostgreSQL Route/Agent create/update parity 11/11，完整门禁 72/480 Vitest、20/63 PostgreSQL 与 30/30 Playwright |
+| 2026-09-12 | QAM-08 | QAM-08-006 已解决；QAM-08 由 70/L1 提升至 80/L2（Score L3、Gate/Final L2），组合均分 83.2，开放问题降为 P1×0/P2×38 | feat-050、显式 requester/self/partner contract、绝对 Memory owner/canonical key 与保留 legacy 的迁移；修复前 Node 2 项、PostgreSQL 3 项失败，修复后旧迁移数据 8/8 保留及双成员/Planner→Tool 回归通过；完整门禁 72/482 Vitest、22/68 PostgreSQL 与 30/30 Playwright |

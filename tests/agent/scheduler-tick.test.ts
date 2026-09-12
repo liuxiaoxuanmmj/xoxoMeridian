@@ -82,7 +82,16 @@ const mockPrisma = {
       const matched = jobs.filter((j) => {
         if (where.id && j.id !== where.id) return false;
         if (where.enabled !== undefined && j.enabled !== where.enabled) return false;
-        if (where.nextRunAt && j.nextRunAt.getTime() !== where.nextRunAt.getTime()) return false;
+        if (where.nextRunAt instanceof Date && j.nextRunAt.getTime() !== where.nextRunAt.getTime()) {
+          return false;
+        }
+        if (where.nextRunAt && !(where.nextRunAt instanceof Date)) {
+          if (
+            where.nextRunAt.equals &&
+            j.nextRunAt.getTime() !== where.nextRunAt.equals.getTime()
+          ) return false;
+          if (where.nextRunAt.lte && j.nextRunAt > where.nextRunAt.lte) return false;
+        }
         if (Object.hasOwn(where, "lastRunAt")) {
           const left = j.lastRunAt?.getTime() ?? null;
           const right = where.lastRunAt?.getTime() ?? null;
@@ -176,6 +185,30 @@ describe("schedulerTick - scheduled job CAS", () => {
     expect(jobs[0].enabled).toBe(false);
   });
 
+  it("disables a runOnce job outside the missed window without replaying it at the next cron occurrence", async () => {
+    vi.useFakeTimers();
+    const scheduledFor = new Date("2026-05-08T10:00:00Z");
+    const afterMissedWindow = new Date("2026-05-08T12:00:00Z");
+    const nextCronOccurrence = new Date("2026-05-09T10:00:00Z");
+    vi.setSystemTime(afterMissedWindow);
+    jobs.push(makeJob({
+      cron: "0 10 * * *",
+      timezone: "UTC",
+      payload: { prompt: "只提醒一次", runOnce: true },
+      nextRunAt: scheduledFor
+    }));
+
+    const missedResult = await schedulerTick(afterMissedWindow);
+    vi.setSystemTime(nextCronOccurrence);
+    const nextDayResult = await schedulerTick(nextCronOccurrence);
+
+    expect(missedResult.jobs).toEqual({ fired: 0, skipped: 1, failed: 0 });
+    expect(nextDayResult.jobs).toEqual({ fired: 0, skipped: 0, failed: 0 });
+    expect(jobs[0].enabled).toBe(false);
+    expect(agentTasks).toHaveLength(0);
+    expect(eventLogs).toHaveLength(0);
+  });
+
   it("keeps a non-runOnce job enabled after firing", async () => {
     jobs.push(makeJob({ payload: { prompt: "发诗" } }));
 
@@ -183,6 +216,25 @@ describe("schedulerTick - scheduled job CAS", () => {
 
     expect(agentTasks).toHaveLength(1);
     expect(jobs[0].enabled).toBe(true);
+  });
+
+  it("keeps a recurring job enabled and advances it after a missed window", async () => {
+    const scheduledFor = new Date("2026-05-08T10:00:00Z");
+    const afterMissedWindow = new Date("2026-05-08T12:00:00Z");
+    jobs.push(makeJob({
+      cron: "0 * * * *",
+      timezone: "UTC",
+      nextRunAt: scheduledFor
+    }));
+
+    const result = await schedulerTick(afterMissedWindow);
+
+    expect(result.jobs).toEqual({ fired: 0, skipped: 1, failed: 0 });
+    expect(jobs[0].enabled).toBe(true);
+    expect(jobs[0].nextRunAt).toEqual(new Date("2026-05-08T13:00:00Z"));
+    expect(jobs[0].lastRunAt).toBeNull();
+    expect(agentTasks).toHaveLength(0);
+    expect(eventLogs).toHaveLength(0);
   });
 
   it("wraps the fired prompt with a trigger marker so the agent does not re-schedule", async () => {
@@ -309,6 +361,85 @@ describe("schedulerTick - near-term timer arming", () => {
 
     await vi.advanceTimersByTimeAsync(2 * 60_000 + 500);
     expect(agentTasks).toHaveLength(0);
+  });
+
+  it("discards the old timer after a near-term job is postponed", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-05-08T12:00:00Z");
+    vi.setSystemTime(now);
+    const originalNextRunAt = new Date(now.getTime() + 30_000);
+    const postponedNextRunAt = new Date(now.getTime() + 90_000);
+    jobs.push(makeJob({ nextRunAt: originalNextRunAt }));
+
+    await schedulerTick(now);
+    jobs[0].nextRunAt = postponedNextRunAt;
+
+    await vi.advanceTimersByTimeAsync(30_500);
+    expect(agentTasks).toHaveLength(0);
+    expect(jobs[0].nextRunAt).toEqual(postponedNextRunAt);
+
+    await schedulerTick(new Date());
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(agentTasks).toHaveLength(1);
+  });
+
+  it("replaces an armed timer when the job is moved to an earlier time", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-05-08T12:00:00Z");
+    vi.setSystemTime(now);
+    const originalNextRunAt = new Date(now.getTime() + 90_000);
+    jobs.push(makeJob({ nextRunAt: originalNextRunAt }));
+
+    await schedulerTick(now);
+    jobs[0].nextRunAt = new Date(now.getTime() + 30_000);
+    await schedulerTick(now);
+
+    await vi.advanceTimersByTimeAsync(30_500);
+
+    expect(agentTasks).toHaveLength(1);
+  });
+
+  it("does not let a disabled then rescheduled job reuse its old timer", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-05-08T12:00:00Z");
+    vi.setSystemTime(now);
+    const originalNextRunAt = new Date(now.getTime() + 30_000);
+    const reenabledNextRunAt = new Date(now.getTime() + 90_000);
+    jobs.push(makeJob({ nextRunAt: originalNextRunAt }));
+
+    await schedulerTick(now);
+    jobs[0].enabled = false;
+    jobs[0].nextRunAt = reenabledNextRunAt;
+    jobs[0].enabled = true;
+
+    await vi.advanceTimersByTimeAsync(30_500);
+    expect(agentTasks).toHaveLength(0);
+
+    await schedulerTick(new Date());
+    await vi.advanceTimersByTimeAsync(60_000);
+
+    expect(agentTasks).toHaveLength(1);
+  });
+
+  it("rechecks wall-clock due time when the clock moves backward", async () => {
+    vi.useFakeTimers();
+    const now = new Date("2026-05-08T12:00:00Z");
+    vi.setSystemTime(now);
+    const nextRunAt = new Date(now.getTime() + 30_000);
+    jobs.push(makeJob({ nextRunAt }));
+
+    await schedulerTick(now);
+    vi.setSystemTime(new Date(now.getTime() - 60_000));
+
+    await vi.advanceTimersByTimeAsync(30_500);
+    expect(agentTasks).toHaveLength(0);
+    expect(jobs[0].nextRunAt).toEqual(nextRunAt);
+
+    vi.setSystemTime(new Date(nextRunAt.getTime() + 500));
+    await schedulerTick(new Date());
+
+    expect(agentTasks).toHaveLength(1);
   });
 });
 

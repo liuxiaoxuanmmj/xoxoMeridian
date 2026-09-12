@@ -133,6 +133,7 @@ export function ChatApp({
         </section>
 
         <LifePanel
+          currentUserId={currentUser.id}
           memos={snapshot.memos}
           participants={participants}
           roomId={roomId}

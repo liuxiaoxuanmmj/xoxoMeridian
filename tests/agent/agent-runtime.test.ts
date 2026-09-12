@@ -5,6 +5,39 @@ import { detectAgentTarget } from "@/lib/agent-detection";
 import { filterToolsForTrigger, readPersistedAgentPlan } from "@/agent/agent-runtime";
 import { createMockLLMProvider } from "@/agent/llm-provider";
 import { createToolRegistry } from "@/agent/tool-registry";
+import type { StructuredRoomContext } from "@/agent/types";
+
+function requesterAwareRoomContext(
+  requestedById: string | null
+): StructuredRoomContext {
+  const alice = {
+    userId: "u1",
+    displayName: "Alice",
+    city: "Shanghai",
+    timezone: "Asia/Shanghai",
+    profileNote: null
+  };
+  const bob = {
+    userId: "u2",
+    displayName: "Bob",
+    city: "London",
+    timezone: "Europe/London",
+    profileNote: null
+  };
+
+  return {
+    room: { name: "Test", slug: "test" },
+    requestedById,
+    self: requestedById === bob.userId ? bob : requestedById === alice.userId ? alice : null,
+    partner: requestedById === bob.userId ? alice : requestedById === alice.userId ? bob : null,
+    participants: [alice, bob],
+    recentMessages: [],
+    pinnedMemos: [],
+    activeSchedules: [],
+    semanticMemory: { aboutHer: [], aboutMe: [], shared: [] },
+    summaries: { global: null, recent: [] }
+  };
+}
 
 describe("agent dispatch primitives", () => {
   it("detects direct assistant mentions", () => {
@@ -72,15 +105,7 @@ describe("agent dispatch primitives", () => {
     const provider = createMockLLMProvider();
     const result = await provider.plan({
       prompt: "@小助手 查一下天气",
-      roomContext: {
-        room: { name: "Test", slug: "test" },
-        participants: [],
-        recentMessages: [],
-        pinnedMemos: [],
-        activeSchedules: [],
-        semanticMemory: { aboutHer: [], aboutMe: [], shared: [] },
-        summaries: { global: null, recent: [] }
-      },
+      roomContext: requesterAwareRoomContext("u1"),
       availableTools: [{ name: "weather.get", description: "", schema: {} }]
     });
 
@@ -89,6 +114,49 @@ describe("agent dispatch primitives", () => {
     expect(result.toolInputs["weather.get"]).toMatchObject({
       city: "London"
     });
+  });
+
+  it("plans weather and timezone from the explicit second requester view", async () => {
+    const provider = createMockLLMProvider();
+    const roomContext = requesterAwareRoomContext("u2");
+
+    const weather = await provider.plan({
+      prompt: "查一下对方天气",
+      roomContext,
+      availableTools: [{ name: "weather.get", description: "", schema: {} }]
+    });
+    const timezone = await provider.plan({
+      prompt: "比较一下我们的时差",
+      roomContext,
+      availableTools: [{ name: "timezone.compare", description: "", schema: {} }]
+    });
+
+    expect(weather.toolInputs["weather.get"]).toEqual({ city: "Shanghai" });
+    expect(timezone.toolInputs["timezone.compare"]).toEqual({
+      fromLabel: "Bob",
+      fromTimezone: "Europe/London",
+      toLabel: "Alice",
+      toTimezone: "Asia/Shanghai"
+    });
+  });
+
+  it("does not infer requester-relative Planner inputs from participant order", async () => {
+    const provider = createMockLLMProvider();
+    const roomContext = requesterAwareRoomContext(null);
+
+    const weather = await provider.plan({
+      prompt: "查一下对方天气",
+      roomContext,
+      availableTools: [{ name: "weather.get", description: "", schema: {} }]
+    });
+    const timezone = await provider.plan({
+      prompt: "比较一下我们的时差",
+      roomContext,
+      availableTools: [{ name: "timezone.compare", description: "", schema: {} }]
+    });
+
+    expect(weather.toolInputs["weather.get"]).toEqual({});
+    expect(timezone.toolInputs["timezone.compare"]).toEqual({});
   });
 });
 

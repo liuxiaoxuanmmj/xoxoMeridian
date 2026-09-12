@@ -1,5 +1,6 @@
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
+import { resolveParticipantPair } from "@/lib/participant-resolution";
 
 type WeatherInput = {
   city?: string;
@@ -131,7 +132,12 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
 }
 
 function inferPartnerCity(context: ToolExecutionContext) {
-  return context.runtimeContext.participants[1]?.user.profile?.city;
+  const { partner } = resolveParticipantPair(
+    context.runtimeContext.participants,
+    context.requestedById,
+    (participant) => participant.userId
+  );
+  return partner?.user.profile?.city;
 }
 
 function mockWeather(city: string, fallbackReason?: string) {

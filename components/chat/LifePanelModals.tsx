@@ -21,6 +21,7 @@ type MemoModalProps = ModalProps & {
 
 type ScheduledJobModalProps = ModalProps & {
   job?: LifeScheduledJob;
+  currentUserId: string;
   participants: ChatUser[];
 };
 
@@ -118,6 +119,7 @@ export function ScheduledJobModal({
   onClose,
   roomId,
   job,
+  currentUserId,
   participants,
   onSuccess,
 }: ScheduledJobModalProps) {
@@ -129,6 +131,7 @@ export function ScheduledJobModal({
       onClose={onClose}
       roomId={roomId}
       job={job}
+      currentUserId={currentUserId}
       participants={participants}
       onSuccess={onSuccess}
     />
@@ -139,6 +142,7 @@ function ScheduledJobModalForm({
   onClose,
   roomId,
   job,
+  currentUserId,
   participants,
   onSuccess,
 }: Omit<ScheduledJobModalProps, "isOpen">) {
@@ -148,7 +152,7 @@ function ScheduledJobModalForm({
     isOnce ? "once" : "recurring"
   );
   const [formData, setFormData] = useState(() => {
-    const timezone = job?.timezone ?? getDefaultTimezone(participants);
+    const timezone = job?.timezone ?? getDefaultTimezone(participants, currentUserId);
     return {
       description: (job?.payload?.description as string | null) ?? "",
       prompt: (job?.payload?.prompt as string | null) ?? "",

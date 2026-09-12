@@ -27,7 +27,10 @@ export default async function HomePage() {
     boardId: board.id,
     posts: posts.map((post) => ({ id: post.id, authorId: post.authorId })),
   });
-  const initialSnapshot = await getHomeBoardSnapshot(board.id);
+  const initialSnapshot = await getHomeBoardSnapshot({
+    boardId: board.id,
+    userId: user.id,
+  });
 
   return (
     <div className="home-linen-page min-h-screen relative overflow-hidden">

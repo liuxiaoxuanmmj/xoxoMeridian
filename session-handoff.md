@@ -1,5 +1,91 @@
 # 会话交接
 
+## 2026-09-12 最新交接：feat-050 已完成（QAM-08-006 resolved）
+
+- 状态：feat-001 至 feat-050 均为 `done`，没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-08-006 已关闭；QAM-08 为 80 分、Score L3、Gate/Final L2，开放项仅 P2×5。十模块均分 83.2，Final 分布 L0×0/L1×0/L2×6/L3×2/L4×2，开放 P0×0/P1×0/P2×38。
+- 实现：`buildAgentContext(roomId, requestedById)` 通过稳定 userId 形成显式 requester/self/partner；Task、Durable Plan、mock/真实 Planner 与 Tool 使用同一有效请求者，空或非成员 ID 不猜 participant 顺序。新增 `agent/memory-identity.ts`，把个人 me/her 写入规范化为 `user:<id>` owner + `person.*` key，shared/system 使用房间 scope；唯一、upsert、owner 内去重、recall、context 投影与 extractor 都复用该协议。
+- 迁移：`20260912175500_add_memory_owner_key` 增加必填 `ownerKey`、`(roomId,ownerKey,key)` 唯一键与 owner check。已知 owner 无损规范化；同 owner canonical 冲突、缺 owner 的个人行和未知 key 不被删除或猜归属，而是保留为带原因的 `legacy:<id>`。隔离临时数据库从全部旧迁移升级，证明 8/8 旧行保留且复合唯一/check 拒绝非法写。
+- 负向与回归：旧实现 Node 2 failed/13 passed，复现第二请求者与 null 请求者的 Planner 错配；旧实现真实 PostgreSQL 3/3 failed，复现个人事实跨成员覆盖/删除、错投影及 null 个人写入。修复后 Node 3 文件/20 项、requester-memory PostgreSQL 4/4、迁移 PostgreSQL 1/1；双成员同名/相似事实、双向 aboutMe/aboutHer/recall、空请求者和第二请求者 Bob/London→Alice/Shanghai 的 Planner→Tool 全链路均通过。集成 global setup 固定 mock LLM 并清空 API key，避免继承开发 `.env` 发出真实网络请求。
+- 门禁：`db:generate`、typecheck、lint、check:quick 72/482 通过。首轮 `check:full` 仅有无关 home-board upload coverage 用例一次 5000ms 超时；同文件立即 8/8、完整 coverage 72/482，未改该用例。随后完整门禁通过；最后将 Tool 请求者收紧为 context 有效 ID 后，20 项定向测试及最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 再次 exit 0：production build、覆盖率 47.73/42.56/52.71/48.54、22/68 PostgreSQL、30/30 Playwright（5.9 分钟）。Compose smoke 因未改部署路径未运行且不声称通过。
+- 清理与保留：`coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站，可恢复；迁移临时库/目录和 Testcontainers 已清理，`next-env.d.ts` 无差异，Docker 仅保留会话前既有健康 `xoxo-meridian-postgres`。QAM-08-001～005、QAM-03-005/006、feat-044～049、QAM-10、既有 `docs/optimization/agent-runtime-review.md` 删除状态及其他用户改动均未恢复、覆盖或纳入本 feature。
+- 最终核验与恢复：状态落盘后 `./init.sh` exit 0、72/482；Harness validator 100/100，50 个 feature 连续且全 `done`，QAM-08 十维 80/100、组合总分 832/均分 83.2，报告相对链接和 JSON 均可解析，`git diff --check` 通过，最终 status 无测试/认证/迁移临时工件。clean restart 只需依次读取四份启动文件，确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。
+- 唯一推荐下一步：由产品优先级登记一个新的独立 feature；当前没有开放 P1，不自动扩大本 feature 到 QAM-08-001～005 或其他 P2。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-049 已完成（QAM-03-004 resolved）
+
+- 状态：feat-001 至 feat-049 均标记为 `done`，没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-03-004 已关闭；QAM-03 为 90 分、Score/Gate/Final L4，开放项仅 P2×2。十模块均分 82.2，Final 分布 L1×1/L2×5/L3×2/L4×2，开放 P0×0/P1×1/P2×38。
+- 改动：`lib/scheduled-job-one-shot.ts` 拥有并导出 offset datetime schema、create 恰一 trigger、update 至多一项 trigger 谓词，并在 resolver 构造 `Date` 前防御校验；`lib/validation.ts` 与 `agent/tool-contracts.ts` 共同引用。Agent `schedule.create/update` 的无 offset `fireAt` 与 `fireAt+cron` 现在由 Tool Registry 在 execute/`ScheduledJob` 写入前拒绝；合法 offset、五分钟宽限、cron 合成、active cap 和 QAM-04 触发策略未改。
+- 负向对照：修复前 resolver/Registry 定向回归 2 文件/50 项中 6 failed；同一无 offset 值在 Asia/Shanghai 与 America/Los_Angeles 子进程得到不同绝对时刻，四组非法 Agent trigger 越过 validation。修复后 50/50；合法 `+01:00` 输入在两进程均为 `19:40Z`，无 offset 均拒绝，四组 Registry 输入均为 `ToolValidationError`、execute 未调用且无 `ScheduledJob` 写入。
+- 数据库与门禁：真实 PostgreSQL 定向 11/11，回读 Agent create/update 与 Route POST/PATCH 的 `nextRunAt`、`cron`、`runOnce` parity，并确认非法输入不改变 Job、无 ToolCall。`typecheck`、`lint`、`check:quick` 72/480 通过；最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次 exit 0，含 production build、覆盖率 48.26/42.98/53.55/49.14、20/63 PostgreSQL 与 30/30 Playwright（7.2 分钟）。Compose smoke 因未改部署路径未运行且不声称通过。
+- 清理与保留：`coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站，可恢复；`next-env.d.ts` 无差异，Docker 仅保留会话前既有健康 `xoxo-meridian-postgres`。QAM-03-005/006、QAM-08-006、feat-044～048、QAM-10 文件、既有 `docs/optimization/agent-runtime-review.md` 删除状态及其他用户改动均未恢复、覆盖或纳入本 feature。
+- 最终核验：状态文档落盘后 `./init.sh` exit 0、72/480；Harness validator 100/100，49 个 feature 连续且全 `done`，QAM-03 十维 90/100、组合总分 822/均分 82.2，JSON 可解析。通用链接脚本初次仅因把 QAM-05 的历史 `javascript:...` 示例误当本地文件而 exit 1；按 URI scheme 排除后，11 份质量文档的 521 个相对链接全部可解析。`git diff --check` exit 0，最终 status 无测试工件。本交接只保留一个 clean restart 路径：依次读取四份启动文件，确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。
+- 唯一推荐下一步：另行登记并只修复当前唯一开放 P1 `QAM-08-006`，为 Planner/Memory 建立稳定请求者身份和双成员隔离回归；不要并入 QAM-03-005/006 或其他 QAM。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-048 已完成（QAM-06-009 resolved）
+
+- 状态：feat-001 至 feat-048 全部为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-06-009 已关闭；QAM-06 为 74 分、Score/Gate/Final L2，开放项仅 P2×6。十模块均分 81.7，Final 分布 L1×1/L2×6/L3×2/L4×1，开放 P0×0/P1×2/P2×38。
+- 改动：`lib/home-board.ts` 用单一 spatial access predicate 表达固定 Home board 下的共享照片、全局 `user_post` 与当前用户可见 `agent_log` anchor，并从两端可见性派生 connection access；`app/home/page.tsx` 的 snapshot 显式传入当前用户。Home element PATCH/DELETE 与 connection POST/DELETE 在预读和实际 update/deleteMany/nested connect 中复用同一条件，失配统一 404。
+- 负向对照：新 PostgreSQL 双 Room 回归在旧实现上 0/1，A 实际看到 B 的隐藏 anchor/connection，PATCH/POST/DELETE 为 200/201/200，隐藏 x 写成 999、原 connection 删除并新增未授权 connection；修复后 1/1，隐藏空间标识被过滤，三个写请求均为 404 且数据库不变，B、全局 Post anchor 与共享照片仍可操作。Playwright 从真实 `/home` 响应及真实 HTTP mutation 重证同一边界。
+- 门禁：定向 Route/helper 2 文件/10 项、相关 PostgreSQL 4 文件/5 项、定向浏览器 2/2 均通过；`npm run check:quick` exit 0、72 文件/472 项。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次 exit 0：72/472 Vitest、Next.js production build、覆盖率 48.21/42.92/53.41/49.09、20/61 PostgreSQL、30/30 Playwright（5.1 分钟）。未修改部署路径，Compose smoke 未运行且不声称通过。
+- 清理与保留：`coverage/`、`playwright-report/`、`test-results/` 已移入系统回收站，可恢复；`next-env.d.ts` 无差异，Docker 仅保留会话前既有健康 `xoxo-meridian-postgres`。feat-044～047、QAM-10 文件、既有 `docs/optimization/agent-runtime-review.md` 删除状态及其他用户改动均未恢复、覆盖或纳入本 feature。
+- 最终核验：状态文档落盘后 `./init.sh` exit 0、72/472；Harness validator 100/100，48 个 feature 连续且全 `done`，QAM-06 十维合计 74、组合总分 817/均分 81.7、521 个报告相对链接均可解析，`git diff --check` 通过。最终 `git status --short` 只包含本 feature 文件与会话开始前既有改动。本交接只保留一个 clean restart 路径：依次读取 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件，确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。
+- 唯一推荐下一步：另行登记并只修复 `QAM-03-004`，统一 Agent 无 offset `fireAt` 的绝对时刻解析，并用 Route/Agent 跨进程及时区差异回归证明不会按 Worker 本地时区漂移；不要并入 QAM-08-006 或 QAM-06 的六个 P2。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-047 已完成（QAM-01～QAM-10 全量独立复审）
+
+- 状态：feat-001 至 feat-047 全部为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-01～09 各由一个独立子 Agent 显式使用对应审查 Skill 复审；3D Agent Entry 经另一个独立边界 Agent 判定应升格为 QAM-10，建立专用 Skill 后再由第十个独立子 Agent完成初审。
+- 模块治理：`PROJECT_VIEW.md` 已新增 QAM-10「全局 3D Agent 入口与模型资产生命周期」的完整规范、共享映射和 BU-11～14；统一标准扩至 QAM-10；新增 `.agents/skills/xoxo-qam-10-agent-entry-review/SKILL.md` 与 `docs/optimization/qam-10-agent-entry-quality-review.md`。QAM-10 拥有 Entry Gate、主题/Registry、WebGL 生命周期与 source→formal GLB 资产事实，QAM-09 只拥有 build arg/image/Compose 交付接缝。
+- 当前组合：十模块均分 80.8；Final 分布 L1×2/L2×5/L3×2/L4×1；开放 P0×0/P1×3/P2×38。QAM-01/02/04/05/07 持平；QAM-03 为 85/L2，QAM-06 为 65/L1，QAM-08 为 70/L1，QAM-09 为 82/L2，QAM-10 baseline 84/L2。详细证据、定向命令和未运行层级均在十份模块报告及 progress 最新条目。
+- 新增 P1：`QAM-03-004`——Agent 无 offset `fireAt` 按 Worker 时区写错绝对时刻；`QAM-06-009`——Home board snapshot/mutation 未继承 room-scoped Post anchor 授权；`QAM-08-006`——Planner/Memory 缺稳定请求者身份，可跨成员覆盖、删除或错读个人 Memory。本轮是审查，不修改业务实现，也不把问题写成已修复。
+- 验证：开始与收尾 `./init.sh` 均 exit 0、72 文件/472 项；各模块定向测试/实验均记录在各报告。`./scripts/run-node22.sh npm run check` exit 0，包含两主题资产检查、TypeScript、ESLint、72/472 Vitest、Next.js 16.3.3 production build与覆盖率 48.27/43.21/53.42/49.15。十报告结构/算术、524 个相对链接、总览统计、47 个全 `done` feature、QAM-10 Skill 校验通过，Harness 100/100，`git diff --check` 通过。`check:full`/Compose smoke 因本轮不改实现未运行，不声称通过；QAM-10 的当前 production E3 缺口保留为 P2。
+- 清理与保留：`coverage/` 已移入系统回收站，`next-env.d.ts` 恢复 dev types；未删除既有 `.next`、容器或用户改动。feat-044～046 的源码/测试/报告改动完整保留；无关的 `docs/optimization/agent-runtime-review.md` 既有删除状态未恢复或纳入本轮。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；确认 Node 22.23.2/npm 10.9.8，运行 `./init.sh`。开始后续工作前另行登记且只标一个 feature 为 `in-progress`。
+- 唯一推荐下一步：登记并只修复 `QAM-06-009`，让 Home board snapshot 与 element/connection mutation 复用 room-scoped Post anchor 可见性/成员授权，并以真实 PostgreSQL 与 Playwright 证明非成员不能看到或修改隐藏 anchor/connection；不要并入 QAM-03-004 或 QAM-08-006。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-046 已完成（QAM-04-002 resolved，开放 P1 清零）
+
+- 状态：feat-001 至 feat-046 全部为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature。最后一个开放 P1 `QAM-04-002` 已关闭；QAM-04 为 87 分、Score/Gate/Final L3；组合均分 81.9，开放问题 P0×0/P1×0/P2×31。
+- 改动：`agent/scheduler-tick.ts` 在既有共享 transaction claim 中对所有 run-once Job 写 `enabled=false`；窗口外 claim 返回 skipped，不创建 Task/Event，周期 Job 仍 enabled 并推进 `nextRunAt`。窗口内失败整事务回滚，既有 failCount/retry 保持。未修改 QAM-03 authoring/schema、QAM-04-003 shutdown、QAM-08 Runtime 或部署拓扑。
+- 回归：旧实现的 fake-clock 定向测试为 1/17 failed、真实 PostgreSQL 为 1/4 failed，均在下一合成 cron 周期错误得到 `fired: 1`；修复后 Scheduler 18/18、PostgreSQL 4/4。数据库回归使用共享 `resolveOneShotSchedule()` 合成 fireAt 日 cron，证明窗口外 Job disabled、Task/Event 为零且下一日无副作用；周期 Job missed-window 推进及既有窗口内成功/失败语义继续通过。
+- 最终门禁：`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次 exit 0，包含 72 文件/472 项 Vitest、Next.js 16.3.3 production build、覆盖率 48.27/43.21/53.42/49.15、19 文件/60 项 PostgreSQL 与 29/29 Playwright（4.8 分钟）。开始 `./init.sh` exit 0、72/470；清理及文档落盘后最终 `./init.sh` exit 0、72/472，harness validator 100/100、46 个 feature 连续且全部 done、`git diff --check` 通过。Compose smoke 因未改部署路径未运行，不声称通过。
+- 清理与保留：`coverage/`、`playwright-report/` 与含临时认证状态的 `test-results/` 已移入系统回收站，可恢复；没有删除 `.next`、源码或容器。既有 feat-044/045 工作树改动全部保留；无关的 `docs/optimization/agent-runtime-review.md` 删除状态不是本轮操作，未恢复或纳入验收。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；确认 Node 22.23.2/npm 10.9.8，运行 `./init.sh`。开始后续工作前另行登记且只标一个 feature 为 `in-progress`。
+- 唯一推荐下一步：若继续 QAM-04，登记并只修复 P2 `QAM-04-003`，为 Scheduler in-flight callback 增加可等待的有界 shutdown，并以 Worker 信号行为与真实 PostgreSQL 重启恢复验证；不要扩展到 QAM-08 lease、QAM-09 Compose 拓扑或新调度功能。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-045 已完成（QAM-04-001 resolved）
+
+- 状态：feat-001 至 feat-045 全部为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-04-001 已关闭；QAM-04 为 84 分、Score L3、Gate/Final L2；组合均分 81.6，开放问题 P1×1/P2×31。
+- 改动：`agent/scheduler-tick.ts` 的 timer registry 保存期望 `nextRunAt`，重复 tick 替换改期 timer，callback 重读持久化版本；timer/polling 共用 wall-clock due 与 transaction 内 enabled/nextRunAt/lastRunAt/failCount CAS。没有修改 Job authoring、schema/migration、run-once missed-window、Worker shutdown 或部署配置。
+- 回归：旧实现负向对照 3/15 失败——改期、停用后按新时间重启用、clock backward 都在旧时刻错误创建 Task；修复后 Scheduler 16/16，并覆盖改早时重建 timer。真实 PostgreSQL 3/3 证明旧 timer 不写 Task/Event 或覆盖新 Job、两个并发 tick 只创建一个 Task/Event、Event 故障完整回滚。
+- 最终门禁：正常权限 `check:quick` 为 72/470；`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 单次 exit 0，包含 production build、覆盖率 48.22/43.18/53.42/49.15、19 文件/59 项 PostgreSQL 与 29/29 Playwright（5.5 分钟）。受限 quick/init 的唯一失败均为已知 build-config 子进程空 stdout，正常权限原命令对照通过；最终 `./init.sh` exit 0、72/470。
+- 清理与保留：本轮 `coverage/`、`playwright-report/`、`test-results/` 已按明确路径永久删除（系统回收站因只读不可用）；没有删除 `.next` 或源码。既有 feat-044 工作树改动全部保留；无关的 `docs/optimization/agent-runtime-review.md` 当前删除状态不是本轮操作，未恢复或纳入验收。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；确认 Node 22.23.2/npm 10.9.8，运行 `./init.sh`。开始任何后续工作前另行登记且只标一个 feature 为 `in-progress`。
+- 唯一推荐下一步：登记并只修复 `QAM-04-002`——超过一小时 missed window 的 run-once Job 应禁用且不创建 Task，并在下一 cron 周期也不重放；用 fake clock 与真实 PostgreSQL 验证，不并入 `QAM-04-003` shutdown 或新的补发策略。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
+## 2026-09-12 最新交接：feat-044 已完成（QAM-03-003 resolved）
+
+- 状态：feat-001 至 feat-044 全部为 `done`，当前没有 `not-started`、`in-progress` 或 `blocked` feature。QAM-03-003 已关闭；QAM-03 为 92 分，Score/Gate/Final 均为 L4；组合均分 80.6，开放问题 P1×2/P2×31。
+- 改动：新增 `lib/participant-resolution.ts`，以显式用户 ID 返回 self/partner，身份缺失或不匹配时不猜数组位置；ChatApp/LifePanel/ScheduledJobModal/TimezoneSelector 使用 `currentUserId`；Agent weather/timezone/schedule Tool 使用 `requestedById`。显式 city/timezone/label 优先级与中性 fallback 保持，参与者排序、RoomSnapshot transport、schema/migration 和 QAM-04 scheduler 未改。
+- 回归：未修复组件 2/5 失败（第二参与者显示顺序和默认时区错误），未修复 Agent 2/6 失败（伙伴天气与本人时区对象反转）；修复后组件 7/7、Agent/Server 4 文件/35 项。新增 Weather Route/Tool 第二参与者一致性测试，以及真实 Chromium 第二参与者旅程（伙伴天气 E2E One/Tokyo、本人时间在前、计划默认 Europe/London）；独立登录 request context 显式为空 storageState，避免单活 Session 污染后续用例。
+- 最终门禁：在无 `.next` 且 `node_modules` 为项目内独立目录的隔离副本执行 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full`，单次 exit 0：72 文件/466 项 Vitest、Next.js 16.3.3 production build、覆盖率 48.18/42.99/53.42/49.10、19 文件/57 项真实 PostgreSQL 与 29/29 Playwright。开始时受限 `./init.sh` 仅因已知子进程空 stdout 症状使 build-config 3/3 失败，获准正常权限原命令重跑 70/457、exit 0；清理测试产物与 1.9 GiB 隔离副本后，最终根仓库 `./init.sh` 再次 exit 0、72/466。
+- 失败复核：根目录 E2E 曾因既有 `.next/dev/lock` 在收集前退出，未中断用户进程。symlink 到原仓库 `node_modules` 的隔离副本两次 `check:full` 均在 check/PostgreSQL 通过后由 Next dev 的 `module.compiled` 相对路径错误导致 28/29；bundle 证明同一依赖真实路径被登记为 `(ssr)/./home/...` 与 `(ssr)/../../home/...` 两种 module ID。改用独立依赖目录后同一默认命令单次全绿，因此没有修改产品/Next 配置迁就非正常验证拓扑；完整原始过程见 progress 当日条目。
+- clean restart：依次阅读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件；用 `./scripts/run-node22.sh` 确认 Node 22.23.2/npm 10.9.8，再运行 `./init.sh`。当前没有已登记的活动 feature，开始任何工作前先登记且只标一个为 `in-progress`。
+- 唯一推荐下一步：登记独立的 QAM-04 调度器质量复审 feature，使用 `xoxo-qam-04-scheduler-review` 核对 feat-042 已触发的 `nextRunAt`/runOnce 时间语义影响；只审查既有实现，不在同一 feature 中增加调度能力或处理 QAM-03 非 P1 重构。
+
+以下保留历史交接，状态与推荐步骤以本节为准。
+
 ## 2026-09-11 当前交接：feat-043 已完成
 
 - 状态：共登记 43 个 feature，`feat-001` 至 `feat-043` 均为 `done`；当前没有 `not-started`、`in-progress` 或 `blocked` feature。

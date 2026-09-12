@@ -94,7 +94,10 @@ export async function runAgentTask(
     });
     const runtimeBudget = budget;
     runtimeBudget.assertWithinDeadline();
-    const runtimeContext = await buildAgentContext(task.roomId);
+    const runtimeContext = await buildAgentContext(
+      task.roomId,
+      task.requestedById
+    );
     await heartbeat.assertActive();
     runtimeBudget.assertWithinDeadline();
     await tracer.event("agent.context.built", {
@@ -122,7 +125,11 @@ export async function runAgentTask(
       lease,
       stepKey: "plan",
       kind: "plan",
-      stepInput: { prompt, availableTools: availableToolNames }
+      stepInput: {
+        prompt,
+        requestedById: runtimeContext.roomContext.requestedById,
+        availableTools: availableToolNames
+      }
     });
     let plan = planCheckpoint.step.status === "completed"
       ? readPersistedAgentPlan(planCheckpoint.step.output)
@@ -283,7 +290,7 @@ export async function runAgentTask(
             taskId: task.id,
             roomId: task.roomId,
             agentId: task.agentId,
-            requestedById: task.requestedById,
+            requestedById: runtimeContext.roomContext.requestedById,
             runtimeContext,
             tracer,
             lease,

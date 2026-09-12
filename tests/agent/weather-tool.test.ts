@@ -6,7 +6,7 @@ const BASE_CTX = {
   taskId: "task-1",
   roomId: "room-1",
   agentId: "agent-1",
-  requestedById: "user-1",
+  requestedById: "u1",
   prisma: {} as never,
   tracer: {} as never,
   runtimeContext: {
@@ -40,6 +40,30 @@ describe("weather.get (qweather)", () => {
     process.env.WEATHER_API_KEY = "test-key";
     process.env.QWEATHER_API_HOST = "devapi.qweather.com";
     process.env.QWEATHER_GEOAPI_HOST = "geoapi.qweather.com";
+  });
+
+  it("defaults to the requester's partner when the requester is second", async () => {
+    process.env.WEATHER_PROVIDER = "mock";
+    const context = {
+      ...BASE_CTX,
+      requestedById: "u2",
+    };
+
+    const result = (await createWeatherTool().execute({}, context)) as { city: string };
+
+    expect(result.city).toBe("Shanghai");
+  });
+
+  it("uses the neutral fallback instead of guessing by position without a requester", async () => {
+    process.env.WEATHER_PROVIDER = "mock";
+    const context = {
+      ...BASE_CTX,
+      requestedById: null,
+    };
+
+    const result = (await createWeatherTool().execute({}, context)) as { city: string };
+
+    expect(result.city).toBe("Beijing");
   });
 
   afterEach(() => {

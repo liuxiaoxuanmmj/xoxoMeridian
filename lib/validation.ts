@@ -1,5 +1,11 @@
 import { z } from "zod";
 
+import {
+  hasAtMostOneScheduledJobTrigger,
+  hasExactlyOneScheduledJobTrigger,
+  scheduledJobFireAtSchema,
+} from "@/lib/scheduled-job-one-shot";
+
 const trim = (s: unknown) => (typeof s === "string" ? s.trim() : s);
 
 export const registerSchema = z.object({
@@ -70,20 +76,20 @@ export const memoPatchSchema = z
 
 export const scheduledJobPostSchema = z
   .object({
-    fireAt: z.string().datetime({ offset: true }).optional(),
+    fireAt: scheduledJobFireAtSchema.optional(),
     cron: z.string().min(9).max(128).optional(),
     timezone: z.string().min(1).max(64),
     prompt: z.preprocess(trim, z.string().min(1).max(500)),
     description: z.preprocess(trim, z.string().max(200)).optional(),
     runOnce: z.boolean().optional(),
   })
-  .refine((v) => (v.fireAt && !v.cron) || (!v.fireAt && v.cron), {
+  .refine(hasExactlyOneScheduledJobTrigger, {
     message: "Exactly one of fireAt or cron is required",
   });
 
 export const scheduledJobPatchSchema = z
   .object({
-    fireAt: z.string().datetime({ offset: true }).optional(),
+    fireAt: scheduledJobFireAtSchema.optional(),
     cron: z.string().min(9).max(128).optional(),
     timezone: z.string().min(1).max(64).optional(),
     prompt: z.preprocess(trim, z.string().min(1).max(500)).optional(),
@@ -91,7 +97,7 @@ export const scheduledJobPatchSchema = z
     runOnce: z.boolean().optional(),
     enabled: z.boolean().optional(),
   })
-  .refine((v) => !(v.fireAt && v.cron), {
+  .refine(hasAtMostOneScheduledJobTrigger, {
     message: "fireAt and cron cannot be provided together",
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {

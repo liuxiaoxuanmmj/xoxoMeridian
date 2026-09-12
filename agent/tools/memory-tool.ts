@@ -1,6 +1,12 @@
 import type { AgentTool } from "@/agent/types";
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import { deduplicatedMemoryWrite } from "@/agent/memory-dedup";
+import {
+  projectMemoryForRequester,
+  projectMergedMemoryKey,
+  resolveMemoryIdentity,
+  resolveMemoryRecallFilter
+} from "@/agent/memory-identity";
 
 type MemorySetInput = {
   key?: string;
@@ -52,22 +58,36 @@ export function createMemorySetTool(): AgentTool<MemorySetInput> {
       if (!key.startsWith("shared.") && !key.startsWith("me.") && !key.startsWith("her.")) {
         throw new Error("Memory key must start with 'shared.', 'me.', or 'her.'");
       }
+      const keyScope = key.slice(0, key.indexOf("."));
+      if (input.scope && input.scope !== keyScope) {
+        throw new Error("Memory scope must match the key prefix.");
+      }
       if (value.length > VALUE_MAX) {
         throw new Error(`Memory value too long (${value.length} > ${VALUE_MAX}).`);
       }
 
-      const userId = resolveUserId(key, context);
+      const identity = resolveMemoryIdentity(
+        key,
+        context.requestedById,
+        context.runtimeContext.participants
+      );
 
       const result = await deduplicatedMemoryWrite(
         context.prisma,
         context.roomId,
-        key,
+        identity,
         value,
-        input.source ?? "agent-runtime",
-        userId
+        input.source ?? "agent-runtime"
       );
 
-      return { memoryId: result.memoryId, key, value, ...(result.merged && { merged: result.merged }) };
+      return {
+        memoryId: result.memoryId,
+        key,
+        value,
+        ...(result.merged && {
+          merged: projectMergedMemoryKey(result.merged, identity.relativeScope)
+        })
+      };
     }
   };
 }
@@ -90,51 +110,50 @@ export function createMemoryRecallTool(): AgentTool<MemoryRecallInput> {
     async execute(input, context) {
       const prefix = input.prefix?.trim().toLowerCase();
       const limit = Math.min(Math.max(input.limit ?? 20, 1), 50);
+      const filter = resolveMemoryRecallFilter(
+        prefix,
+        context.requestedById,
+        context.runtimeContext.participants
+      );
+
+      if (filter.ownerKeys.length === 0) {
+        return { count: 0, memories: [] };
+      }
 
       const memories = await context.prisma.memory.findMany({
         where: {
           roomId: context.roomId,
-          ...(prefix ? { key: { startsWith: prefix } } : {})
+          ownerKey: { in: filter.ownerKeys },
+          ...(filter.storagePrefix
+            ? { key: { startsWith: filter.storagePrefix } }
+            : {})
         },
         orderBy: { updatedAt: "desc" },
         take: limit,
-        select: { key: true, value: true, updatedAt: true }
+        select: {
+          ownerKey: true,
+          userId: true,
+          key: true,
+          value: true,
+          updatedAt: true
+        }
+      });
+
+      const projected = memories.flatMap((memory) => {
+        const view = projectMemoryForRequester(
+          memory,
+          context.requestedById,
+          context.runtimeContext.participants
+        );
+        return view
+          ? [{ ...view, updatedAt: memory.updatedAt.toISOString() }]
+          : [];
       });
 
       return {
-        count: memories.length,
-        memories: memories.map((memory) => ({
-          key: memory.key,
-          value: memory.value,
-          updatedAt: memory.updatedAt.toISOString()
-        }))
+        count: projected.length,
+        memories: projected
       };
     }
   };
-}
-
-function resolveUserId(
-  key: string,
-  context: {
-    requestedById: string | null;
-    runtimeContext: { participants: Array<{ user: { id: string } }> };
-  }
-): string | null {
-  const scope = key.split(".")[0];
-  if (scope === "shared") return null;
-
-  if (scope === "me") return context.requestedById ?? null;
-
-  if (scope === "her") {
-    // "her" = the other human participant in the 2-person room (not the
-    // requester). We can't rely on demoRole anymore — auth is plain
-    // email/password and either user could be the requester.
-    if (!context.requestedById) return null;
-    const other = context.runtimeContext.participants.find(
-      (p) => p.user.id !== context.requestedById
-    );
-    return other?.user.id ?? null;
-  }
-
-  return null;
 }

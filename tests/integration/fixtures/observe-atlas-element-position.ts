@@ -1,16 +1,19 @@
 import { getHomeBoardSnapshot, HOME_BOARD_ID } from "../../../lib/home-board";
 import { prisma } from "../../../lib/prisma";
 
-const [elementId, expectedXValue, expectedYValue] = process.argv.slice(2);
+const [elementId, expectedXValue, expectedYValue, userId] = process.argv.slice(2);
 const expectedX = Number(expectedXValue);
 const expectedY = Number(expectedYValue);
 
-if (!elementId || !Number.isFinite(expectedX) || !Number.isFinite(expectedY)) {
-  throw new Error("elementId、expectedX 与 expectedY 都是必需参数");
+if (!elementId || !Number.isFinite(expectedX) || !Number.isFinite(expectedY) || !userId) {
+  throw new Error("elementId、expectedX、expectedY 与 userId 都是必需参数");
 }
 
 async function readPosition() {
-  const snapshot = await getHomeBoardSnapshot(HOME_BOARD_ID);
+  const snapshot = await getHomeBoardSnapshot({
+    boardId: HOME_BOARD_ID,
+    userId,
+  });
   const element = snapshot.elements.find((candidate) => candidate.id === elementId);
   if (!element) {
     throw new Error(`Home board 中不存在元素 ${elementId}`);

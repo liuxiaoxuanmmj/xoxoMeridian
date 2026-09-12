@@ -1,5 +1,6 @@
 import type { AgentTool } from "@/agent/types";
 import { NO_TOOL_RETRY } from "@/agent/tool-errors";
+import { resolveParticipantPair } from "@/lib/participant-resolution";
 
 type TimezoneInput = {
   fromLabel?: string;
@@ -22,13 +23,16 @@ export function createTimezoneTool(): AgentTool<TimezoneInput> {
       }
     },
     async execute(input, context) {
-      const first = context.runtimeContext.participants[0]?.user;
-      const second = context.runtimeContext.participants[1]?.user;
-      const fromTimezone = input.fromTimezone ?? first?.profile?.timezone ?? "Asia/Shanghai";
-      const toTimezone = input.toTimezone ?? second?.profile?.timezone ?? "Europe/London";
+      const { self, partner } = resolveParticipantPair(
+        context.runtimeContext.participants,
+        context.requestedById,
+        (participant) => participant.userId
+      );
+      const fromTimezone = input.fromTimezone ?? self?.user.profile?.timezone ?? "Asia/Shanghai";
+      const toTimezone = input.toTimezone ?? partner?.user.profile?.timezone ?? "Europe/London";
 
-      const fromLabel = input.fromLabel ?? first?.displayName ?? "本人";
-      const toLabel = input.toLabel ?? second?.displayName ?? "对方";
+      const fromLabel = input.fromLabel ?? self?.user.displayName ?? "本人";
+      const toLabel = input.toLabel ?? partner?.user.displayName ?? "对方";
 
       return {
         from: {

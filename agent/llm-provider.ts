@@ -43,6 +43,7 @@ export function createMockLLMProvider(): LLMProvider {
                         lowerPrompt.includes("search") || lowerPrompt.includes("find");
 
       if (hasWeather) {
+        const partnerCity = request.roomContext.partner?.city?.trim();
         return withRaw({
           intent: "get_weather",
           confidence: 0.82,
@@ -51,15 +52,21 @@ export function createMockLLMProvider(): LLMProvider {
           finalResponsePlan: "用简短温暖的方式说明对方城市天气。",
           finalResponseText: "我已经查到天气了，会在房间里温柔地告诉你具体情况。",
           toolInputs: {
-            "weather.get": {
-              city: "London"
-            }
+            "weather.get": partnerCity ? { city: partnerCity } : {}
           }
         });
       }
 
       if (hasTimezone) {
-        const [self, partner] = request.roomContext.participants;
+        const { self, partner } = request.roomContext;
+        const timezoneInput = self && partner
+          ? {
+              fromLabel: self.displayName,
+              ...(self.timezone ? { fromTimezone: self.timezone } : {}),
+              toLabel: partner.displayName,
+              ...(partner.timezone ? { toTimezone: partner.timezone } : {})
+            }
+          : {};
         return withRaw({
           intent: "compare_timezone",
           confidence: 0.84,
@@ -68,12 +75,7 @@ export function createMockLLMProvider(): LLMProvider {
           finalResponsePlan: "告诉用户两地当前时间和联系建议。",
           finalResponseText: "我已经把双方所在时区的当前时间整理好了。",
           toolInputs: {
-            "timezone.compare": {
-              fromLabel: self?.displayName ?? "本人",
-              fromTimezone: self?.timezone ?? "Asia/Shanghai",
-              toLabel: partner?.displayName ?? "对方",
-              toTimezone: partner?.timezone ?? "Europe/London"
-            }
+            "timezone.compare": timezoneInput
           }
         });
       }
@@ -192,6 +194,8 @@ function createOpenAICompatibleProvider(config: {
                   profileBlock +
                   "只返回 JSON，不要 Markdown，不要代码块包裹。" +
                   "必须从 available_tools 中选择工具，不能发明工具；如果用户的请求不需要任何工具（例如自我介绍、闲聊、能力问答），required_tools 留空数组。" +
+                  "room_context.requestedById、self 和 partner 是本人/伙伴身份的唯一事实来源；绝不能从 participants 的数组顺序猜测。" +
+                  "当 self 或 partner 为 null 时，不要自行填入参与者的城市、时区、姓名或个人 Memory；省略对应可选 Tool 参数，让 Tool 使用中性回退。" +
                   "**tool_inputs 中每个工具的参数字段必须严格按照 available_tools[i].schema 里列出的字段名命名**，不要自行发明字段名（例如 schema 写 title 就不能写 message）。" +
                   "schema 里 required 列出的字段必须提供。" +
                   "如果**同一个工具需要被调用多次**（例如要写多条记忆），把 tool_inputs[tool] 写成对象数组，每个元素是一次调用的参数，例如 tool_inputs['memory.set'] = [{key,value},{key,value}]；只调用一次时直接给单个对象即可。" +
@@ -200,7 +204,7 @@ function createOpenAICompatibleProvider(config: {
                   "final_response_plan 是给开发者看的内部规划摘要，与 final_response_text 不同。" +
                   // memory guidance
                   "【关于记忆】" +
-                  "room_context.semantic_memory 按分组呈现：about_her（关于对方）、about_me（关于请求者）、shared（房间共享事实）。" +
+                  "room_context.semanticMemory 按分组呈现：aboutHer（关于对方）、aboutMe（关于请求者）、shared（房间共享事实）。" +
                   "这些是**已经记住的稳定事实**（如过敏、生日、偏好、时区），优先用它而不是凭空猜。" +
                   "当你**新观察到**这类持久事实时，主动调用 memory.set 把它写入；只记**下周仍然重要**的事情（过敏、长期偏好、纪念日、地址、时区、长期目标），" +
                   "**不要**记一次性心情、临时想法、刚发生的对话内容（已经在 recent_messages 里）、或不确定的事情。" +

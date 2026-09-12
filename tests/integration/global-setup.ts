@@ -25,7 +25,11 @@ export async function setup() {
   const databaseUrl = postgres.getConnectionUri();
   process.env.DATABASE_URL = databaseUrl;
   process.env.DIRECT_URL = databaseUrl;
-  Object.assign(process.env, { NODE_ENV: "test" });
+  Object.assign(process.env, {
+    NODE_ENV: "test",
+    LLM_PROVIDER: "mock",
+    LLM_API_KEY: ""
+  });
 
   const prismaCli = resolve("node_modules/prisma/build/index.js");
   await execFileAsync(process.execPath, [prismaCli, "migrate", "deploy"], {

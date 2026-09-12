@@ -403,6 +403,7 @@ model Memory {
   id        String   @id @default(cuid())
   roomId    String
   userId    String?
+  ownerKey  String
   key       String
   value     String
   source    String?
@@ -412,7 +413,7 @@ model Memory {
   room      Room     @relation(fields: [roomId], references: [id], onDelete: Cascade)
   user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
 
-  @@unique([roomId, key])
+  @@unique([roomId, ownerKey, key])
   @@index([userId])
 }
 

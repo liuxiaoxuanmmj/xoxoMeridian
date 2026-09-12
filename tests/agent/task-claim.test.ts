@@ -161,6 +161,9 @@ describe("runAgentTask claim handling", () => {
       participants: [],
       roomContext: {
         room: { name: "Test", slug: "test" },
+        requestedById: null,
+        self: null,
+        partner: null,
         participants: [],
         recentMessages: [],
         pinnedMemos: [],

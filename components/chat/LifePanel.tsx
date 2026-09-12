@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ChatUser, LifeMemo, LifeScheduledJob } from "@/components/chat/types";
 import { MemoModal, ScheduledJobModal } from "@/components/chat/LifePanelModals";
 import { ItemActions } from "@/components/chat/ItemActions";
+import { resolveParticipantPair } from "@/lib/participant-resolution";
 import { showError } from "@/lib/ui-utils";
 
 type WeatherSnapshot = {
@@ -31,11 +32,13 @@ type WeatherResult = {
 const WEATHER_REFRESH_MS = 10 * 60 * 1000;
 
 export function LifePanel({
+  currentUserId,
   roomId,
   participants,
   memos,
   scheduledJobs
 }: {
+  currentUserId: string;
   roomId: string;
   participants: ChatUser[];
   memos: LifeMemo[];
@@ -88,8 +91,11 @@ export function LifePanel({
   const weather = weatherState.roomId === roomId ? weatherState.result : null;
   const weatherLoading = weatherState.roomId !== roomId || !weatherState.loaded;
 
-  const selfUser = participants[0];
-  const partnerUser = participants[1];
+  const { self: selfUser, partner: partnerUser } = resolveParticipantPair(
+    participants,
+    currentUserId,
+    (participant) => participant.id
+  );
 
   const handleDelete = async (
     type: "scheduled-jobs" | "memos",
@@ -124,15 +130,17 @@ export function LifePanel({
         <section className="rounded-[10px] border border-[#e8e8e8] bg-[#fafbfc] p-4">
           <h2 className="text-sm font-semibold text-black">两地时间</h2>
           <div className="mt-3 space-y-3 text-sm">
-            {[selfUser, partnerUser].filter(Boolean).map((user) => (
-              <div key={user.id} className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-medium text-black">{user.displayName}</p>
-                  <p className="text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
+            {[selfUser, partnerUser]
+              .filter((user): user is ChatUser => user !== null)
+              .map((user) => (
+                <div key={user.id} className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="font-medium text-black">{user.displayName}</p>
+                    <p className="text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
+                  </div>
+                  <p className="text-right font-semibold text-[#3a5b22]">{formatTime(now, user.profile?.timezone)}</p>
                 </div>
-                <p className="text-right font-semibold text-[#3a5b22]">{formatTime(now, user.profile?.timezone)}</p>
-              </div>
-            ))}
+              ))}
           </div>
         </section>
 
@@ -213,6 +221,7 @@ export function LifePanel({
         onClose={() => setModal({ type: null })}
         roomId={roomId}
         job={modal.type === "job" ? modal.item : undefined}
+        currentUserId={currentUserId}
         participants={participants}
         onSuccess={handleModalSuccess}
       />

@@ -5,15 +5,15 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-05 内容发布与时间线 |
-| 快照日期 | 2026-09-08 |
+| 快照日期 | 2026-09-12 |
 | 审查 Skill | [`xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-05、Cross-cutting Concerns、共享映射、BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+9（QAM-05-005 resolved）` |
-| 当前基线命令 | `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full`：单次退出 0；59 文件/346 项 Vitest、生产构建、覆盖率、13 文件/30 项 PostgreSQL 与 Playwright 9/9 通过 |
-| 风险匹配命令 | `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration -- tests/integration/post-visibility.integration.test.ts`：修复前 0/1，用户 A 实际读到 B 房间和孤儿 Agent log；修复后 1/1，覆盖列表、type、搜索、详情、首页、双用户成员切换和 Room `SetNull` 孤儿语义；全量 PostgreSQL 13 文件/30 项通过 |
-| 证据纪律 | E3 为本轮实际执行的真实 PostgreSQL、完整门禁和浏览器验证；E2 为源码、schema、迁移与测试交叉证据；只将跨房间读取回归用于关闭 QAM-05-005，未据此宣称 slug/cursor/projection 等 P2 已验证 |
-| 工作区说明 | 本轮保持 feat-033 为唯一活动 feature；前序 feat-031/032 与 QAM-01/Harness 改动完整保留，未把它们计入 QAM-05 分数变化 |
+| 本轮 Delta | `0（当前复审无影响评分的代码或证据变化）` |
+| 当前基线命令 | 根会话 `./init.sh`：退出 0，72 个测试文件/472 项通过；本模块另执行 `./scripts/run-node22.sh npm run test:unit -- tests/lib/posts.test.ts tests/agent/agent-posts.test.ts tests/server/posts-api.test.ts tests/server/markdown-content.test.ts tests/server/timeline-empty-message.test.ts tests/server/home-timeline-board-search.test.ts tests/lib/home-board.test.ts`：7 文件/49 项通过，以及 `./scripts/run-node22.sh npm run test:component -- tests/component/post-editor.test.tsx tests/component/home-timeline-board-search.test.tsx`：2 文件/3 项通过；React SSR Markdown 危险链接/原始 HTML 实验退出 0，`javascript:` href 被清空且 `<script>` 被转义 |
+| 风险匹配命令 | 本轮未运行 Docker、真实 PostgreSQL、Playwright 或 `check:full`；2026-09-08 的 `post-visibility.integration.test.ts` 修复后 1/1 与 `check:full`（PostgreSQL 13 文件/30 项、Playwright 9/9）是既有 E3，当前已重新核对对应实现、测试与链接且 QAM-05 范围代码未变化，但不冒充本轮重跑 |
+| 证据纪律 | E3 为当前定向 Node/组件测试以及 2026-09-08 明确标注日期的 PostgreSQL/浏览器历史执行；E2 为本轮重新核对的源码、schema、迁移与测试交叉证据；既有跨房间回归只支持 QAM-05-005，未据此宣称 slug/cursor/projection 等 P2 已验证 |
+| 工作区说明 | 当前工作树存在 QAM-03/QAM-04 等并行实现与文档改动；QAM-05 业务代码、schema、迁移和定向测试在复审前均无工作树改动，本轮只修改本报告，未把其他模块变化计入分数 |
 
 ## Overall
 
@@ -23,11 +23,11 @@
 | Score Level | **L2** |
 | Gate Level | **L2** |
 | Final Level | **L2** |
-| Trend | `+9` |
-| Evidence Confidence | 中高（Agent log 跨房间读取与孤儿语义已有真实 PostgreSQL E3，完整生产构建和既有发帖旅程通过；slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍主要为 E2） |
+| Trend | `0` |
+| Evidence Confidence | 中高（本轮 7 文件/49 项 Node 与 2 文件/3 项组件定向测试通过，且 QAM-05 范围代码相对 2026-09-08 PostgreSQL/浏览器 E3 未变化；本轮未重跑真实 PostgreSQL/Playwright，slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍主要为 E2） |
 | 当前开放问题 | 7 项（P2×7） |
 
-Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可定位的分层实现，数据库也提供 slug 唯一键和 Post→AtlasElement 级联。`getPostVisibilityWhere()` 现在让列表、搜索、API/页面详情和首页共享同一成员可见性条件，保留全局 `user_post`，并隐藏非成员及 Room 删除后的孤儿 `agent_log`；真实 PostgreSQL 已覆盖该权限边界。HTTP Route/Server Action 写入、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍有 7 个 P2，因此当前为 L2。
+Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可定位的分层实现，数据库也提供 slug 唯一键和 Post→AtlasElement 级联。`getPostVisibilityWhere()` 让列表、搜索、API/页面详情和首页共享同一成员可见性条件，保留全局 `user_post`，并隐藏非成员及 Room 删除后的孤儿 `agent_log`；2026-09-08 的真实 PostgreSQL 已覆盖该权限边界。当前代码与证据变化没有关闭或新增问题，HTTP Route/Server Action 写入、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍有 7 个 P2，因此保持 73 分、L2。
 
 ## Score Breakdown
 
@@ -40,8 +40,8 @@ Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可�
 | 接口与依赖关系 | 7 | 10 | 列表、搜索、API/页面详情和首页共享相同可见性 contract；HTTP 与 Action 的输入、空字段和错误返回仍重复，首页和搜索 API 的 author projection 也不同（[`posts route`](../../app/api/posts/route.ts#L11-L43)、[`Post detail route`](../../app/api/posts/%5Bslug%5D/route.ts#L11-L44)、QAM-05-001/006/007，E2/E3）。 |
 | 健壮性、并发与生命周期 | 7 | 14 | Prisma unique/FK、Atlas `skipDuplicates` 和 final step 栅栏提供基础保护；slug race、Agent projection 丢失、Home anchor 与 Post 删除交错、无稳定 cursor 没有恢复或并发证明（QAM-05-002/003/004/008，E2）。 |
 | 性能与资源使用 | 6 | 8 | 首页/API 各限制 50/100 条，Post 有 type/author/room 索引；搜索对 title/content 使用 contains，首页还为每次访问执行 board 查询和 anchor 补齐，规模增长时查询与重复装配成本可见，但当前没有凭数量直接扣分（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`home-board.ts`](../../lib/home-board.ts#L18-L54)，E2）。 |
-| 安全与隐私 | 8 | 10 | 认证、编辑/删除 ownership、Markdown 防护和 room-scoped Agent log 成员过滤均有效；真实 PostgreSQL 证明非成员无法经列表、搜索、详情或首页读取秘密日志，孤儿日志也不会转为全局内容。Server Action/开发错误响应仍可能泄漏内部异常（QAM-05-006，E2/E3）。 |
-| 可测试性与验证可信度 | 6 | 8 | slug/位置、Markdown、搜索交互、编辑防重复提交和 Agent helper 有定向测试；新增真实 PostgreSQL 跨房间回归覆盖四条读取路径、双用户和 `SetNull`，完整门禁通过。Post Route PUT/DELETE ownership、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍缺少风险匹配 E3（[`post-visibility.integration.test.ts`](../../tests/integration/post-visibility.integration.test.ts#L54-L179)，E3）。 |
+| 安全与隐私 | 8 | 10 | 认证、编辑/删除 ownership、Markdown 防护和 room-scoped Agent log 成员过滤均有效；2026-09-08 的真实 PostgreSQL 证明非成员无法经列表、搜索、详情或首页读取秘密日志，孤儿日志也不会转为全局内容，本轮 Markdown SSR 安全实验通过。Server Action/开发错误响应仍可能泄漏内部异常（QAM-05-006，E2/历史与当前 E3）。 |
+| 可测试性与验证可信度 | 6 | 8 | slug/位置、Markdown、搜索交互、编辑防重复提交和 Agent helper 有当前定向测试；2026-09-08 的真实 PostgreSQL 跨房间回归覆盖四条读取路径、双用户和 `SetNull`，当时完整门禁通过，本轮未重跑。Post Route PUT/DELETE ownership、slug/cursor、Agent projection 恢复和 Post/Atlas 交错仍缺少风险匹配 E3（[`post-visibility.integration.test.ts`](../../tests/integration/post-visibility.integration.test.ts#L54-L179)，E2/历史 E3）。 |
 | 可维护性、演进与技术债 | 5 | 6 | 变化落点大体明确，Post schema 的快照字段和 Atlas 关系可追踪；新增输入、排序、隐私或 Agent log 规则仍需同步 Route、Action、Home、API 与 projection 多处（QAM-05-001/004/007，E2）。 |
 | **合计** | **73** | **100** | 算术核对：11+8+6+9+7+7+6+8+6+5 = 73。 |
 
@@ -51,7 +51,7 @@ Post 页面、所有权编辑入口、中文 slug 与 Markdown 组件均有可�
 | --- | --- | --- |
 | 开放 P0 | 通过 | 未发现已确认的 P0；Markdown 危险链接/原始 HTML 的本轮渲染实验未执行脚本，Post 删除的 FK 级联存在。 |
 | 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-05-005 已由共享成员条件与真实 PostgreSQL 跨房间回归关闭；当前没有开放 P0/P1，QAM-05-001/002/003/004/006/007/008 继续保持 P2。 |
-| 最高风险不变量有风险匹配行为验证 | 部分通过 | Agent log 成员边界与 Room `SetNull` 孤儿语义已有 E3；slug/cursor、Agent projection 失败恢复及 Post/Atlas FK 交错仍缺少真实 PostgreSQL 行为证据，故 Gate 不高于 L2。 |
+| 最高风险不变量有风险匹配行为验证 | 部分通过 | Agent log 成员边界与 Room `SetNull` 孤儿语义有 2026-09-08 的真实 PostgreSQL E3，且当前相关实现未变化；本轮未重跑。slug/cursor、Agent projection 失败恢复及 Post/Atlas FK 交错仍缺少真实 PostgreSQL 行为证据，故 Gate 不高于 L2。 |
 | L4 要求 | 未通过 | 当前无开放 P0/P1，但关键并发、失败恢复和跨写生命周期仍未全部达到 E3。 |
 | **最终判定** | **L2** | Score Level=L2；Gate Level=L2；Final Level=min(L2,L2)=L2。 |
 
@@ -176,7 +176,7 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 - `react-markdown` 使用 GFM/line-break 插件但未开启 raw HTML；本轮实际渲染中 `[bad](javascript:...)` 输出空 href，`<script>` 被转义，未形成可执行脚本（[`MarkdownContent.tsx`](../../components/blog/MarkdownContent.tsx#L1-L35)，E3）。
 - Post 删除的数据库关系方向明确：`AtlasElement.postId` 唯一且 FK `ON DELETE CASCADE`；Home anchor 创建使用 `skipDuplicates`，正常重复首页访问不会重复创建（[`schema.prisma`](../../prisma/schema.prisma#L475-L500)、[`home-board.ts`](../../lib/home-board.ts#L27-L54)、[`tests/lib/home-board.test.ts`](../../tests/lib/home-board.test.ts#L35-L66)，E2/E3）。
 - Agent final Message/Step/Task 的完成事实在 lease 事务内提交，timeline projection 异常不会回滚已完成消息；这种失败隔离方向是合理的，当前缺口是 durable retry/idempotency，而非 QAM-08 的 lease 状态机（[`execution-tracer.ts`](../../agent/execution-tracer.ts#L47-L102)，E2）。
-- 定向 Node 测试 6 文件/47 项和组件测试 3 文件/5 项通过；编辑器在 action pending 时阻止重复提交，搜索在请求完成后替换结果、空结果有明确文案（[`tests/component/post-editor.test.tsx`](../../tests/component/post-editor.test.tsx#L29-L56)、[`tests/component/home-timeline-board-search.test.tsx`](../../tests/component/home-timeline-board-search.test.tsx#L64-L105)，E3）。
+- 本轮定向 Node 测试 7 文件/49 项和组件测试 2 文件/3 项通过；编辑器在 action pending 时阻止重复提交，搜索在请求完成后替换结果、空结果有明确文案（[`tests/component/post-editor.test.tsx`](../../tests/component/post-editor.test.tsx#L29-L56)、[`tests/component/home-timeline-board-search.test.tsx`](../../tests/component/home-timeline-board-search.test.tsx#L64-L105)，E3）。
 
 ## Recommended Improvements
 
@@ -212,7 +212,7 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 - 任一问题修复后保留原 ID，状态只改为 `resolved`、`accepted-risk` 或 `not-reproduced`，并附当前代码和风险匹配测试证据；不得删除历史结论。
 - QAM-05 复审必须重新核对 HTTP/Action 规则是否同源、Agent log room 过滤是否覆盖列表/搜索/详情/home、Post→Atlas FK 是否仍为正确生命周期方向；QAM-06 的坐标/媒体问题和 QAM-08 的 Trace 生成/lease 问题只作为关联证据，不重复计分。
 - 最高风险验证应至少包括真实 PostgreSQL 的并发 slug、同 timestamp cursor、跨房间 Post read、Agent projection 失败/恢复/幂等和 Post 删除与 anchor 补齐交错；Playwright 发帖/编辑/删除/搜索旅程应在浏览器运行环境可用后补跑。
-- 本轮 `npm run check:full` 单次通过生产构建、覆盖率、13 文件/30 项真实 PostgreSQL和 Playwright 9/9；未运行 Compose smoke，因为本 feature 未修改构建、进程或部署拓扑。
+- 2026-09-12 根会话 `./init.sh` 通过 72 个测试文件/472 项；本模块定向 Node 7 文件/49 项、组件 2 文件/3 项通过。本轮未运行 Docker、真实 PostgreSQL、Playwright、`check:full` 或 Compose smoke；2026-09-08 的 `check:full` 曾单次通过生产构建、覆盖率、13 文件/30 项真实 PostgreSQL和 Playwright 9/9，不冒充本轮结果。
 
 ### 只追加评分历史
 
@@ -221,5 +221,6 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 | 2026-09-06 | 64 | L1 | L1 | L1 | `baseline` | 初审；Post/Agent/Markdown/Search 定向 Node 测试 6 文件/47 项通过，组件测试 3 文件/5 项通过；Markdown 危险链接/HTML 实验通过；并发、跨房间、PostgreSQL 生命周期和完整浏览器旅程未验证。 |
 | 2026-09-06 | 64 | L1 | L1 | L1 | `优先级复核（0分）` | 重新核对原 5 个 P1：仅 QAM-05-005 的跨房间权限泄漏满足 P1；QAM-05-001/002/003/004 分别降为 P2，理由为 malformed body 不稳错误、unique 拒绝但数据一致、同毫秒边界漏读、派生 log 丢失均无当前跨用户/不可恢复状态/重复副作用/持续故障证据。 |
 | 2026-09-08 | 73 | L2 | L2 | L2 | `+9（QAM-05-005 resolved）` | `getPostVisibilityWhere()` 统一列表、搜索、API/页面详情和首页的 Post read authorization；修复前真实 PostgreSQL 证明 A 可读 B 房间及孤儿 Agent log，修复后 1/1 覆盖成员可见、非成员/孤儿隐藏、user_post 全局语义和双用户切换。`npm run check:full` 单次通过 13 文件/30 项 PostgreSQL 与 Playwright 9/9。 |
+| 2026-09-12 | 73 | L2 | L2 | L2 | `0（无影响评分的代码或证据变化）` | 当前工作树和 `668448b` 后续提交均未改变 QAM-05 业务实现、schema、迁移或定向测试；重新核对 Post API/Action、ownership、slug/search/Markdown、Agent log、Post/Atlas 生命周期、链接和稳定问题状态。根会话 `./init.sh` 通过 72 文件/472 项；本模块定向 Node 7 文件/49 项、组件 2 文件/3 项通过，未重跑 PostgreSQL/Playwright/`check:full`。 |
 
 复审时只在代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate、Final 和所有稳定问题状态。

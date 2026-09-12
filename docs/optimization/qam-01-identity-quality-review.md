@@ -3,11 +3,11 @@
 ## 元数据
 
 - QAM：QAM-01 身份、会话与个人档案
-- 快照日期：2026-09-08
+- 快照日期：2026-09-12
 - 审查 Skill：[`xoxo-qam-01-identity-review`](../../.agents/skills/xoxo-qam-01-identity-review/SKILL.md)
 - 评分标准：[`module-quality-review-standard.md`](./module-quality-review-standard.md)，v1.0.0
 - 范围来源：[`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-01、Cross-cutting Concerns、共享映射、BU-06～BU-10
-- 当前基线命令：`sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full`（单次退出 0；59 文件/346 项 Vitest、生产构建、覆盖率、12 文件/29 项 PostgreSQL 集成测试与 9/9 Playwright）
+- 当前基线命令：`./init.sh`（本轮根基线退出 0；72 文件/472 项 Vitest）；QAM-01 定向命令 `./scripts/run-node22.sh npm test -- tests/server/auth.test.ts tests/server/auth-me.test.ts tests/lib/email.test.ts tests/lib/smtp-email-provider.test.ts tests/lib/geo-ip.test.ts tests/component/login-form.test.tsx`（退出 0；6 文件/57 项）。本轮未重跑 Docker、`npm run check:full`、PostgreSQL 集成或 Playwright；最近一次风险匹配完整基线仍为 2026-09-08 的 59 文件/346 项 Vitest、12 文件/29 项 PostgreSQL 与 9/9 Playwright 全通过。
 
 ## Overall
 
@@ -17,11 +17,11 @@ Score Level：L3 — 稳健
 
 Gate Level / Final Level：L4 / L3 — 无开放 P0/P1，Session、密码恢复与注册容量的最高风险并发/故障路径均有 E3；最终等级受 Score Level L3 限制
 
-Trend：+4（QAM-01-004 resolved；83→87）
+Trend：0（87→87；身份核心代码与高风险数据库回归未变化，新增 SMTP 契约测试和 3D 入口 CSP 调整不改变本模块评分）
 
-Evidence Confidence：高（Session 签发、密码恢复、注册容量与跨写回滚均有真实 PostgreSQL E3，完整浏览器旅程通过）
+Evidence Confidence：高（Session 签发、密码恢复、注册容量与跨写回滚已有真实 PostgreSQL E3，且相关实现/测试自该基线后无差异；本轮 57 项定向测试和 472 项快速基线通过，但未重跑 Docker 层）
 
-结论：认证入口、HMAC Cookie、bcrypt、输入校验、no-store 和事务边界已有清晰基础。Session 签发、密码恢复和默认 Room 注册容量现在分别由稳定数据库事实源串行化，并以真实 PostgreSQL 证明并发、故障回滚和无孤儿状态。当前没有开放 P0/P1；3 个 P2 仍限制原始得分，但不再触发等级门禁。
+结论：认证入口、HMAC Cookie、bcrypt、输入校验、no-store 和事务边界已有清晰基础。Session 签发、密码恢复和默认 Room 注册容量分别由稳定数据库事实源串行化，既有真实 PostgreSQL 证据覆盖并发、故障回滚和无孤儿状态。当前没有开放 P0/P1；可信代理、敏感日志和遗留认证工件 3 个 P2 仍限制原始得分，但不触发等级门禁。
 
 ## Score Breakdown
 
@@ -29,13 +29,13 @@ Evidence Confidence：高（Session 签发、密码恢复、注册容量与跨�
 |---|---:|---:|---|
 | 架构与责任边界 | 11 | 14 | Auth 服务、Route、Profile UI 和 Prisma 模型的主路径清楚，`requireCurrentUser()` 是统一入口；但注册直接写 QAM-02 `RoomParticipant`，Worker 同时承担清理，档案润色又绕过共享 LLM adapter。[auth.ts](../../lib/auth.ts#L356) [register/route.ts](../../app/api/auth/register/route.ts#L39) [agent-worker.ts](../../agent/agent-worker.ts#L41) [refine-note/route.ts](../../app/api/profile/refine-note/route.ts#L47)（E2） |
 | 代码结构与复杂度 | 8 | 10 | Cookie 域名/代理兼容逻辑集中在 `lib/auth.ts`，认证 Route 控制流可读；但 Profile PATCH 同时负责城市解析、自动时区和事务更新，Cookie 头手工序列化增加变更面。[auth.ts](../../lib/auth.ts#L83) [me/route.ts](../../app/api/auth/me/route.ts#L63)（E2） |
-| 抽象与复用 | 7 | 8 | `verifySession`、`requireCurrentUser`、Email adapter、密码和 Geo helper 有单一落点；密码恢复写入现由 `resetPasswordWithToken()` 统一持有 token claim、User 与 Session 事务边界。三条 LLM adapter 路径仍没有统一错误/隐私契约。[password-reset.ts](../../lib/password-reset.ts#L40) [provider.ts](../../lib/email/provider.ts#L182)（E2/E3） |
+| 抽象与复用 | 7 | 8 | `verifySession`、`requireCurrentUser`、Email adapter、密码和 Geo helper 有单一落点；密码恢复写入由 `resetPasswordWithToken()` 统一持有 token claim、User 与 Session 事务边界。Agent planner、摘要 helper 与 Profile refine 三条 LLM 路径仍没有统一错误/隐私契约。[password-reset.ts](../../lib/password-reset.ts#L40) [llm-provider.ts](../../agent/llm-provider.ts#L175) [llm.ts](../../lib/llm.ts#L38) [refine-note/route.ts](../../app/api/profile/refine-note/route.ts#L47)（E2/E3） |
 | 数据流与状态一致性 | 12 | 12 | Session 替换、密码恢复和注册容量均由各自稳定行锁/条件 claim 保护，并把相关跨写收敛到单一事务；注册 loser 不会留下 User、UserProfile、RoomParticipant 或 Session。[auth.ts](../../lib/auth.ts#L255) [register/route.ts](../../app/api/auth/register/route.ts#L39-L88) [registration-capacity.integration.test.ts](../../tests/integration/registration-capacity.integration.test.ts#L77-L188)（E2/E3） |
-| 接口与依赖关系 | 8 | 10 | 外部请求经过 Zod，受保护接口复用认证入口，Email/Geo 有 adapter；代理头信任、档案润色的直接 HTTP 调用和 reset 错误契约仍缺少集中边界。[validation.ts](../../lib/validation.ts#L5) [geo-ip.ts](../../lib/geo-ip.ts#L47) [refine-note/route.ts](../../app/api/profile/refine-note/route.ts#L51)（E2） |
+| 接口与依赖关系 | 8 | 10 | 外部请求经过 Zod，受保护接口复用认证入口，Email/Geo 有 adapter；本轮新增 SMTP payload 映射行为测试，但代理头信任、档案润色的直接 HTTP 调用和 reset 错误契约仍缺少集中边界。[validation.ts](../../lib/validation.ts#L5) [provider.ts](../../lib/email/provider.ts#L140) [smtp-email-provider.test.ts](../../tests/lib/smtp-email-provider.test.ts#L36) [geo-ip.ts](../../lib/geo-ip.ts#L47) [refine-note/route.ts](../../app/api/profile/refine-note/route.ts#L51)（E2/E3） |
 | 健壮性、并发与生命周期 | 14 | 14 | Session 签发、密码恢复和注册容量的已知并发临界区均被数据库原子边界保护；真实 PostgreSQL 覆盖竞争、旧 Cookie 失效、token 单消费、Room 最终槽位、Participant 写入故障和恢复重试。[session-issuance.integration.test.ts](../../tests/integration/session-issuance.integration.test.ts#L104) [password-reset-security.integration.test.ts](../../tests/integration/password-reset-security.integration.test.ts#L55) [registration-capacity.integration.test.ts](../../tests/integration/registration-capacity.integration.test.ts#L77-L188)（E3） |
 | 性能与资源使用 | 6 | 8 | Session 和 reset 过期清理有索引且集中由 Worker 执行，Geo 查询有 3 秒 deadline；Session 行锁仅按相关用户局部串行。进程内 rate limit 在多实例不共享，`getCurrentUser()` 每次都做完整 Profile 查询并可能启动后台 Geo 请求。[schema.prisma](../../prisma/schema.prisma#L112) [rate-limit.ts](../../lib/rate-limit.ts#L1) [auth.ts](../../lib/auth.ts#L356)（E2） |
 | 安全与隐私 | 8 | 10 | Cookie HMAC/timing-safe 校验、HttpOnly/SameSite、密码 hash、CSRF Origin 和 profile 资源边界有效；PasswordResetToken 只保存 `v1:sha256` digest，迁移主动失效旧 bearer 记录。可信代理头、认证/邮件日志标识和档案外发治理仍开放。[schema.prisma](../../prisma/schema.prisma#L126) [migration.sql](../../prisma/migrations/20260907195500_secure_password_reset_tokens/migration.sql#L1) [logout/route.ts](../../app/api/auth/logout/route.ts#L17)（E2/E3） |
-| 可测试性与验证可信度 | 8 | 8 | Session、密码恢复与注册容量均有 Route Handler + 真实 PostgreSQL 竞争/故障回归；修复前容量用例稳定得到 200/200，修复后为 200/409 且 loser 无身份孤儿数据。完整门禁单次通过 12 文件/29 项集成与 9/9 Playwright。[registration-capacity.integration.test.ts](../../tests/integration/registration-capacity.integration.test.ts#L77-L188) [session-issuance.integration.test.ts](../../tests/integration/session-issuance.integration.test.ts#L104)（E3） |
+| 可测试性与验证可信度 | 8 | 8 | Session、密码恢复与注册容量均有 Route Handler + 真实 PostgreSQL 竞争/故障回归；相关核心实现与测试自最近 E3 基线后无差异。本轮 6 文件/57 项 QAM-01 定向测试和 72 文件/472 项快速基线通过；Docker 集成/E2E 未重跑。[registration-capacity.integration.test.ts](../../tests/integration/registration-capacity.integration.test.ts#L77-L188) [session-issuance.integration.test.ts](../../tests/integration/session-issuance.integration.test.ts#L104)（E2/E3） |
 | 可维护性、演进与技术债 | 5 | 6 | 认证服务边界和稳定 Cookie 名称利于演进；但 `sessionVersion` 仍是未使用字段，heartbeat 注释仍描述旧语义，`lib/auth.ts.backup`、过时的 `migrate-session.js` 和空 logout 工件增加误用成本。[schema.prisma](../../prisma/schema.prisma#L84) [SessionHeartbeat.tsx](../../components/auth/SessionHeartbeat.tsx#L8) [migrate-session.js](../../migrate-session.js#L7)（E2） |
 | **总计** | **87** | **100** | `11 + 8 + 7 + 12 + 8 + 14 + 6 + 8 + 8 + 5 = 87` |
 
@@ -49,12 +49,14 @@ Evidence Confidence：高（Session 签发、密码恢复、注册容量与跨�
 - 密码与输入边界：登录对未知邮箱执行 dummy bcrypt，注册/登录/Profile 输入使用 Zod，密码长度由环境配置约束。[password.ts](../../lib/password.ts#L5) [validation.ts](../../lib/validation.ts#L5)（E2）
 - 密码恢复存储与消费：只持久化版本化 digest；同一事务内条件 claim、更新密码并失效 Session。真实 PostgreSQL 证明并发恰有一个成功、故障完整回滚且 token 可重试（E3）。
 - 注册容量原子性：注册事务先按默认 slug 对 Room 执行 `FOR UPDATE`，再读取占用和锁内 `maxHumanUsers`；真实 PostgreSQL 证明已有 1 名成员时两个并发请求恰为 200/409、最终 Participant=2，loser 无 User/Profile/Session，Participant 故障会完整回滚且可重试。[register/route.ts](../../app/api/auth/register/route.ts#L39-L88) [registration-capacity.integration.test.ts](../../tests/integration/registration-capacity.integration.test.ts#L77-L188)（E3）
-- 正向通用验证：`npm run check:full` 单次退出 0，59 文件/346 项 Vitest、生产构建、覆盖率、12 文件/29 项 PostgreSQL 和 Playwright 9/9 全部通过（E3）。
+- 风险匹配验证：最近一次 `npm run check:full` 单次退出 0，59 文件/346 项 Vitest、生产构建、覆盖率、12 文件/29 项 PostgreSQL 和 Playwright 9/9 全部通过；本轮 diff 复核确认四项 resolved 问题的核心实现和数据库回归均未变化（E2/E3）。
+- 当前快速验证：`./init.sh` 通过 72 文件/472 项，QAM-01 定向 6 文件/57 项通过（E3）；本轮未重跑 Docker、完整构建和浏览器层。
 
 ### 未通过或受限
 
 - 当前没有触发 Gate 降级的开放 P0/P1；Session、密码恢复和注册容量的最高风险并发/故障路径均有 E3，因此 Gate Level 为 L4。
 - 原始分数仍受可信代理、敏感日志和旧认证工件三个 P2 约束，Score Level 为 L3。
+- 本轮未新增 PostgreSQL/浏览器证据；Gate L4 依赖最近 E3 基线以及相关高风险实现/回归未变化这一复核结果，不把当前快速测试冒充数据库或浏览器验证。
 
 最终等级：`min(Score Level L3, Gate Level L4) = L3`。
 
@@ -99,8 +101,8 @@ Evidence Confidence：高（Session 签发、密码恢复、注册容量与跨�
 #### QAM-01-005 — 代理头信任未绑定可信代理边界（open）
 
 - **问题**：`x-forwarded-for`、`x-real-ip`、`x-forwarded-host` 和 `x-forwarded-proto` 可直接影响 Geo profile、Session 审计字段和 Cookie Secure/Domain 选择，但没有可信代理配置或入口清洗证明。
-- **证据**：[`auth.ts`](../../lib/auth.ts#L51-L75)（E2）；[`geo-ip.ts`](../../lib/geo-ip.ts#L47-L59)（E2）；现有 Geo 测试验证了头解析，却没有直连客户端伪造头的部署行为测试（[`geo-ip.test.ts`](../../tests/lib/geo-ip.test.ts#L182-L226)）（E2）。
-- **质量影响**：攻击者可伪造自己的地理来源和 Session IP，或在 APP_BASE_URL 为 HTTP 时伪造 proto 造成 Secure Cookie 不可用；域名/代理切换时登录失败原因难以诊断。当前影响主要是自身档案完整性、可用性和审计可信度，不据此登记 P1。
+- **证据**：[`auth.ts`](../../lib/auth.ts#L51-L75)（E2）；[`geo-ip.ts`](../../lib/geo-ip.ts#L47-L59)（E2）；共享限流也直接以相同代理头组成 bucket key（[`rate-limit.ts`](../../lib/rate-limit.ts#L69-L88)）（E2）。Compose 只把 Web 绑定到 loopback，但仓库没有定义负责清洗转发头的反向代理契约（[`docker-compose.yml`](../../docker-compose.yml#L130-L148)）（E2）；现有 Geo 测试验证了头解析，却没有直连客户端伪造头的部署行为测试（[`geo-ip.test.ts`](../../tests/lib/geo-ip.test.ts#L182-L226)）（E2）。
+- **质量影响**：未清洗入口可伪造自己的地理来源、Session IP 和限流来源，或在 APP_BASE_URL 为 HTTP 时伪造 proto 造成 Secure Cookie 不可用；域名/代理切换时登录失败原因难以诊断。当前仓库的 Compose loopback 绑定降低了直接暴露概率，因此仍按自身档案完整性、纵深防御、可用性和审计可信度的 P2 处理。
 - **最小修正**：在反向代理边界清洗并重写这些头，应用只在明确配置的可信代理来源下读取；否则使用连接层地址/APP_BASE_URL，并将允许 Host/Origin 纳入同一配置契约。
 - **验收证据**：直连请求无法用伪造头改变记录 IP、Geo 或 Cookie Secure/Domain；受信代理转发仍保持现有登录和 Geo 行为。
 - **影响范围**：QAM-01；QAM-09 负责实际代理/部署边界。
@@ -144,12 +146,12 @@ reset-password → bcrypt → 单事务条件 claim digest → update User → d
 ## Verified Strengths
 
 - Session Cookie 使用随机 Session ID 加 HMAC payload，验证时检查签名长度、timing-safe equality、过期时间和数据库 Session；Cookie 为 HttpOnly、SameSite=Lax，并按请求路径添加 no-store。[`lib/auth.ts`](../../lib/auth.ts#L165-L207) [`lib/api.ts`](../../lib/api.ts#L10-L17)（E2）
-- 登录对不存在用户执行 dummy bcrypt comparison，降低邮箱枚举的时序差异；注册/登录/Profile 输入均经过 schema 校验。[`lib/password.ts`](../../lib/password.ts#L5-L22) [`lib/validation.ts`](../../lib/validation.ts#L5-L28)（E2）
+- 登录对不存在用户执行 dummy bcrypt comparison，降低邮箱枚举的时序差异；注册/登录/Profile 输入均经过 schema 校验。[`lib/password.ts`](../../lib/password.ts#L5-L20) [`lib/validation.ts`](../../lib/validation.ts#L5-L28)（E2）
 - 注册的默认 Room 行锁、容量判断、User、嵌套 UserProfile 和初始 RoomParticipant 在一个 Prisma transaction 内完成；并发最终槽位和 Participant 故障回滚均有真实 PostgreSQL 证据。[`register/route.ts`](../../app/api/auth/register/route.ts#L39-L88) [`registration-capacity.integration.test.ts`](../../tests/integration/registration-capacity.integration.test.ts#L77-L188)（E2/E3）
 - Session 替换将受影响用户锁、旧 Session 删除和新 Session 创建收敛到一个可重试事务；两个并发登录最终只有一个 Cookie 保持授权，插入故障不会留下已删除的旧 Session。注册入口继续使用同一签发边界（E3）。
 - forgot-password 对不存在邮箱返回相同成功消息，Email provider 失败不会回显枚举信息；Geo provider 有公网 IP 过滤、3 秒 AbortSignal 和失败隔离。[`forgot-password/route.ts`](../../app/api/auth/forgot-password/route.ts#L27-L55) [`geo-ip.ts`](../../lib/geo-ip.ts#L40-L59)（E2）
 - 密码恢复数据库不再保留可直接提交的 bearer token；并发单消费、过期/未知拒绝、Session 全失效和故障回滚由 4 项真实 PostgreSQL Route Handler 测试覆盖（E3）。
-- `npm run check:full` 单次退出 0；59 文件/346 项 Vitest、生产构建、覆盖率、12 文件/29 项真实 PostgreSQL 与 9 项 Playwright 通过（E3）。
+- 最近一次 `npm run check:full` 单次退出 0；59 文件/346 项 Vitest、生产构建、覆盖率、12 文件/29 项真实 PostgreSQL 与 9 项 Playwright 通过，且高风险 Auth 实现/回归自该证据后未变化。本轮另有 `./init.sh` 72 文件/472 项与 QAM-01 定向 6 文件/57 项通过；Docker/浏览器层明确未重跑（E2/E3）。
 
 ## Recommended Improvements
 
@@ -180,7 +182,7 @@ reset-password → bcrypt → 单事务条件 claim digest → update User → d
 - 问题状态只使用 `open`、`resolved`、`accepted-risk`、`not-reproduced`；已解决 ID 不删除。
 - 只有真实 PostgreSQL/浏览器行为证据能关闭相应并发、token 消费和关键旅程问题；单元 mock 不替代数据库语义。
 - 跨模块修正只在直接责任报告保留稳定 ID；QAM-02/QAM-08/QAM-09 通过关联问题记录各自直接证据。
-- 初审 2026-09-06 的 Playwright 曾因缺少 `libnspr4.so` 受阻，2026-09-07 又曾受用户开发服务的 `.next/dev/lock` 阻塞；2026-09-08 当前仓库的 `npm run check:full` 已单次退出 0，包含 Playwright 9/9。
+- 初审 2026-09-06 的 Playwright 曾因缺少 `libnspr4.so` 受阻，2026-09-07 又曾受用户开发服务的 `.next/dev/lock` 阻塞；2026-09-08 的 `npm run check:full` 已单次退出 0，包含 Playwright 9/9。2026-09-12 本轮只执行快速与 QAM-01 定向验证，不将其替代数据库/浏览器层。
 
 ### 评分历史（只追加）
 
@@ -190,3 +192,4 @@ reset-password → bcrypt → 单事务条件 claim digest → update User → d
 | 2026-09-07 | 76 | L2 | L1 | L1 | `+8（QAM-01-002/003 resolved）` | PasswordResetToken 改存版本化 digest 并迁移失效旧 bearer；条件 token claim、密码更新和 Session 失效同事务。回归修复前证明原 token 落库、并发 200/200 和故障后部分改密，修复后真实 PostgreSQL 4/4 覆盖 digest、并发 200/400、过期/未知拒绝、Session 失效和 trigger 回滚。`npm run check`、10 文件/24 项集成与隔离副本 Playwright 9/9 通过。 |
 | 2026-09-07 | 83 | L3 | L1 | L1 | `+7（QAM-01-001 resolved）` | Session 签发按受影响用户固定顺序行锁，在同一可重试事务内失效旧 Session 并创建新 Session。修复前真实 PostgreSQL 回归证明并发登录留下 2 条 Session 且插入故障会丢失旧 Session；修复后 3/3 覆盖最终单活跃、Cookie 200/401、故障回滚和注册签发。`npm run check`、11 文件/27 项集成与隔离副本缓存预热后 Playwright 9/9 通过。 |
 | 2026-09-08 | 87 | L3 | L4 | L3 | `+4（QAM-01-004 resolved）` | 注册事务内锁定默认 Room 后重新计算容量，并把 User/Profile/Participant 写入保持在同一原子边界。修复前真实 PostgreSQL 得到并发 200/200，修复后 2/2 覆盖 200/409、Participant 不超 2、loser 无 User/Profile/Session、Participant trigger 故障回滚和成功重试；`npm run check:full` 单次通过 12 文件/29 项集成与 Playwright 9/9。 |
+| 2026-09-12 | 87 | L3 | L4 | L3 | `0（复审，无评分相关变化）` | 自 2026-09-08 E3 基线后，四项 resolved 问题的 Auth 核心实现和数据库回归无差异；当前三个 P2 仍可复现。新增 SMTP payload 映射测试、3D 入口 CSP 调整及 feat-044～046 工作树改动未改变 QAM-01 质量结论。`./init.sh` 72 文件/472 项、QAM-01 定向 6 文件/57 项通过；本轮未运行 Docker、`check:full` 或 Playwright。 |

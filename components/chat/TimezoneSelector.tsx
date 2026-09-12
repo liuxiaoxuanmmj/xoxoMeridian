@@ -1,4 +1,5 @@
 import type { ChatUser } from "@/components/chat/types";
+import { resolveParticipantPair } from "@/lib/participant-resolution";
 
 type TimezoneSelectorProps = {
   value: string;
@@ -53,10 +54,18 @@ function buildTimezoneOptions(participants: ChatUser[]) {
   return options;
 }
 
-/** 从参与者中获取默认时区 */
-export function getDefaultTimezone(participants: ChatUser[]): string {
+/** 从当前用户档案获取默认时区，不把参与者数组顺序当作身份。 */
+export function getDefaultTimezone(
+  participants: ChatUser[],
+  currentUserId: string
+): string {
+  const { self } = resolveParticipantPair(
+    participants,
+    currentUserId,
+    (participant) => participant.id
+  );
   return (
-    participants[0]?.profile?.timezone ??
+    self?.profile?.timezone ??
     Intl.DateTimeFormat().resolvedOptions().timeZone
   );
 }

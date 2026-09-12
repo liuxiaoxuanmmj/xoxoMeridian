@@ -13,6 +13,7 @@ const mockPrisma = {
   atlasElement: {
     count: vi.fn(),
     create: vi.fn(),
+    findFirst: vi.fn(),
     findUnique: vi.fn(),
     update: vi.fn(),
     delete: vi.fn(),
@@ -22,6 +23,7 @@ const mockPrisma = {
     findFirst: vi.fn(),
     findUnique: vi.fn(),
     delete: vi.fn(),
+    deleteMany: vi.fn(),
   },
 };
 
@@ -29,9 +31,13 @@ vi.mock("@/lib/auth", () => ({
   requireCurrentUser: vi.fn(async () => mockUser),
 }));
 
-vi.mock("@/lib/home-board", () => ({
-  getOrCreateHomeBoard: vi.fn(async () => mockBoard),
-}));
+vi.mock("@/lib/home-board", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/home-board")>();
+  return {
+    ...actual,
+    getOrCreateHomeBoard: vi.fn(async () => mockBoard),
+  };
+});
 
 vi.mock("@/lib/prisma", () => ({
   prisma: mockPrisma,
@@ -134,7 +140,7 @@ describe("home-board routes", () => {
   });
 
   it("patches only elements that belong to home board", async () => {
-    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
+    mockPrisma.atlasElement.findFirst.mockResolvedValueOnce({
       id: "photo-1",
       boardId: "home-board",
       type: "photo",
@@ -151,17 +157,13 @@ describe("home-board routes", () => {
 
     expect(response.status).toBe(200);
     expect(mockPrisma.atlasElement.update).toHaveBeenCalledWith({
-      where: { id: "photo-1" },
+      where: expect.objectContaining({ id: "photo-1" }),
       data: { width: 360, height: 270 },
     });
   });
 
-  it("rejects patching a non-home element", async () => {
-    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
-      id: "atlas-photo",
-      boardId: "atlas-global-board",
-      type: "photo",
-    });
+  it("rejects patching an element outside the caller's home access scope", async () => {
+    mockPrisma.atlasElement.findFirst.mockResolvedValueOnce(null);
 
     const { PATCH } = await import("@/app/api/home-board/elements/[elementId]/route");
     const response = await PATCH(
@@ -177,7 +179,7 @@ describe("home-board routes", () => {
   });
 
   it("creates a connection only when both elements belong to home board and pair is allowed", async () => {
-    mockPrisma.atlasElement.findUnique
+    mockPrisma.atlasElement.findFirst
       .mockResolvedValueOnce({ id: "post-el", boardId: "home-board", type: "note", postId: "post-1" })
       .mockResolvedValueOnce({ id: "photo-el", boardId: "home-board", type: "photo", postId: null });
     mockPrisma.atlasConnection.create.mockResolvedValueOnce({
@@ -197,16 +199,16 @@ describe("home-board routes", () => {
     expect(response.status).toBe(201);
     expect(mockPrisma.atlasConnection.create).toHaveBeenCalledWith({
       data: {
-        boardId: "home-board",
-        fromId: "post-el",
-        toId: "photo-el",
+        board: { connect: { id: "home-board" } },
+        fromEl: { connect: expect.objectContaining({ id: "post-el" }) },
+        toEl: { connect: expect.objectContaining({ id: "photo-el" }) },
         color: "#668a5b",
       },
     });
   });
 
   it("rejects reversed duplicate connections", async () => {
-    mockPrisma.atlasElement.findUnique
+    mockPrisma.atlasElement.findFirst
       .mockResolvedValueOnce({ id: "photo-el", boardId: "home-board", type: "photo", postId: null })
       .mockResolvedValueOnce({ id: "post-el", boardId: "home-board", type: "note", postId: "post-1" });
     mockPrisma.atlasConnection.findFirst.mockResolvedValueOnce({
@@ -227,7 +229,7 @@ describe("home-board routes", () => {
   });
 
   it("deletes a home photo and cleans uploaded storage", async () => {
-    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
+    mockPrisma.atlasElement.findFirst.mockResolvedValueOnce({
       id: "photo-1",
       boardId: "home-board",
       type: "photo",
@@ -243,12 +245,14 @@ describe("home-board routes", () => {
     );
 
     expect(response.status).toBe(200);
-    expect(mockPrisma.atlasElement.delete).toHaveBeenCalledWith({ where: { id: "photo-1" } });
+    expect(mockPrisma.atlasElement.delete).toHaveBeenCalledWith({
+      where: expect.objectContaining({ id: "photo-1" }),
+    });
     expect(mockStorage.delete).toHaveBeenCalledWith("atlas/home-photo.jpg");
   });
 
   it("does not delete post anchor elements through the photo endpoint", async () => {
-    mockPrisma.atlasElement.findUnique.mockResolvedValueOnce({
+    mockPrisma.atlasElement.findFirst.mockResolvedValueOnce({
       id: "post-el",
       boardId: "home-board",
       type: "note",

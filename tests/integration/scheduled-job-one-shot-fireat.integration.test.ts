@@ -6,6 +6,7 @@ vi.mock("@/lib/auth", () => ({
   requireCurrentUser: vi.fn(async () => ({ id: authState.userId })),
 }));
 
+import { ToolValidationError } from "@/agent/tool-errors";
 import { createToolRegistry } from "@/agent/tool-registry";
 import type { RuntimeContext, ToolExecutionContext } from "@/agent/types";
 import { ExecutionTracer } from "@/agent/execution-tracer";
@@ -215,6 +216,116 @@ describe("ScheduledJob one-shot fireAt", () => {
     expect(viaRoute.nextRunAt.toISOString()).toBe(viaAgent.nextRunAt.toISOString());
     expect(viaRoute.cron).toBe(viaAgent.cron);
     expect(viaRoute.cron).toBe(FIRE_AT_CRON);
+    expect(viaRoute.payload).toMatchObject({ runOnce: true });
+    expect(viaAgent.payload).toMatchObject({ runOnce: true });
+  });
+
+  it("agrees with the Agent schedule.create tool on the same fireAt", async () => {
+    const { room, context } = await createFixture();
+    const response = await createScheduledJob(
+      new Request("http://localhost/api/rooms/" + room.id + "/scheduled-jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-forwarded-for": nextIp() },
+        body: JSON.stringify({
+          fireAt: FIRE_AT,
+          timezone: "Asia/Shanghai",
+          prompt: "发一首诗",
+        }),
+      }),
+      { params: Promise.resolve({ roomId: room.id }) },
+    );
+    expect(response.status).toBe(201);
+    const routeBody = await response.json() as { job: { id: string } };
+
+    const agentResult = await createToolRegistry().execute(
+      "schedule.create",
+      {
+        fireAt: FIRE_AT,
+        timezone: "Asia/Shanghai",
+        prompt: "发一首诗",
+      },
+      context,
+      { stepKey: "tool:one-shot-create-parity" },
+    );
+    const agentJobId = (agentResult.output as { jobId: string }).jobId;
+
+    const [viaRoute, viaAgent] = await Promise.all([
+      prisma.scheduledJob.findUniqueOrThrow({ where: { id: routeBody.job.id } }),
+      prisma.scheduledJob.findUniqueOrThrow({ where: { id: agentJobId } }),
+    ]);
+    expect(viaRoute.nextRunAt.toISOString()).toBe(FIRE_AT_ISO);
+    expect(viaRoute.nextRunAt.toISOString()).toBe(viaAgent.nextRunAt.toISOString());
+    expect(viaRoute.cron).toBe(FIRE_AT_CRON);
+    expect(viaRoute.cron).toBe(viaAgent.cron);
+    expect(viaRoute.payload).toMatchObject({ runOnce: true });
+    expect(viaAgent.payload).toMatchObject({ runOnce: true });
+  });
+
+  it("rejects invalid Agent trigger inputs before creating or changing a job", async () => {
+    const { room, agent, user, task, context } = await createFixture();
+    const existing = await createOneShot(room.id, agent.id, user.id);
+    const registry = createToolRegistry();
+    const attempts = [
+      () => registry.execute(
+        "schedule.create",
+        {
+          fireAt: "2030-05-09T20:40:00",
+          timezone: "Europe/London",
+          prompt: "提醒用户休息",
+        },
+        context,
+        { stepKey: "tool:invalid-create-offset" },
+      ),
+      () => registry.execute(
+        "schedule.create",
+        {
+          fireAt: "2030-05-09T20:40:00+01:00",
+          cron: "40 20 * * *",
+          timezone: "Europe/London",
+          prompt: "提醒用户休息",
+        },
+        context,
+        { stepKey: "tool:invalid-create-mixed" },
+      ),
+      () => registry.execute(
+        "schedule.update",
+        { jobId: existing.id, fireAt: "2030-05-09T20:40:00" },
+        context,
+        { stepKey: "tool:invalid-update-offset" },
+      ),
+      () => registry.execute(
+        "schedule.update",
+        {
+          jobId: existing.id,
+          fireAt: "2030-05-09T20:40:00+01:00",
+          cron: "40 20 * * *",
+        },
+        context,
+        { stepKey: "tool:invalid-update-mixed" },
+      ),
+    ];
+
+    const outcomes: string[] = [];
+    for (const attempt of attempts) {
+      try {
+        await attempt();
+        outcomes.push("accepted");
+      } catch (error) {
+        outcomes.push(error instanceof ToolValidationError ? "validation" : "other-error");
+      }
+    }
+
+    expect(outcomes).toEqual([
+      "validation",
+      "validation",
+      "validation",
+      "validation",
+    ]);
+    const stored = await prisma.scheduledJob.findUniqueOrThrow({ where: { id: existing.id } });
+    expect(await prisma.scheduledJob.count({ where: { roomId: room.id } })).toBe(1);
+    expect(stored.nextRunAt.toISOString()).toBe("2030-05-09T12:40:00.000Z");
+    expect(stored.cron).toBe("40 20 * * *");
+    expect(await prisma.toolCall.count({ where: { taskId: task.id } })).toBe(0);
   });
 
   it("rejects a stale fireAt and leaves the stored schedule untouched", async () => {

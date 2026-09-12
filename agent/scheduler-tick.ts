@@ -27,14 +27,19 @@ export const TRIGGER_MARKER = "[这是已触发的定时任务正在执行]";
 const BLOCKED_TOOL_DIRECTIVE =
   `不要再调用 ${SCHEDULER_BLOCKED_TOOLS.join(" / ")} 安排新任务。`;
 
-const activeJobTimers = new Map<string, NodeJS.Timeout>();
+type ActiveJobTimer = {
+  timer: NodeJS.Timeout;
+  expectedNextRunAtMs: number;
+};
+
+const activeJobTimers = new Map<string, ActiveJobTimer>();
 
 export type SchedulerTickResult = {
   jobs: { fired: number; skipped: number; failed: number };
 };
 
 export function clearAllTimers() {
-  for (const timer of activeJobTimers.values()) clearTimeout(timer);
+  for (const { timer } of activeJobTimers.values()) clearTimeout(timer);
   activeJobTimers.clear();
 }
 
@@ -66,12 +71,15 @@ async function fireDueScheduledJobs(now: Date) {
   let fired = 0, skipped = 0, failed = 0;
 
   for (const job of due) {
-    if (activeJobTimers.has(job.id)) continue;
-
-    const inWindow = now.getTime() - job.nextRunAt.getTime() <= MISSED_WINDOW_MS;
+    const activeTimer = activeJobTimers.get(job.id);
+    if (activeTimer) {
+      if (activeTimer.expectedNextRunAtMs === job.nextRunAt.getTime()) continue;
+      clearTimeout(activeTimer.timer);
+      activeJobTimers.delete(job.id);
+    }
 
     try {
-      const result = await claimAndDispatchScheduledJob(job, now, inWindow);
+      const result = await claimAndDispatchScheduledJob(job, now);
       if (result === "fired") fired += 1;
       if (result === "skipped") skipped += 1;
     } catch (error) {
@@ -85,9 +93,11 @@ async function fireDueScheduledJobs(now: Date) {
 
 async function claimAndDispatchScheduledJob(
   job: ScheduledJob,
-  now: Date,
-  inWindow: boolean
+  now: Date
 ): Promise<"lost" | "skipped" | "fired"> {
+  if (!job.enabled || job.nextRunAt.getTime() > now.getTime()) return "lost";
+
+  const inWindow = now.getTime() - job.nextRunAt.getTime() <= MISSED_WINDOW_MS;
   const newNextRunAt = computeNextRun(job.cron, job.timezone, now);
   const runOnce = isRunOnce(job);
 
@@ -95,8 +105,11 @@ async function claimAndDispatchScheduledJob(
     const claim = await tx.scheduledJob.updateMany({
       where: {
         id: job.id,
-        enabled: job.enabled,
-        nextRunAt: job.nextRunAt,
+        enabled: true,
+        nextRunAt: {
+          equals: job.nextRunAt,
+          lte: now
+        },
         lastRunAt: job.lastRunAt,
         failCount: job.failCount
       },
@@ -104,7 +117,7 @@ async function claimAndDispatchScheduledJob(
         lastRunAt: inWindow ? now : job.lastRunAt,
         nextRunAt: newNextRunAt,
         failCount: 0,
-        enabled: runOnce && inWindow ? false : true
+        enabled: !runOnce
       }
     });
     if (claim.count === 0) return "lost";
@@ -205,24 +218,30 @@ async function scheduleNearTermJobs(now: Date) {
   });
 
   for (const job of nearTerm) {
-    if (activeJobTimers.has(job.id)) continue;
+    const expectedNextRunAtMs = job.nextRunAt.getTime();
+    const activeTimer = activeJobTimers.get(job.id);
+    if (activeTimer?.expectedNextRunAtMs === expectedNextRunAtMs) continue;
+    if (activeTimer) clearTimeout(activeTimer.timer);
+
     const delay = Math.max(0, job.nextRunAt.getTime() - now.getTime());
     const timer = setTimeout(() => {
+      const currentTimer = activeJobTimers.get(job.id);
+      if (currentTimer?.expectedNextRunAtMs !== expectedNextRunAtMs) return;
       activeJobTimers.delete(job.id);
-      void fireJobNow(job.id);
+      void fireJobNow(job.id, expectedNextRunAtMs);
     }, delay);
-    activeJobTimers.set(job.id, timer);
+    activeJobTimers.set(job.id, { timer, expectedNextRunAtMs });
   }
 }
 
-async function fireJobNow(jobId: string) {
+async function fireJobNow(jobId: string, expectedNextRunAtMs: number) {
   const job = await prisma.scheduledJob.findUnique({ where: { id: jobId } });
-  if (!job || !job.enabled) return;
+  if (!job || !job.enabled || job.nextRunAt.getTime() !== expectedNextRunAtMs) return;
 
   const now = new Date();
 
   try {
-    await claimAndDispatchScheduledJob(job, now, true);
+    await claimAndDispatchScheduledJob(job, now);
   } catch (error) {
     await recordJobDispatchFailure(job, error);
   }

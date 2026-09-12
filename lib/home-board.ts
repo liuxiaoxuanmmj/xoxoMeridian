@@ -1,3 +1,6 @@
+import type { Prisma } from "@prisma/client";
+
+import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { prisma } from "@/lib/prisma";
 
 export const HOME_BOARD_ID = "home-board";
@@ -6,6 +9,41 @@ type HomePostInput = {
   id: string;
   authorId: string | null;
 };
+
+type HomeBoardAccessScope = {
+  boardId: string;
+  userId: string;
+};
+
+export function getHomeBoardElementAccessWhere({
+  boardId,
+  userId,
+}: HomeBoardAccessScope): Prisma.AtlasElementWhereInput {
+  return {
+    boardId,
+    OR: [
+      { type: "photo", postId: null },
+      {
+        post: {
+          is: getPostVisibilityWhere(userId),
+        },
+      },
+    ],
+  };
+}
+
+export function getHomeBoardConnectionAccessWhere({
+  boardId,
+  userId,
+}: HomeBoardAccessScope): Prisma.AtlasConnectionWhereInput {
+  const elementWhere = getHomeBoardElementAccessWhere({ boardId, userId });
+
+  return {
+    boardId,
+    fromEl: { is: elementWhere },
+    toEl: { is: elementWhere },
+  };
+}
 
 export async function getOrCreateHomeBoard() {
   return prisma.atlasBoard.upsert({
@@ -54,14 +92,16 @@ export async function ensureHomePostElements({
   });
 }
 
-export async function getHomeBoardSnapshot(boardId: string) {
+export async function getHomeBoardSnapshot({ boardId, userId }: HomeBoardAccessScope) {
+  const elementWhere = getHomeBoardElementAccessWhere({ boardId, userId });
+  const connectionWhere = getHomeBoardConnectionAccessWhere({ boardId, userId });
   const [elements, connections] = await Promise.all([
     prisma.atlasElement.findMany({
-      where: { boardId },
+      where: elementWhere,
       orderBy: { zIndex: "asc" },
     }),
     prisma.atlasConnection.findMany({
-      where: { boardId },
+      where: connectionWhere,
     }),
   ]);
 

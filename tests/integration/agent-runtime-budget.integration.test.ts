@@ -285,6 +285,9 @@ function createRequest(): LLMPlanRequest {
     prompt: "complete the budget test",
     roomContext: {
       room: { name: "Budget Room", slug: "budget-room" },
+      requestedById: null,
+      self: null,
+      partner: null,
       participants: [],
       recentMessages: [],
       pinnedMemos: [],

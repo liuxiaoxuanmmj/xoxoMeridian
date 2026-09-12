@@ -10,6 +10,7 @@ import {
   ScheduledJobFireAtError,
   ScheduledJobTimezoneError,
 } from "@/lib/scheduled-job-one-shot";
+import { resolveParticipantPair } from "@/lib/participant-resolution";
 
 type ScheduleCreateInput = {
   cron?: string;
@@ -379,7 +380,10 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
 }
 
 function inferRequesterTimezone(context: ToolExecutionContext): string | undefined {
-  return context.runtimeContext.participants.find(
-    (p) => p.userId === context.requestedById
-  )?.user.profile?.timezone ?? undefined;
+  const { self } = resolveParticipantPair(
+    context.runtimeContext.participants,
+    context.requestedById,
+    (participant) => participant.userId
+  );
+  return self?.user.profile?.timezone ?? undefined;
 }

@@ -1,7 +1,11 @@
 import { Prisma } from "@prisma/client";
 import { jsonOk, jsonError, errorToResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
-import { getOrCreateHomeBoard } from "@/lib/home-board";
+import {
+  getHomeBoardConnectionAccessWhere,
+  getHomeBoardElementAccessWhere,
+  getOrCreateHomeBoard,
+} from "@/lib/home-board";
 import { isConnectablePair, type HomeSpatialKind } from "@/lib/home-spatial";
 import { prisma } from "@/lib/prisma";
 import { readJsonBody, homeBoardConnectionCreateSchema } from "@/lib/validation";
@@ -12,26 +16,30 @@ function kindForElement(element: { type: string; postId: string | null }): HomeS
 
 export async function POST(request: Request) {
   try {
-    await requireCurrentUser();
+    const user = await requireCurrentUser();
     const board = await getOrCreateHomeBoard();
     const body = await readJsonBody(request, homeBoardConnectionCreateSchema);
+    const elementAccessWhere = getHomeBoardElementAccessWhere({
+      boardId: board.id,
+      userId: user.id,
+    });
 
     if (body.fromId === body.toId) {
       return jsonError("Cannot connect an element to itself", 400);
     }
 
     const [fromEl, toEl] = await Promise.all([
-      prisma.atlasElement.findUnique({
-        where: { id: body.fromId },
+      prisma.atlasElement.findFirst({
+        where: { id: body.fromId, AND: [elementAccessWhere] },
         select: { id: true, boardId: true, type: true, postId: true },
       }),
-      prisma.atlasElement.findUnique({
-        where: { id: body.toId },
+      prisma.atlasElement.findFirst({
+        where: { id: body.toId, AND: [elementAccessWhere] },
         select: { id: true, boardId: true, type: true, postId: true },
       }),
     ]);
 
-    if (!fromEl || !toEl || fromEl.boardId !== board.id || toEl.boardId !== board.id) {
+    if (!fromEl || !toEl) {
       return jsonError("Element not found on home board", 404);
     }
 
@@ -56,9 +64,13 @@ export async function POST(request: Request) {
 
     const connection = await prisma.atlasConnection.create({
       data: {
-        boardId: board.id,
-        fromId: body.fromId,
-        toId: body.toId,
+        board: { connect: { id: board.id } },
+        fromEl: {
+          connect: { id: body.fromId, AND: [elementAccessWhere] },
+        },
+        toEl: {
+          connect: { id: body.toId, AND: [elementAccessWhere] },
+        },
         color: body.color ?? "#668a5b",
       },
     });
@@ -68,13 +80,16 @@ export async function POST(request: Request) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2002") {
       return jsonError("Connection already exists", 409);
     }
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
+      return jsonError("Element not found on home board", 404);
+    }
     return errorToResponse(error);
   }
 }
 
 export async function DELETE(request: Request) {
   try {
-    await requireCurrentUser();
+    const user = await requireCurrentUser();
     const board = await getOrCreateHomeBoard();
     const url = new URL(request.url);
     const connectionId = url.searchParams.get("id");
@@ -83,15 +98,20 @@ export async function DELETE(request: Request) {
       return jsonError("Missing connection id", 400);
     }
 
-    const connection = await prisma.atlasConnection.findUnique({
-      where: { id: connectionId },
+    const deleted = await prisma.atlasConnection.deleteMany({
+      where: {
+        id: connectionId,
+        ...getHomeBoardConnectionAccessWhere({
+          boardId: board.id,
+          userId: user.id,
+        }),
+      },
     });
 
-    if (!connection || connection.boardId !== board.id) {
+    if (deleted.count === 0) {
       return jsonError("Connection not found", 404);
     }
 
-    await prisma.atlasConnection.delete({ where: { id: connectionId } });
     return jsonOk({ deleted: true });
   } catch (error) {
     return errorToResponse(error);
