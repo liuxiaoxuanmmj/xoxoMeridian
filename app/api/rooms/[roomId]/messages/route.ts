@@ -1,6 +1,7 @@
 import { assertRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
+import { getChatMessages } from "@/lib/chat-messages";
 import { env } from "@/lib/env";
 import { createHumanMessage } from "@/lib/messages";
 import { prisma } from "@/lib/prisma";
@@ -15,23 +16,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ roo
     const { roomId } = await params;
     await assertRoomAccess(roomId, user.id);
 
-    const recent = await prisma.message.findMany({
-      where: { roomId },
-      orderBy: { createdAt: "desc" },
-      take: 80,
-      include: {
-        sender: { select: { id: true, displayName: true, avatarLabel: true } },
-        senderAgent: { select: { id: true, displayName: true, slug: true } },
-        finalTask: {
-          include: {
-            toolCalls: true,
-            llmCalls: true
-          }
-        },
-        sourceTask: { select: { id: true, status: true } }
-      }
-    });
-    const messages = recent.reverse();
+    const messages = await getChatMessages(roomId);
 
     return jsonOk(
       { messages },

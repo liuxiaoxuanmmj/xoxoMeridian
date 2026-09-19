@@ -50,6 +50,10 @@ sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration
 
 本地 E2E harness 会把临时 Testcontainer 连接串以 `0600` 权限写入 `test-results/.e2e-database-url`，仅供浏览器生命周期用例推进隔离测试数据，并在测试服务关闭时删除。使用 `PLAYWRIGHT_BASE_URL` 连接外部隔离环境时，需同时通过 `E2E_DATABASE_URL` 提供该服务对应的测试数据库；不得指向开发、预发布或生产数据库。
 
+Study 的 Focus 用例通过 `tests/e2e/support/study.ts` 为每次调用创建独立账号和房间，经真实登录接口建立会话；即使断言失败也会先关闭页面，再删除该账号和房间，避免迟到请求污染下一项用例。开始/停止操作先确认对应 HTTP 响应和 sessionKey，停止还须等待状态回读，再断言可见控件；保持默认用例和 UI 超时，不用固定等待替代同步。
+
+首页搜索旅程分别确认输入/URL、HTTP 与列表渲染；只有首次真实查询结果已呈现，才进入失败保留/键盘重试阶段。用例结束先关闭自己的页面，再在 finally 中清理隔离数据；不让页面已关闭后的路由清理异常遮蔽原始失败或跳过数据库回收。
+
 Linux/WSL 首次运行或 Playwright 浏览器版本升级后，应先以当前项目用户安装 Chromium，再通过 Playwright 官方入口安装系统运行库：
 
 ```bash

@@ -10,6 +10,7 @@ import {
 import { runPostTaskHooks } from "@/agent/post-task";
 import { ExecutionTracer } from "@/agent/execution-tracer";
 import { createLLMProvider } from "@/agent/llm-provider";
+import { AgentPlanValidationError, parseAgentPlan } from "@/agent/plan-contract";
 import { buildClarifyPlan, repairPlan } from "@/agent/plan-repair";
 import { formatIssuesForLLM, validatePlan } from "@/agent/plan-validator";
 import {
@@ -29,7 +30,7 @@ import {
   startAgentTaskHeartbeat
 } from "@/agent/task-claim";
 import { ToolApprovalRequiredError } from "@/agent/tool-approval";
-import { createToolRegistry } from "@/agent/tool-registry";
+import { createToolRegistry, type ToolRegistry } from "@/agent/tool-registry";
 import type {
   AgentPlan,
   AgentTaskLeaseOwnership,
@@ -60,7 +61,8 @@ export async function runAgentTask(
     include: {
       agent: true,
       sourceMessage: true,
-      requestedBy: true
+      requestedBy: true,
+      steps: { where: { stepKey: "plan" }, select: { status: true, output: true } }
     }
   });
 
@@ -119,6 +121,12 @@ export async function runAgentTask(
     const availableTools = filterToolsForTrigger(allTools, trigger);
     const availableToolNames = availableTools.map((t) => t.name);
 
+    // 先重验权威 checkpoint，确保 Registry/trigger 漂移也有明确的 validation 原因。
+    // 完成的旧 Step 保持原样；失效计划不能被新规划或部分执行掩盖。
+    const persistedStep = task.steps?.[0];
+    let plan = persistedStep?.status === "completed"
+      ? parseAgentPlan(persistedStep.output, registry, availableToolNames, "persisted")
+      : readPersistedAgentPlan(task.plan, registry, availableToolNames);
     const planCheckpoint = await beginAgentStep({
       taskId: task.id,
       roomId: task.roomId,
@@ -131,11 +139,8 @@ export async function runAgentTask(
         availableTools: availableToolNames
       }
     });
-    let plan = planCheckpoint.step.status === "completed"
-      ? readPersistedAgentPlan(planCheckpoint.step.output)
-      : readPersistedAgentPlan(task.plan);
-    if (planCheckpoint.step.status === "completed" && !plan) {
-      throw new AgentStepConflictError("Durable plan step has invalid persisted output.");
+    if (planCheckpoint.step.status === "completed") {
+      plan = parseAgentPlan(planCheckpoint.step.output, registry, availableToolNames, "persisted");
     }
     if (plan) {
       await tracer.event("agent.plan.resumed", {
@@ -153,7 +158,7 @@ export async function runAgentTask(
         });
       }
     } else {
-      const provider = createLLMProvider();
+      const provider = createLLMProvider(registry);
       await tracer.event("agent.llm.started", {
         provider: provider.name,
         model: provider.model,
@@ -179,7 +184,7 @@ export async function runAgentTask(
         taskId: task.id,
         assertLease: heartbeat.assertActive
       });
-      plan = planResult;
+      plan = parseAgentPlan(planResult, registry, availableToolNames, "planner");
       await tracer.event("agent.llm.completed", {
         intent: plan.intent,
         requiredTools: plan.requiredTools
@@ -228,13 +233,15 @@ export async function runAgentTask(
             taskId: task.id,
             assertLease: heartbeat.assertActive
           });
-          plan = retryResult;
+          plan = parseAgentPlan(retryResult, registry, availableToolNames, "planner");
           await tracer.event("agent.plan.validation.retry.completed", {
             intent: plan.intent,
             requiredTools: plan.requiredTools
           });
         } catch (error) {
-          if (error instanceof AgentRuntimeBudgetExceededError) throw error;
+          if (error instanceof AgentRuntimeBudgetExceededError
+            || error instanceof AgentTaskLeaseLostError
+            || error instanceof AgentPlanValidationError) throw error;
           const message = error instanceof Error ? error.message : "LLM retry failed";
           await tracer.event("agent.plan.validation.retry.failed", { error: message });
         }
@@ -243,7 +250,7 @@ export async function runAgentTask(
         if (planIssues.length > 0) {
           const repairedFromCodes = planIssues.map((i) => i.code);
           const { repaired, remainingIssues } = repairPlan(plan, prompt, planIssues);
-          plan = repaired;
+          plan = parseAgentPlan(repaired, registry, availableToolNames, "repaired");
           await tracer.event("agent.plan.validation.repaired", {
             repairedFromCodes,
             remainingCodes: remainingIssues.map((i) => i.code),
@@ -276,7 +283,7 @@ export async function runAgentTask(
     let stepIndex = 0;
     for (const toolName of plan.requiredTools) {
       const args = plan.toolInputs[toolName];
-      const argList = Array.isArray(args) ? args : [args ?? {}];
+      const argList = Array.isArray(args) ? args : [args];
       for (const arg of argList) {
         await heartbeat.assertActive();
         stepIndex += 1;
@@ -428,22 +435,36 @@ export async function runAgentTask(
       });
     }
     const message = error instanceof Error ? error.message : "Agent task failed";
+    const validationError = error instanceof AgentPlanValidationError ? error : null;
     let finalMessage;
     try {
+      if (validationError) {
+        await heartbeat.assertActive();
+        await tracer.event("agent.plan.validation.failed", {
+          source: validationError.source,
+          errorCategory: validationError.category,
+          issueCodes: validationError.issues.map((issue) => issue.code),
+          issues: validationError.issues
+        });
+      }
       finalMessage = await tracer.failWithMessage(
         {
         roomId: task.roomId,
         senderType: "agent",
         senderAgentId: task.agentId,
-        content: "我刚才处理这个任务时遇到了问题，已经把错误记录下来了。你可以稍后重试，或者把任务说得更具体一点。",
+        content: validationError
+          ? "我无法确认这次任务的操作和参数，任务未完成。请把要做的事说得更具体一些后重试。"
+          : "我刚才处理这个任务时遇到了问题，已经把错误记录下来了。你可以稍后重试，或者把任务说得更具体一点。",
         targetType: "all",
         status: "failed",
         metadata: {
           taskId: task.id,
-          error: message
+          error: message,
+          ...(validationError ? { errorCategory: "validation" } : {})
         }
         },
-        message
+        message,
+        validationError ? "validation" : "runtime"
       );
     } catch (failureError) {
       if (failureError instanceof AgentTaskLeaseLostError) {
@@ -597,33 +618,13 @@ function findAgentTaskWithTrace(taskId: string) {
   });
 }
 
-export function readPersistedAgentPlan(value: unknown): AgentPlan | null {
-  if (!isRecord(value)) return null;
-  if (typeof value.intent !== "string") return null;
-  if (typeof value.confidence !== "number") return null;
-  if (!isStringArray(value.requiredTools)) return null;
-  if (!isStringArray(value.taskSteps)) return null;
-  if (typeof value.finalResponsePlan !== "string") return null;
-  if (typeof value.finalResponseText !== "string") return null;
-  if (!isRecord(value.toolInputs)) return null;
-
-  return {
-    intent: value.intent,
-    confidence: value.confidence,
-    requiredTools: value.requiredTools,
-    taskSteps: value.taskSteps,
-    finalResponsePlan: value.finalResponsePlan,
-    finalResponseText: value.finalResponseText,
-    toolInputs: value.toolInputs
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isStringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+export function readPersistedAgentPlan(
+  value: unknown,
+  registry: ToolRegistry = createToolRegistry(),
+  allowedToolNames = registry.list().map((tool) => tool.name)
+): AgentPlan | null {
+  if (value === null || value === undefined) return null;
+  return parseAgentPlan(value, registry, allowedToolNames, "persisted");
 }
 
 function getTaskPrompt(input: unknown) {

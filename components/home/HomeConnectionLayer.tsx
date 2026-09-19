@@ -18,18 +18,20 @@ export function HomeConnectionLayer({
   boardRect,
   anchors,
   connections,
+  deletingIds,
   onDelete,
 }: {
   boardRect: DOMRect | null;
   anchors: Map<string, HomeAnchor>;
   connections: AtlasConnectionData[];
+  deletingIds: string[];
   onDelete: (id: string) => void;
 }) {
   if (!boardRect) return null;
 
   return (
-    <svg className="home-connection-layer" aria-hidden="true">
-      {connections.map((connection) => {
+    <svg className="home-connection-layer">
+      {connections.map((connection, index) => {
         const from = anchors.get(connection.fromId)?.getRect();
         const to = anchors.get(connection.toId)?.getRect();
         if (!from || !to) return null;
@@ -48,10 +50,21 @@ export function HomeConnectionLayer({
               fill="none"
               stroke="transparent"
               strokeWidth={14}
+              role="button"
+              tabIndex={0}
+              aria-label={`删除连线 ${index + 1}`}
+              aria-disabled={deletingIds.includes(connection.id)}
+              className="focus-visible:stroke-sage-300/60 focus-visible:outline-none"
               style={{ pointerEvents: "stroke", cursor: "pointer" }}
               onClick={(event) => {
                 event.stopPropagation();
-                onDelete(connection.id);
+                if (!deletingIds.includes(connection.id)) onDelete(connection.id);
+              }}
+              onKeyDown={(event) => {
+                if (event.key !== "Enter" && event.key !== " ") return;
+                event.preventDefault();
+                event.stopPropagation();
+                if (!deletingIds.includes(connection.id)) onDelete(connection.id);
               }}
             />
             <path

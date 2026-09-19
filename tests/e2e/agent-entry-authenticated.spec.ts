@@ -1,6 +1,13 @@
-import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { PrismaClient } from "@prisma/client";
+import { expect, test, type Browser, type Page } from "@playwright/test";
 import { entryChunks, entryName, expectReady, hostInteraction, modelPath, observeEntry, settleHydration } from "./support/agent-entry";
 import { e2eAppMode } from "./support/app-mode";
+import { E2E_PASSWORD, E2E_USERS } from "./support/credentials";
+
+// 完整 Chromium 支持原生窗口焦点；默认 headless shell 的 bringToFront 不产生 focus。
+// channel 是 worker 级设置，须对整个入口 spec 配置。
+test.use({ channel: "chromium" });
 
 test("Chat 冷启动不下载入口代码与模型", async ({ page }) => {
   const observed = observeEntry(page);
@@ -230,3 +237,147 @@ for (const width of [320, 390, 1280]) {
     }
   });
 }
+
+async function secondUserContext(browser: Browser, baseURL: string | undefined) {
+  if (!baseURL) throw new Error("入口身份生命周期验证需要隔离 E2E baseURL");
+  // 独立登录第二位用户，避免使其他用例复用的第一位用户 Session 失效。
+  const context = await browser.newContext({ baseURL, storageState: { cookies: [], origins: [] } });
+  try {
+    const response = await context.request.post("/api/auth/login", {
+      headers: { origin: baseURL },
+      data: { email: E2E_USERS[1].email, password: E2E_PASSWORD },
+    });
+    expect(response.status()).toBe(200);
+    if (e2eAppMode() === "development") {
+      // 跨标签持有 WebGL 句柄期间不能发生首次路由编译引起的整页重载。
+      for (const path of ["/", "/home", "/me", "/about", "/api/auth/logout"]) {
+        const warm = await context.request.get(path);
+        expect(warm.status()).toBe(path === "/api/auth/logout" ? 405 : 200);
+      }
+    }
+    return context;
+  } catch (error) {
+    await context.close();
+    throw error;
+  }
+}
+
+async function useNativeFocus(...pages: Page[]) {
+  // Playwright 在跨文档导航后重新启用始终聚焦，须在导航完成后取消这个覆盖。
+  for (const page of pages) {
+    const session = await page.context().newCDPSession(page);
+    await session.send("Emulation.setFocusEmulationEnabled", { enabled: false });
+  }
+}
+
+test.describe("入口身份生命周期", () => {
+  test("跨标签退出卸载公开页入口与 WebGL，重新登录并聚焦后复用模型恢复导航", async ({ browser, baseURL }) => {
+    test.setTimeout(90_000);
+    const context = await secondUserContext(browser, baseURL);
+    try {
+      const otherTab = await context.newPage();
+      await otherTab.goto("/me");
+      await expectReady(otherTab);
+      const page = await context.newPage();
+      const observed = observeEntry(page);
+      await page.goto("/about");
+      await expectReady(page);
+      await useNativeFocus(page, otherTab);
+      await otherTab.bringToFront();
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(false);
+      const oldContext = await page.locator("[data-agent-entry] canvas").evaluateHandle((canvas) => {
+        const gl = (canvas as HTMLCanvasElement).getContext("webgl2");
+        if (!gl) throw new Error("入口需要真实 WebGL2 context");
+        return gl;
+      });
+      expect(await oldContext.evaluate((gl) => gl.isContextLost())).toBe(false);
+      otherTab.once("dialog", (dialog) => dialog.accept());
+      const logout = otherTab.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/logout");
+      const invalidated = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/me" && response.status() === 401, { timeout: 10_000 });
+      await otherTab.getByRole("button", { name: "退出登录", exact: true }).click();
+      expect((await logout).status()).toBe(200);
+      await invalidated;
+      // 公开 About 没有 SessionHeartbeat；不导航、不手动聚焦也必须收到跨标签退出通知。
+      await expect(page).toHaveURL(/\/about$/);
+      await expect(page.getByRole("button", { name: entryName })).toHaveCount(0);
+      await expect(page.locator("[data-agent-entry] canvas")).toHaveCount(0);
+      await expect.poll(() => oldContext.evaluate((gl) => gl.isContextLost())).toBe(true);
+      await oldContext.dispose();
+
+      const loginForm = otherTab.locator("form");
+      await expect(loginForm.getByRole("button", { name: "登录", exact: true })).toBeVisible();
+      // 硬导航后的表单须已能交互，再填写受控输入；仅看到 SSR 按钮不足以证明 hydration 完成。
+      await loginForm.getByRole("button", { name: "显示密码", exact: true }).click();
+      await expect(loginForm.getByLabel("密码", { exact: true })).toHaveAttribute("type", "text");
+      await loginForm.getByRole("button", { name: "隐藏密码", exact: true }).click();
+      await loginForm.getByLabel("邮箱", { exact: true }).fill(E2E_USERS[1].email);
+      await loginForm.getByLabel("密码", { exact: true }).fill(E2E_PASSWORD);
+      const login = otherTab.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/login");
+      await loginForm.getByRole("button", { name: "登录", exact: true }).click();
+      const loginResponse = await login;
+      expect(loginResponse.request().postDataJSON()).toEqual({ email: E2E_USERS[1].email, password: E2E_PASSWORD });
+      expect(loginResponse.status()).toBe(200);
+      await expect(otherTab).toHaveURL(/\/home$/);
+      await expectReady(otherTab);
+      await useNativeFocus(page, otherTab);
+      const revalidated = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/me" && response.status() === 200, { timeout: 10_000 });
+      await page.bringToFront();
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+      await revalidated;
+      await expectReady(page);
+      expect(observed.requests.filter((url) => url.endsWith(".glb")).map((url) => new URL(url).pathname)).toEqual([modelPath]);
+      await page.getByRole("button", { name: entryName }).focus();
+      const chat = page.waitForResponse((response) => /^\/chat\/[^/]+$/.test(new URL(response.url()).pathname));
+      await page.keyboard.press("Enter");
+      expect((await chat).ok()).toBe(true);
+      await expect(page).toHaveURL(/\/chat\/[^/]+$/);
+      await expect(page.getByRole("button", { name: "发送", exact: true })).toBeVisible();
+      await expect(page.locator("[data-agent-entry] canvas")).toHaveCount(0);
+      expect(observed.errors).toEqual([]);
+    } finally {
+      try {
+        await context.request.post("/api/auth/logout", { headers: { origin: baseURL! } });
+      } finally { await context.close(); }
+    }
+  });
+
+  test("真实 Session 到期后聚焦重验 401 并释放入口，不依赖退出通知", async ({ browser, baseURL }) => {
+    const databaseUrl = process.env.E2E_DATABASE_URL
+      ?? (await readFile("test-results/.e2e-database-url", "utf8")).trim();
+    const database = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+    const context = await secondUserContext(browser, baseURL);
+    try {
+      const page = await context.newPage();
+      const observed = observeEntry(page);
+      await page.goto("/about");
+      await expectReady(page);
+      const otherTab = await context.newPage();
+      await otherTab.goto("about:blank");
+      await useNativeFocus(page, otherTab);
+      await otherTab.bringToFront();
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(false);
+      const expired = await database.session.updateMany({
+        where: { user: { email: E2E_USERS[1].email } },
+        data: { expiresAt: new Date(0) },
+      });
+      expect(expired.count).toBe(1);
+      expect((await context.request.get("/api/auth/me")).status()).toBe(401);
+      const revalidated = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/auth/me" && response.status() === 401, { timeout: 10_000 });
+      await page.bringToFront();
+      await expect.poll(() => page.evaluate(() => document.hasFocus())).toBe(true);
+      await revalidated;
+      await expect(page).toHaveURL(/\/about$/);
+      await expect(page.getByRole("button", { name: entryName })).toHaveCount(0);
+      await expect(page.locator("[data-agent-entry] canvas")).toHaveCount(0);
+      expect(observed.requests.filter((url) => url.endsWith(".glb"))).toHaveLength(1);
+      expect(observed.errors).toEqual([]);
+    } finally {
+      try {
+        await context.request.post("/api/auth/logout", { headers: { origin: baseURL! } });
+      } finally {
+        await context.close();
+        await database.$disconnect();
+      }
+    }
+  });
+});

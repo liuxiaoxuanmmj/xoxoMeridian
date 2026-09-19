@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useId, useMemo } from "react";
 
 type CronBuilderProps = {
   value: string;
@@ -37,6 +37,9 @@ function isWeekdaySet(set: Set<string>): boolean {
 }
 
 export function CronBuilder({ value, onChange }: CronBuilderProps) {
+  const id = useId();
+  const hourId = `${id}-hour`;
+  const minuteId = `${id}-minute`;
   const { parts, selected, description } = useMemo(() => {
     const p = parseCronParts(value);
     const s = parseDowSet(p.dow);
@@ -68,12 +71,14 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
 
   return (
     <div className="space-y-3">
-      <div>
-        <label className="block text-xs font-medium text-black/70">
+      <fieldset className="min-w-0">
+        <legend className="block text-xs font-medium text-black/70">
           执行时间
-        </label>
+        </legend>
         <div className="mt-1 flex items-center gap-1">
+          <label htmlFor={hourId} className="sr-only">小时</label>
           <input
+            id={hourId}
             type="number"
             min={0}
             max={23}
@@ -81,8 +86,10 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
             onChange={(e) => updateTime(e.target.value, parts.minute)}
             className="w-16 rounded-[8px] border border-[#d9d9d9] bg-white px-2 py-1.5 text-center text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
           />
-          <span className="text-black/40">:</span>
+          <span aria-hidden="true" className="text-black/40">:</span>
+          <label htmlFor={minuteId} className="sr-only">分钟</label>
           <input
+            id={minuteId}
             type="number"
             min={0}
             max={59}
@@ -91,7 +98,7 @@ export function CronBuilder({ value, onChange }: CronBuilderProps) {
             className="w-16 rounded-[8px] border border-[#d9d9d9] bg-white px-2 py-1.5 text-center text-sm transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
           />
         </div>
-      </div>
+      </fieldset>
 
       <div>
         <label className="block text-xs font-medium text-black/70">

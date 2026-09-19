@@ -24,16 +24,29 @@ function SearchField({
   initialQuery: string;
 }) {
   const router = useRouter();
-  const [value, setValue] = useState(initialQuery);
+  const [draft, setDraft] = useState({ value: initialQuery, shouldSearch: false });
+  const { value } = draft;
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const nextValue = event.target.value;
-    setValue(nextValue);
-
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const trimmed = nextValue.trim();
+    setDraft({ value: nextValue, shouldSearch: true });
+  };
+
+  const handleClear = () => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    setDraft({ value: "", shouldSearch: false });
+    router.replace("/home");
+  };
+
+  useEffect(() => {
+    if (!draft.shouldSearch) return;
+
+    // 创建和清理属于同一 effect；开发模式重放时也会恢复尚未提交的查询。
+    const timeout = setTimeout(() => {
+      setDraft((current) => current === draft ? { ...current, shouldSearch: false } : current);
+      const trimmed = draft.value.trim();
       const params = new URLSearchParams(window.location.search);
       if (trimmed) {
         params.set("q", trimmed);
@@ -43,19 +56,13 @@ function SearchField({
       const queryString = params.toString();
       router.replace(`/home${queryString ? `?${queryString}` : ""}`);
     }, 300);
-  };
+    debounceRef.current = timeout;
 
-  const handleClear = () => {
-    setValue("");
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    router.replace("/home");
-  };
-
-  useEffect(() => {
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearTimeout(timeout);
+      if (debounceRef.current === timeout) debounceRef.current = null;
     };
-  }, []);
+  }, [draft, router]);
 
   return (
     <div className="relative flex items-center">

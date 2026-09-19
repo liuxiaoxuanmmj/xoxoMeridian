@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 import type { ChatUser } from "@/components/chat/types";
 import { resolveParticipantPair } from "@/lib/participant-resolution";
 
@@ -14,12 +16,14 @@ export function TimezoneSelector({
   participants,
   label = "时区",
 }: TimezoneSelectorProps) {
+  const id = useId();
   const options = buildTimezoneOptions(participants);
 
   return (
     <div>
-      <label className="block text-sm font-medium text-black/70">{label}</label>
+      <label htmlFor={id} className="block text-sm font-medium text-black/70">{label}</label>
       <select
+        id={id}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none cursor-pointer"

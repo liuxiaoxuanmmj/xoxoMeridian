@@ -67,6 +67,24 @@ describe("GET /api/posts", () => {
     expect(response.status).toBe(401);
   });
 
+  it("成功无匹配返回空集合；数据库失败保持非成功状态", async () => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostFindMany.mockResolvedValueOnce([]);
+    const empty = await GET(new Request("http://localhost/api/posts?q=missing"));
+    expect(empty.status).toBe(200);
+    expect(await empty.json()).toEqual({ posts: [], nextCursor: null });
+
+    const log = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      mockPostFindMany.mockRejectedValueOnce(new Error("database unavailable"));
+      const failed = await GET(new Request("http://localhost/api/posts?q=missing"));
+      expect(failed.status).toBe(500);
+      expect(await failed.json()).not.toHaveProperty("posts");
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it("returns posts with author info", async () => {
     mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
     mockPostFindMany.mockResolvedValue([
@@ -98,6 +116,72 @@ describe("GET /api/posts", () => {
     const { where } = mockPostFindMany.mock.calls[0][0];
     expect(where).toEqual(expect.objectContaining({ type: "agent_log" }));
     expectRoomScopedAgentLogVisibility(where);
+  });
+
+  const cursorPayload = { v: 1, publishedAt: "2026-09-13T01:02:03.123Z", id: "cpostcursor" };
+  const encoded = (value: unknown) => Buffer.from(JSON.stringify(value)).toString("base64url");
+
+  it.each([
+    ["旧时间字符串", cursorPayload.publishedAt],
+    ["空字符串", ""],
+    ["空白", " "],
+    ["非法编码", "%%%"],
+    ["非规范编码", "Zh"],
+    ["Base64 padding", `${encoded(cursorPayload)}=`],
+    ["过长游标", "a".repeat(1025)],
+    ["非法 JSON", Buffer.from("{").toString("base64url")],
+    ["null", encoded(null)],
+    ["数组", encoded([cursorPayload.publishedAt, cursorPayload.id])],
+    ["缺少版本", encoded({ publishedAt: cursorPayload.publishedAt, id: cursorPayload.id })],
+    ["未知版本", encoded({ ...cursorPayload, v: 2 })],
+    ["缺少 ID", encoded({ v: 1, publishedAt: cursorPayload.publishedAt })],
+    ["空 ID", encoded({ ...cursorPayload, id: "" })],
+    ["非字符串 ID", encoded({ ...cursorPayload, id: 123 })],
+    ["空白 ID", encoded({ ...cursorPayload, id: " " })],
+    ["控制字符 ID", encoded({ ...cursorPayload, id: "post\u0000id" })],
+    ["过长 ID", encoded({ ...cursorPayload, id: "a".repeat(129) })],
+    ["非法日期", encoded({ ...cursorPayload, publishedAt: "2026-02-30T00:00:00.000Z" })],
+    ["非毫秒日期", encoded({ ...cursorPayload, publishedAt: "2026-09-13T01:02:03Z" })],
+    ["非字符串日期", encoded({ ...cursorPayload, publishedAt: 123 })],
+    ["多余字段", encoded({ ...cursorPayload, extra: true })],
+  ])("%s cursor 返回稳定 400 验证错误，不执行 Post 查询", async (_label, cursor) => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostFindMany.mockResolvedValue([]);
+    const response = await GET(new Request(`http://localhost/api/posts?${new URLSearchParams({ cursor })}`));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Invalid request", issues: expect.arrayContaining([expect.objectContaining({ path: "cursor", message: expect.any(String) })]),
+    });
+    expect(mockPostFindMany).not.toHaveBeenCalled();
+  });
+
+  it.each(["0", "-1", "1.5", "NaN", "Infinity", "10oops"])("limit=%s 返回 400，避免非正数或无效页大小进入分页", async (limit) => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostFindMany.mockResolvedValue([]);
+    const response = await GET(new Request(`http://localhost/api/posts?${new URLSearchParams({ limit })}`));
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({
+      error: "Invalid request", issues: [expect.objectContaining({ path: "limit" })],
+    });
+    expect(mockPostFindMany).not.toHaveBeenCalled();
+  });
+
+  it("同一毫秒的不同末项生成不同不透明 cursor，返回值可直接作为下一页请求", async () => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    const cursors: string[] = [];
+    for (const id of ["cposta", "cpostb"]) {
+      mockPostFindMany.mockResolvedValueOnce([{ id, publishedAt: new Date(cursorPayload.publishedAt) }]);
+      const first = await GET(new Request("http://localhost/api/posts?limit=1"));
+      expect(first.status).toBe(200);
+      const body = await first.json();
+      expect(body.nextCursor).toMatch(/^[A-Za-z0-9_-]+$/);
+      cursors.push(body.nextCursor);
+      mockPostFindMany.mockResolvedValueOnce([]);
+      const next = await GET(new Request(`http://localhost/api/posts?${new URLSearchParams({ cursor: body.nextCursor })}`));
+      expect(next.status).toBe(200);
+      expect(await next.json()).toEqual({ posts: [], nextCursor: null });
+    }
+    expect(new Set(cursors).size).toBe(2);
   });
 });
 

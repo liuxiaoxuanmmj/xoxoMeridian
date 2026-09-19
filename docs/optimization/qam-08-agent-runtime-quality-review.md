@@ -5,29 +5,29 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-08 Agent 任务执行与工具治理 |
-| 快照日期 | 2026-09-12 |
+| 快照日期 | 2026-09-13 |
 | 审查 Skill | [`xoxo-qam-08-agent-runtime-review`](../../.agents/skills/xoxo-qam-08-agent-runtime-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-08、Cross-cutting Concerns、共享映射、BU-03/BU-04/BU-07/BU-08 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+10`（70→80；QAM-08-006 已由稳定请求者 contract、绝对 Memory owner 与迁移/回归关闭） |
+| 本轮 Delta | `+1`（82→83；QAM-08-007 澄清文案与执行事实一致性已解决） |
 | 历史口径说明 | 旧专项报告 `docs/optimization/agent-runtime-review.md` 的 97/100 属于旧评分口径，不能与统一标准 v1.0.0 计算 Delta；该文件在当前工作树中处于用户既有删除状态，本轮没有恢复或链接到不存在的快照。本报告历史首行 74/100 才是统一十维评分 baseline。 |
-| 当前基线命令 | 修改前 `./init.sh` 退出 0（72 文件/480 项）；新增回归在旧实现上分别得到 Node 2 failed/13 passed、真实 PostgreSQL 3/3 failed。最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run check:full` 退出 0：72 文件/482 项 Vitest、production build、覆盖率 47.73/42.56/52.71/48.54、22 文件/68 项真实 PostgreSQL 及 30/30 Playwright。 |
-| 异常与未运行命令 | 首轮 `check:full` 仅在 coverage 阶段遇到无关 `home-board-routes` 用例 5 秒超时；同一文件立即定向重跑 8/8、完整 coverage 重跑 72/482，第二轮 `check:full` 全链路退出 0，未修改该无关用例。未修改部署拓扑，故未运行 Compose smoke，也不声称其通过。 |
-| 证据纪律 | E3 用于修复前 Node/真实 PostgreSQL 负向对照、双成员 owner 隔离与相对投影、旧迁移数据保留/约束、第二请求者 Planner→Tool 全链路及完整门禁；E2 用于当前源码、Schema、迁移和接口交叉证据。QAM-08-001～005 仍以各自既有 E2/历史 E3 结论保持开放，没有用本轮 Memory 证据替代其缺失的 crash、后处理、Trace、adapter 或计划校验证据。 |
+| 当前基线命令 | 启动 `VITEST_MAX_WORKERS=1 ./init.sh` exit 0（79 文件/679 项）；最终 `VITEST_MAX_WORKERS=1 E2E_APP_MODE=production E2E_SOFTWARE_WEBGL=true NEXT_PUBLIC_AGENT_ENTRY_THEME=default ./scripts/run-node22.sh npm run check:full` exit 0：79 文件/682 项 Node/组件、生产构建、覆盖率 51.58/45.39/56.06/52.25、29 文件/110 项真实 PostgreSQL、41/41 production Playwright（4.8 分钟）；收尾 `VITEST_MAX_WORKERS=1 ./init.sh` exit 0（79 文件/682 项）。 |
+| 异常与未运行命令 | 修复前 Node 2 failed/11 passed，真实 PostgreSQL 1 failed/12 passed：零 ToolCall、原 Job 整行未变，但最终回复声称已取消。原始命令与证据见 [feat-061 进度](../../progress.md#feat-061)。未另跑默认 worker、开发模式完整门禁、Compose smoke、镜像或实体设备；沿用上轮单 worker/production 配置，feat-063～066 保持独立。 |
+| 证据纪律 | QAM-08-007 由 Node/真实 PostgreSQL 的修复前失败与修复后回归、Chromium 实时/刷新一致性提升为 E3。结构校验、Durable Step、claim、审批、预算与请求者/Memory 回归在完整门禁中继续通过；QAM-08-001～004 的 crash、后处理、Trace 和 adapter 缺口保持既有证据边界。 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **80 / 100** |
+| Score | **83 / 100** |
 | Score Level | **L3** |
 | Gate Level | **L2** |
 | Final Level | **L2** |
-| Trend | `+10`；Gate L1→L2（QAM-08-006 resolved） |
-| Evidence Confidence | 较高（lease/claim、数据库 Tool 幂等、审批、Durable Step、预算及本轮请求者/Memory 不变量均有真实 PostgreSQL E3；完整 Worker 生命周期、非写 Tool crash、post-task 并发与 Trace 隐私仍主要为 E2/未验证） |
-| 当前开放问题 | 5 项（P2×5）；QAM-08-006 已解决，不计入开放项 |
+| Trend | `+1`；Gate/Final 保持 L2（QAM-08-007 resolved） |
+| Evidence Confidence | 较高（计划结构与语义澄清、真实 Job/Message 一致性、Durable Step 重放和请求者身份具有 E3；完整 Worker 生命周期、非写 Tool crash、post-task 并发和 Trace 隐私仍有验证缺口） |
+| 当前开放问题 | 4 项（P2×4）：QAM-08-001～004；QAM-08-005～007 已解决，不计入开放项 |
 
-AgentTask 主路径的 CAS claim、lease/heartbeat、Durable Step、数据库副作用重放和预算继续由风险匹配证据保护。本轮让 Planner、Tool 与 Memory 共用显式 `requestedById/self/partner`，个人事实以绝对 owner 存储，并用无损迁移和真实 PostgreSQL 双成员回归关闭 QAM-08-006。非写 Tool Trace、fire-and-forget 后处理、Trace 隐私、LLM adapter 分叉和计划校验 5 个 P2 仍开放，相关 crash/生命周期不变量没有完整 E3，因此总分为 80，Gate/Final 保持 L2。
+语义校验和自动修复仍无法补全一次性计划时，澄清只请求确认具体日期、时间和时区，不再声称尚未执行的取消、创建或更新已经完成。Node 和真实 PostgreSQL 先复现“零取消记录但回复已取消”，修复后 Chromium 证明实时消息、有效计划卡片和刷新结果一致，关闭 QAM-08-007。数据流与状态一致性提升 1 分，总分 83；执行顺序、Scheduler、Tool 集合和后处理机制保持，其他维度及 Gate/Final 不变。
 
 ## Score Breakdown
 
@@ -35,15 +35,15 @@ AgentTask 主路径的 CAS claim、lease/heartbeat、Durable Step、数据库副
 | --- | ---: | ---: | --- |
 | 架构与责任边界 | 12 | 14 | Runtime、claim、Step、预算、Tool Registry 和 tracer 的主边界清楚；请求者成员解析复用共享 participant resolver，Memory 身份/相对投影收敛在单一 owner helper（[`agent/context-builder.ts#L12-L39`](../../agent/context-builder.ts#L12-L39)、[`agent/memory-identity.ts#L33-L89`](../../agent/memory-identity.ts#L33-L89)）（E2/E3）。Worker 仍同时承载 dispatch、Scheduler 和账号清理，摘要/记忆 hooks 另走 `lib/llm.ts`，对应 BU-04/BU-07/BU-08（E2）。 |
 | 代码结构与复杂度 | 8 | 10 | `agent-runtime.ts` 对 claim→context→plan→tool→final 具有可追踪的线性控制流，错误分支集中；Tool Registry 同时处理校验、审批、retry、事务和 JSONL 记录，`ExecutionTracer` 又承担终态事务与 Post 投影，局部变化需同时理解多个生命周期（[`agent/agent-runtime.ts#L51-L480`](../../agent/agent-runtime.ts#L51-L480)、[`agent/tool-registry.ts#L48-L365`](../../agent/tool-registry.ts#L48-L365)）（E2）。 |
-| 抽象与复用 | 6 | 8 | `withAgentTaskLease`、统一 Durable Step、Registry contract 和预算 helper 避免了主路径重复协议（[`agent/task-claim.ts#L132-L145`](../../agent/task-claim.ts#L132-L145)、[`agent/durable-step.ts#L28-L217`](../../agent/durable-step.ts#L28-L217)）；但非写 Tool tracer、Agent planning provider 与 `lib/llm.ts` 存在平行记录/adapter 路径，规则未完全同源（E2）。 |
-| 数据流与状态一致性 | 10 | 12 | AgentTask/Step/ToolCall/LLMCall/Approval 状态和最终 Message 的关键事务边界清晰；Memory 现在以 `(roomId,ownerKey,key)` 唯一，个人 key 规范化为 `person.*`，upsert/相似值去重均受同一 owner 约束（[`prisma/schema.prisma#L402-L417`](../../prisma/schema.prisma#L402-L417)、[`agent/memory-dedup.ts#L7-L60`](../../agent/memory-dedup.ts#L7-L60)）。真实 PostgreSQL 证明双成员同名/相似事实不互删，迁移保留 8/8 已知、冲突和歧义行（E3）。非写 ToolCall 没有 `stepKey`，post-task summary/memory 仍不属于 Task checkpoint（E2/历史 E3）。 |
+| 抽象与复用 | 7 | 8 | [`plan-contract.ts`](../../agent/plan-contract.ts) 统一外部 snake_case 映射后的结构、persisted plan 和 repair 结果校验；Provider 与 Runtime 共用同一个 Registry 实例及其实际 input schema，Node 覆盖 Registry 契约替换，避免复制内置 Tool 名单或字段规则（E3）。非写 Tool tracer 和后处理 LLM adapter 仍为独立路径（E2）。 |
+| 数据流与状态一致性 | 11 | 12 | Plan checkpoint、Tool 与 Final 的恢复事实源保持；无法补全的语义计划在 Tool loop 前替换为零 Tool 澄清，不从丢弃的模型输出或待执行动作推断副作用。真实 PostgreSQL 核对原 Job 整行不变、零 ToolCall/Step 和单条澄清 Message，Chromium 验证实时/刷新后的消息与有效计划一致（[`plan-repair.ts`](../../agent/plan-repair.ts)、[`agent-plan-validation.integration.test.ts`](../../tests/integration/agent-plan-validation.integration.test.ts)、[`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts)，E3）；post-task 派生状态仍开放。 |
 | 接口与依赖关系 | 9 | 10 | `StructuredRoomContext` 显式携带稳定 userId、`requestedById/self/partner`；Runtime 把 Task 请求者传入 context，mock 与真实 Planner 都以该 contract 为权威，不再从参与者顺序猜测（[`agent/types.ts#L22-L64`](../../agent/types.ts#L22-L64)、[`agent/context-builder.ts#L87-L107`](../../agent/context-builder.ts#L87-L107)、[`agent/llm-provider.ts#L61-L99`](../../agent/llm-provider.ts#L61-L99)）（E2/E3）。QAM-03 生活 Tool、QAM-04 scheduler trigger、QAM-05 agent-log 投影和两个 LLM adapter 仍有直接跨边界依赖（E2）。 |
-| 健壮性、并发与生命周期 | 11 | 14 | CAS claim、attempt/worker lease、heartbeat、过期接管、Tool deadline/retry、预算 reservation 和审批恢复均有实现及 E3；个人 Memory 对缺失/无效请求者采取中性读取并拒绝相对个人写入，迁移把规范化冲突或歧义行保留为带原因的 `legacy:*`，不静默删除（E3）。旧 attempt 在非写 Tool trace 上仍缺原子 lease 栅栏，post-task hooks 仍无并发锁/恢复队列，Worker shutdown 也不等待全部 in-flight 工作（E2）。 |
+| 健壮性、并发与生命周期 | 12 | 14 | 既有 CAS/lease/审批/预算恢复继续通过；结构非法、未知 Tool、缺失/无效输入、空调用数组、Registry 或 trigger 漂移在任何新 Tool Step 前拒绝，语义重试返回结构非法结果时直接失败，不重用旧计划。类型化 validation 错误的摘要最多 512 字符、8 项固定路径/错误码，Task/Message/活动 Step 明确失败且保留原因（[`agent-runtime.ts`](../../agent/agent-runtime.ts)、[`execution-tracer.ts`](../../agent/execution-tracer.ts)，E3）。旧 attempt 非写 Trace、post-task 和完整 Worker shutdown 仍缺 E3。 |
 | 性能与资源使用 | 6 | 8 | Context、Tool list、消息和 memory 查询有数量上限，AgentTask 关键扫描有索引；每次完成任务仍可能并发触发两次 LLM 后处理，Trace/API 可返回完整子记录且没有分页/保留策略，Worker dispatch 也按任务串行等待，当前规模可控但增长成本可见（[`agent/context-builder.ts#L4-L40`](../../agent/context-builder.ts#L4-L40)、[`app/api/agent/tasks/%5BtaskId%5D/trace/route.ts#L6-L28`](../../app/api/agent/tasks/%5BtaskId%5D/trace/route.ts#L6-L28)）（E2）。 |
 | 安全与隐私 | 6 | 10 | 受保护 Agent API 具备认证和房间成员检查，Tool input 在执行/审批前解析；Memory 查询、recall、投影与去重只接受当前请求者可见的绝对 owner，未知请求者看不到个人事实（[`agent/context-builder.ts#L35-L59`](../../agent/context-builder.ts#L35-L59)、[`agent/memory-identity.ts#L91-L177`](../../agent/memory-identity.ts#L91-L177)）（E2/E3）。但 LLMCall、EventLog、Task result、Message metadata 和 JSONL/Trace API 仍可保存或返回完整 room context、Tool payload 和错误，缺字段级脱敏与保留策略（E2）。 |
-| 可测试性与验证可信度 | 7 | 8 | 修复前 Node 2 项和真实 PostgreSQL 3 项稳定失败；修复后双成员同名/相似 owner 隔离、双向 context/recall 投影、空请求者、第二请求者 Planner→Tool、旧 schema→新 migration 的 8/8 数据保留及 DB 约束均通过，完整集成为 22 文件/68 项（[`tests/agent/agent-runtime.test.ts`](../../tests/agent/agent-runtime.test.ts)、[`tests/integration/agent-requester-memory.integration.test.ts`](../../tests/integration/agent-requester-memory.integration.test.ts)、[`tests/integration/memory-owner-migration.integration.test.ts`](../../tests/integration/memory-owner-migration.integration.test.ts)）（E3）。非写 Tool in-flight crash、post-task 并发、Trace 脱敏和完整 shutdown 仍缺风险匹配证据。 |
+| 可测试性与验证可信度 | 7 | 8 | Node 定向 3 文件/22 项覆盖重复无效 Planner、澄清无虚假完成声明、合法 runOnce 修复与普通零 Tool 对话；PostgreSQL 在原 Job 不变和零取消执行前提下检查真实 Message。浏览器仅以本地 HTTP 替换外部 LLM，实际运行 Provider/Runtime/数据库与页面（[`task-claim.test.ts`](../../tests/agent/task-claim.test.ts)、[`plan-repair.test.ts`](../../tests/agent/plan-repair.test.ts)、[`agent-plan-validation.integration.test.ts`](../../tests/integration/agent-plan-validation.integration.test.ts)，E3）。完整门禁见元数据；非写 crash、post-task、Trace 和完整 shutdown 的缺口仍在，分数保持。 |
 | 可维护性、演进与技术债 | 5 | 6 | 当前功能变化大多能落在 Runtime/Registry/Step/预算文件，稳定问题可局部追踪；长期演进仍需同步 scheduler trigger、生活 Tool adapter、两个 LLM provider、Worker 三类生命周期和未来外部副作用协议，旧的 `lib/llm.ts` 后处理路径没有预算/Trace 共用接口（BU-03/BU-04/BU-07/BU-08）（E2）。 |
-| **合计** | **80** | **100** | 算术核对：12+8+6+10+9+11+6+6+7+5 = 80。 |
+| **合计** | **83** | **100** | 算术核对：12+8+7+11+9+12+6+6+7+5 = 83。 |
 
 ## Level Gate
 
@@ -72,6 +72,24 @@ AgentTask 主路径的 CAS claim、lease/heartbeat、Durable Step、数据库副
 - **修正**：`buildAgentContext(roomId, requestedById)` 通过稳定 userId 派生显式 self/partner，Task、mock/真实 Planner 与 Tool 共用该 contract（[`agent/context-builder.ts#L12-L39`](../../agent/context-builder.ts#L12-L39)、[`agent/context-builder.ts#L87-L107`](../../agent/context-builder.ts#L87-L107)、[`agent/agent-runtime.ts`](../../agent/agent-runtime.ts)、[`agent/llm-provider.ts`](../../agent/llm-provider.ts)）。个人 Memory 写入规范化为 `user:<id>` owner + `person.*` key；shared/system 使用稳定 room scope，唯一、upsert、相似值去重、recall 和 context 投影均按 owner 隔离（[`agent/memory-identity.ts#L33-L187`](../../agent/memory-identity.ts#L33-L187)、[`agent/memory-dedup.ts#L7-L60`](../../agent/memory-dedup.ts#L7-L60)、[`agent/tools/memory-tool.ts#L49-L153`](../../agent/tools/memory-tool.ts#L49-L153)）（E2）。
 - **迁移与验收证据**：时间戳迁移新增 `ownerKey`、复合唯一键与 owner/user/key 一致性约束；已知 owner 无损规范化，规范化冲突、缺 owner 和未知 key 的行保留为带 `ownerMigration` 原因的 `legacy:<id>`（[`prisma/migrations/20260912175500_add_memory_owner_key/migration.sql`](../../prisma/migrations/20260912175500_add_memory_owner_key/migration.sql)）。独立临时数据库从全部旧迁移部署后植入 8 行，再部署新迁移，证明 8/8 保留且唯一/check 约束拒绝非法写；双成员 PostgreSQL 回归证明同名/相似 key 互不覆盖或删除、双方 context/recall 正确投影、空请求者只看 shared；Runtime 全链路证明第二位请求者 Bob/London 正确计划到 Alice/Shanghai，空请求者的 Tool input 为 `{}`（[`tests/integration/memory-owner-migration.integration.test.ts#L29-L170`](../../tests/integration/memory-owner-migration.integration.test.ts#L29-L170)、[`tests/integration/agent-requester-memory.integration.test.ts`](../../tests/integration/agent-requester-memory.integration.test.ts)、[`tests/agent/agent-runtime.test.ts`](../../tests/agent/agent-runtime.test.ts)）（E3）。
 - **影响范围**：只关闭 QAM-08 context/provider/memory/task contract 根因；QAM-03 的生活 Tool 能力保持不变，QAM-08-001～005 与 QAM-03-005/006 未并入。
+
+
+### Resolved — QAM-08-005：持久化/外部 Planner 结果没有完整的结构化计划校验
+
+- **状态**：`resolved`（2026-09-12）；**优先级**：P2。
+- **原问题与负向证据**：外部 `coercePlan` 静默过滤未知 Tool/补默认字段，恢复只验部分顶层类型。初版 Node 回归在旧实现上 25 failed/4 passed；真实 PostgreSQL 的 10 项缺陷场景失败，含空调用数组误报 completed、未知或后续非法调用导致合法前缀先写入、失效恢复触发重新规划或通用冲突。另 1 项合法恢复用例只是预期原模型文案、实际得到已有 Memo renderer 文案，已修正测试断言（E3）。
+- **修正**：[`plan-contract.ts`](../../agent/plan-contract.ts) 统一结构、有限 confidence、Registry Tool/schema、允许集合、必需输入及所有批次；拒绝重复/空调用和未列入动作的输入。Provider 仅转换字段名，Runtime 在完成 checkpoint 前与恢复时使用相同解析器；已存在的非法计划不会静默转为重新规划。完成的旧 Step 不被重写，任何本次 Tool 执行前先校验整份计划（[`llm-provider.ts`](../../agent/llm-provider.ts)、[`agent-runtime.ts`](../../agent/agent-runtime.ts)，E3）。
+- **结果与 Trace**：`AgentPlanValidationError` 的固定错误码/调用位置最多 8 项，不复制任意工具名、参数值或 Zod 错误正文；错误字符串最多 512 字符。最终 Task/Message 为 failed，活动 Step 为 validation 失败，记录 `agent.plan.validation.failed`，不使用原模型的完成声明（[`execution-tracer.ts`](../../agent/execution-tracer.ts)，E3）。
+- **验收证据**：Node 新增 45/45、定向 79/79；PostgreSQL 新增 12/12，真实重验移除的 Tool、旧参数名、scheduled.job trigger、权威 checkpoint、非法 live/retry 与合法批次重放。Chromium 通过受认证 API 入队、独立进程执行真实 Runtime、真实 SSE/刷新显示失败并核对 DB/Trace，专项 2/2；最终完整门禁 74/541、25/87 PostgreSQL、33/33 Playwright 全通过（E3）。
+- **边界**：只保证结构/契约非法计划不会产生新的 Tool 执行，不回滚历史 attempt 已提交的合法副作用；未扩展 Tool、后处理、LLM transport 或 Trace 保留治理。语义澄清回复的独立误报记为 QAM-08-007；影响 QAM-08 planner/Step/Registry，关联 QAM-03 Tool contract、QAM-04 trigger。
+
+### Resolved — QAM-08-007：语义澄清分支没有执行取消却回复旧任务已取消
+
+- **状态**：`resolved`（2026-09-13）；**优先级**：P2；对应 [`feat-061`](../../progress.md#feat-061)。
+- **原问题与负向证据**：两次 Planner 都仅要求 `schedule.cancel` 却承诺一次性执行，语义校验/repair 留下 `one_shot_promise_without_create`，Runtime 在 Tool loop 前改用零 Tool 澄清。修复前 Node 2 项和真实 PostgreSQL 1 项失败；后者已断言原 Job 整行不变、ToolCall/Tool Step 为空和 fallback 事件存在，最终 Message 仍写“之前那个已经帮你取消了”（E3）。
+- **最小修正**：[`buildClarifyPlan()`](../../agent/plan-repair.ts#L68) 仅返回“请再确认这次一次性任务的具体日期、时间和时区。”，不引用模型原文或待执行计划确认已完成动作。
+- **验收证据**：Node 定向 22/22，覆盖重复冲突、真实 Runtime 澄清、合法 runOnce 自动修复和普通零 Tool 对话；真实 PostgreSQL 计划校验文件 13/13，旧 Job 整行/数量、零 ToolCall/Step 和单条 Message 一致；Chromium 通过受认证 API 入队、本地 LLM HTTP 与独立 Runtime 进程执行，验证实时/刷新后澄清可见、旧计划仍可停用且没有已取消声明。完整门禁及失败原文摘要见 [任务进度](../../progress.md#feat-061)（E3）。
+- **影响范围**：只关闭 QAM-08 plan repair/final response 的真实性问题，关联 QAM-03 计划用户预期；QAM-04 Scheduler 触发、Tool 集合与后处理机制未改。
 
 ### P2
 
@@ -111,14 +129,6 @@ AgentTask 主路径的 CAS claim、lease/heartbeat、Durable Step、数据库副
 - **验收证据**：Node adapter 行为测试覆盖相同 timeout/abort、HTTP 错误截断和 usage 映射；post-task 工作项在 Worker stop/超时后不再产生未治理的 fetch，planner 既有 E3 流程不回归。
 - **影响范围**：QAM-08 LLM/post-task；QAM-09 Worker shutdown 和配置传播为关联责任，QAM-01 profile refine 的直接调用路径不在本次报告范围内。
 
-#### QAM-08-005：持久化/外部 Planner 结果没有完整的结构化计划校验
-
-- **状态**：`open`
-- **问题**：`createOpenAICompatibleProvider()` 的 `coercePlan()` 将未知 `required_tools` 静默过滤、对字段缺失使用默认值，并把 `tool_inputs` 直接保留为任意对象；`readPersistedAgentPlan()` 只检查顶层字段类型，不验证 confidence 范围、Tool 名称是否仍在当前 Registry、每个输入是否通过相应 schema，也不验证 completed plan 与当前 trigger 的完整契约（[`agent/llm-provider.ts#L297-L313`](../../agent/llm-provider.ts#L297-L313)、[`agent/agent-runtime.ts#L593-L620`](../../agent/agent-runtime.ts#L593-L620)、[`agent/agent-runtime.ts#L105-L147`](../../agent/agent-runtime.ts#L105-L147)）（E2）。
-- **质量影响**：模型返回的未知/缺失动作可能被静默丢弃而仍使用其 `final_response_text` 完成任务，造成“回复声称已执行但实际上没有动作”的可观察语义错误；Tool 输入直到执行边界才失败，恢复后的 Registry/trigger 漂移也只能在运行中暴露，增加错误重试和审计成本。现有 Tool Registry input schema 能阻止不合法参数真正进入 Tool，因此本项是 P2 计划一致性债务而非已证明的权限旁路。
-- **最小修正**：以同一 Zod/计划 schema 校验 planner output 和 persisted plan，未知 Tool、缺失必需字段或 trigger 不允许的 Tool 进入明确的 validation/clarify 终态，不静默过滤；保存规范化后的可重放计划并限制错误摘要长度。保留当前有限 Tool 集合与 fallback 能力。
-- **验收证据**：Node 行为测试提交未知 Tool、confidence 越界、缺失 tool input 和恢复时 Registry 变化，断言不执行 Tool、不产生“已完成”误导消息并留下稳定 validation/clarify Trace；现有计划修复/Tool contract 集成测试继续通过。
-- **影响范围**：QAM-08 planner/Step/Registry；Scheduler trigger 规则由 QAM-04 提供，生活领域 Tool 规则由 QAM-03 提供，本问题只维护 Runtime 的计划契约。
 
 ## Architecture and Data Flow
 
@@ -130,7 +140,7 @@ Message / explicit dispatch / Scheduler atomic dispatch
             ├─ room context(requestedById + stable userId self/partner)
             │    └─ Memory(roomId + absolute owner + canonical key)
             │         └─ requester-aware projection → aboutMe/aboutHer/shared
-            ├─ Durable plan Step → LLM planner + plan validation
+            ├─ Durable plan Step → 外部/恢复计划统一结构与 Registry/trigger 校验 → 语义检查
             ├─ each Durable tool Step
             │    └─ Zod input → approval/risk → budget → deadline/retry
             │         ├─ database write: business row + ToolCall + EventLog transaction
@@ -147,6 +157,10 @@ Trace：AgentTask/Step/ToolCall/LLMCall/Approval/EventLog + JSONL debug log → 
 
 ## Verified Strengths
 
+- 无法补全的语义计划只请求澄清，真实 PostgreSQL 与 Chromium 已证明零取消执行时旧 Job 保持有效、消息不误报完成；合法语义修复与普通零 Tool 对话继续通过（本轮 E3）。
+
+- 外部、恢复与 repair 计划共用当前 Registry 的结构化输入边界，非法后续动作不会让合法前缀先写入；真实 PostgreSQL 和 Chromium 证明明确失败、零新 Tool 副作用及刷新一致性。合法零 Tool、批次与 Durable Step 重放保持（本轮 E3）。
+
 - `claimAgentTask()` 用单条条件 `updateMany` 从 pending/failed 或过期 running 迁移到 running，生成新 attempt 并绑定 worker/lease；本轮真实 PostgreSQL 并发与 SIGKILL 接管测试通过（[`agent/task-claim.ts#L34-L80`](../../agent/task-claim.ts#L34-L80)、[`tests/integration/agent-task-claim.integration.test.ts#L73-L165`](../../tests/integration/agent-task-claim.integration.test.ts#L73-L165)，E3）。
 - `withAgentTaskLease()` 在事务内续租并在续租失败时拒绝 operation；Final Message、Final Step 和 completed Task/EventLog 位于同一事务，旧 attempt 不能覆盖结果（[`agent/task-claim.ts#L132-L145`](../../agent/task-claim.ts#L132-L145)、[`agent/execution-tracer.ts#L40-L100`](../../agent/execution-tracer.ts#L40-L100)，E2；Final/旧 attempt E3）。
 - Durable Step 对 Plan、Tool、审批和 Final 使用 `(taskId, stepKey)` 唯一记录，恢复会校验 kind/input 并复用 completed output；真实 PostgreSQL 已证明 completed Plan/read Tool 不重跑、审批可恢复和 Final 不重复（[`agent/durable-step.ts#L28-L159`](../../agent/durable-step.ts#L28-L159)、[`tests/integration/agent-durable-step.integration.test.ts#L38-L205`](../../tests/integration/agent-durable-step.integration.test.ts#L38-L205)，E3）。
@@ -161,7 +175,6 @@ Trace：AgentTask/Step/ToolCall/LLMCall/Approval/EventLog + JSONL debug log → 
 2. **修复 QAM-08-001（P2）**：统一非写 ToolCall 的稳定 `stepKey`、attempt/lease 栅栏和 crash 中间态，补 deferred Tool + Worker 接管测试；不改变天气、搜索、时区的功能边界。
 3. **治理 QAM-08-003（P2）**：定义 Trace allow-list、错误截断、字段脱敏和 DB/JSONL 保留删除策略，补带敏感载荷的 Route/Node 行为证据。
 4. **收敛 QAM-08-004（P2）**：为 planner 与 post-task 保留各自 use-case schema，但共享 timeout/signal/usage/error transport；将后处理放进可观测且可取消的工作边界。
-5. **收紧 QAM-08-005（P2）**：对外部和持久化计划使用完整结构化 schema，未知 Tool/不合法输入转 validation/clarify，不静默滤掉动作。
 
 以上修正均保持当前 Agent 能力和 Tool 集合不变；未来外部写操作的供应商幂等键/Outbox 只作为新增能力时的协议前提，不在本基线中虚构缺陷。
 
@@ -175,12 +188,13 @@ Trace：AgentTask/Step/ToolCall/LLMCall/Approval/EventLog + JSONL debug log → 
 | QAM-08-002 | P2 | `open` | 2026-09-06 复核；Worker 任务循环虽串行，但 detached hooks 可跨任务重叠；需 LLM 可用、同房间任务重叠且达到 summary/extraction 阈值才会重复持久化派生结果（E2） | QAM-08 post-task hooks | `lib/llm.ts` 共享 adapter、QAM-09 Worker lifecycle |
 | QAM-08-003 | P2 | `open` | 2026-09-06；LLM/Tool/Event/JSONL/Trace API 保存并返回完整 payload，无脱敏/保留 contract（E2） | QAM-08 Trace/privacy | QAM-01 profile、QAM-02 message projection、QAM-09 debug volume |
 | QAM-08-004 | P2 | `open` | 2026-09-06；planner 与 `lib/llm.ts` adapter 的 timeout/signal/usage/Trace 契约分叉（E2） | QAM-08 LLM transport boundary | QAM-09 config/shutdown |
-| QAM-08-005 | P2 | `open` | 2026-09-06；`coercePlan`/`readPersistedAgentPlan` 未完整校验结构化计划，未知 Tool 静默过滤（E2） | QAM-08 planner/Step contract | QAM-03 Tool domain、QAM-04 trigger protocol |
 
 ### 已解决问题
 
 | ID | Priority | 状态 | 解决证据 | 直接责任 | 关联责任 |
 | --- | --- | --- | --- | --- | --- |
+| QAM-08-007 | P2 | `resolved` | 2026-09-13；澄清仅请求时间，不确认待执行动作。修复前 Node 2 项/PostgreSQL 1 项失败；修复后 22 项定向 Node、13 项 PostgreSQL 及 Chromium 实时/刷新均通过，零取消记录、旧 Job 有效与 Message 一致（E3） | QAM-08 plan repair/final response | QAM-03 计划用户预期 |
+| QAM-08-005 | P2 | `resolved` | 2026-09-12；同源结构/Registry/trigger 预检、受限 validation Trace；Node 45 项、PostgreSQL 12 项、Chromium 失败/刷新回归及完整门禁通过（E3） | QAM-08 planner/Step contract | QAM-03 Tool domain、QAM-04 trigger protocol |
 | QAM-08-006 | P1 | `resolved` | 显式 requester/self/partner contract、绝对 Memory owner 与复合唯一/去重、保留歧义/冲突行的时间戳迁移；修复前 Node 2 项与 PostgreSQL 3 项失败，修复后双成员 owner/投影、Planner→Tool、空请求者和旧数据 8/8 保留均有 E3 | QAM-08 context/provider/memory | QAM-03 participant Tool、QAM-02 task intake、QAM-01 profile privacy |
 
 ### 复审触发条件
@@ -200,5 +214,8 @@ Trace：AgentTask/Step/ToolCall/LLMCall/Approval/EventLog + JSONL debug log → 
 | 2026-09-06 | 74 | L2 | L2 | L2 | `re-review`（优先级复核） | 将 QAM-08-001 从 P1 调整为 P2：当前 non-write Tool 仅为读取类，Durable AgentStep 已控制任务层重放，直接后果是 crash 窗口 Trace 多行/旧状态；QAM-08-002 明确 Worker 串行 dispatch 仍因 detached hooks 跨任务重叠，但需 LLM 可用、同房间任务重叠及 summary/extraction 阈值，重复 Summary/Memory 是条件触发的派生数据治理缺口，调整为 P2；Gate 由 L1 上调为 L2。 |
 | 2026-09-12 | 70 | L2 | L1 | L1 | `-4`（完整范围复审） | 新增 QAM-08-006 P1：第二请求者身份没有进入 Planner context，个人 `me.*`/`her.*` Memory 又按房间级相对 key 唯一并跨 owner 去重，造成稳定错配及不可恢复覆盖/删除；本轮 15 文件/124 项 Node 通过，但只读 mock Planner 实验实际输出第一参与者为第二请求者的 `from`，双成员 Memory PostgreSQL 证据缺失。既有 QAM-08-001～005 均保持 open；近期 QAM-03 Tool participant resolver 与 QAM-04 Scheduler 修正不关闭 Runtime context 根因。 |
 | 2026-09-12 | 80 | L3 | L2 | L2 | `+10`（QAM-08-006 resolved） | feat-050 以 Task 请求者驱动显式 self/partner，个人 Memory 改为绝对 owner/canonical key 并约束唯一/去重/recall/context；旧实现负向对照 Node 2 failed、PostgreSQL 3/3 failed，修复后迁移临时库保留 8/8 旧行、双成员与 Planner→Tool 回归通过。最终 `check:full` 72/482、22 文件/68 项 PostgreSQL、30/30 Playwright；QAM-08-001～005 保持 open。 |
+| 2026-09-12 | 82 | L3 | L2 | L2 | `+2`（QAM-08-005 resolved） | feat-053 统一外部/恢复计划的 Zod、Registry/schema 与 trigger 预检；错误最多 8 项/512 字符，非法计划不执行新 Tool、不沿用完成声明。Node 新增 45 项、PostgreSQL 新增 12 项、Chromium 失败与刷新一致性；完整门禁 74/541、25/87 PostgreSQL、33/33 Playwright。抽象/健壮性各 +1；独立登记 E2 的 QAM-08-007（feat-061），开放 P2 仍为 5；其他维度/Gate 保持。 |
+
+| 2026-09-13 | 83 | L3 | L2 | L2 | `+1`（QAM-08-007 resolved） | feat-061 仅修正 Tool loop 前的澄清输出；Node/PostgreSQL 先复现零执行却回复已取消，修复后真实 Job 整行、ToolCall/Step 和 Message 一致，Chromium 实时/刷新回归通过。数据流与状态一致性 +1，其他维度及 Gate 保持；完整门禁 exit 0：79 文件/682 项 Node/组件、生产构建、覆盖率 51.58/45.39/56.06/52.25、29 文件/110 项真实 PostgreSQL、41/41 production Playwright（4.8 分钟）。 |
 
 复审时保留稳定问题 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对十维合计 100、Gate 与 Final。问题状态只能使用 `open`、`resolved`、`accepted-risk`、`not-reproduced`。

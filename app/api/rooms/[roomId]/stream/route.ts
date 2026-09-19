@@ -21,6 +21,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ room
 
   const encoder = new TextEncoder();
   let closed = false;
+  let snapshotInFlight = false;
   let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
   let interval: ReturnType<typeof setInterval> | null = null;
 
@@ -56,7 +57,9 @@ export async function GET(request: Request, { params }: { params: Promise<{ room
   };
 
   const sendSnapshot = async () => {
-    if (closed) return;
+    if (closed || snapshotInFlight) return;
+    // 同一连接的权限复核与快照读取串行执行，慢查询期间跳过重叠 tick。
+    snapshotInFlight = true;
     try {
       // 1. Session still valid? Check if it exists in the database
       if (sessionId) {
@@ -99,6 +102,8 @@ export async function GET(request: Request, { params }: { params: Promise<{ room
           "error"
         )
       );
+    } finally {
+      snapshotInFlight = false;
     }
   };
 

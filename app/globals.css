@@ -300,6 +300,7 @@ input {
 }
 
 .home-photo-card:hover .home-photo-resize,
+.home-photo-resize:focus-visible,
 .home-photo-element.is-selected .home-photo-resize {
   opacity: 1;
 }

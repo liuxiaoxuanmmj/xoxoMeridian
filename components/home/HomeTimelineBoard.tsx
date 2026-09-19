@@ -2,17 +2,13 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import type { AtlasConnectionData } from "@/components/atlas/types";
 import { Timeline } from "@/components/blog/Timeline";
 import type { TimelinePost } from "@/components/blog/Timeline";
 import { HomeSpatialLayer } from "@/components/home/HomeSpatialLayer";
 import { HomeUploadModal } from "@/components/home/HomeUploadModal";
-import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData, HomeSpatialElementData } from "@/components/home/types";
+import type { HomeAnchor, HomeBoardSnapshot, HomeContextMenuState, HomePhotoElementData } from "@/components/home/types";
+import { useHomeBoardMutations } from "@/components/home/useHomeBoardMutations";
 import { isHomeBlankTarget } from "@/lib/home-spatial";
-
-type PhotoMove = { x: number; y: number };
-type PhotoMoveQueue = { pending: PhotoMove | null; running: boolean };
-type PhotoMoveSaveState = PhotoMove & { status: "saving" | "failed" };
 
 export function HomeTimelineBoard({
   posts,
@@ -26,48 +22,69 @@ export function HomeTimelineBoard({
   const boardRef = useRef<HTMLDivElement>(null);
   const [anchors, setAnchors] = useState(() => new Map<string, HomeAnchor>());
   const [boardRect, setBoardRect] = useState<DOMRect | null>(null);
-  const [elements, setElements] = useState(initialSnapshot.elements);
-  const [connections, setConnections] = useState<AtlasConnectionData[]>(initialSnapshot.connections);
+  const {
+    elements, setElements, connections, setConnections, saveStates,
+    updatePhoto, savePhotoPatch, deletePhoto, deleteConnection, retry,
+  } = useHomeBoardMutations(initialSnapshot);
   const [connectFromId, setConnectFromId] = useState<string | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [contextMenu, setContextMenu] = useState<HomeContextMenuState | null>(null);
   const [uploadPosition, setUploadPosition] = useState<{ x: number; y: number } | null>(null);
-  const [photoMoveSaveStates, setPhotoMoveSaveStates] = useState<Record<string, PhotoMoveSaveState>>({});
-  const photoMoveQueuesRef = useRef(new Map<string, PhotoMoveQueue>());
 
   // Search state
   const searchParams = useSearchParams();
   const q = searchParams.get("q")?.trim() ?? "";
+  const [searchAttempt, setSearchAttempt] = useState(0);
   const [searchState, setSearchState] = useState<{
     query: string;
+    attempt: number;
     posts: TimelinePost[] | null;
+    error: string | null;
   } | null>(null);
 
   useEffect(() => {
     if (!q) return;
 
     const controller = new AbortController();
+    const fail = (error: string) => {
+      if (controller.signal.aborted) return;
+      setSearchState((previous) => ({
+        query: q,
+        attempt: searchAttempt,
+        posts: previous?.posts ?? null,
+        error,
+      }));
+    };
 
     fetch(`/api/posts?q=${encodeURIComponent(q)}&limit=50`, { signal: controller.signal })
-      .then((res) => res.json())
-      .then((data) => {
-        setSearchState({ query: q, posts: data.posts ?? [] });
-      })
-      .catch((err) => {
-        if (err.name !== "AbortError") {
-          console.error("Search failed:", err);
-          setSearchState({ query: q, posts: null });
+      .then(async (response) => {
+        if (!response.ok) {
+          fail(response.status === 401
+            ? "登录已失效，请重新登录后重试搜索。"
+            : "搜索失败，请重试。");
+          return;
         }
-      });
+        const data = await response.json();
+        if (!data || !Array.isArray(data.posts)) {
+          fail("搜索失败，请重试。");
+          return;
+        }
+        // 取消不能撤回已交付的响应；每次请求也必须在写入状态前确认仍有效。
+        if (controller.signal.aborted) return;
+        setSearchState({ query: q, attempt: searchAttempt, posts: data.posts, error: null });
+      })
+      .catch(() => fail("搜索失败，请重试。"));
 
     return () => {
       controller.abort();
     };
-  }, [q]);
+  }, [q, searchAttempt]);
 
-  const currentSearchResults = searchState?.query === q ? searchState.posts : null;
-  const displayPosts = q ? (currentSearchResults ?? posts) : posts;
-  const emptyMessage = q && currentSearchResults !== null && currentSearchResults.length === 0
+  const currentSearch = searchState?.query === q && searchState.attempt === searchAttempt ? searchState : null;
+  const searchPending = !!q && !currentSearch;
+  const searchError = q ? currentSearch?.error : null;
+  const displayPosts = q ? (searchState?.posts ?? posts) : posts;
+  const emptyMessage = q && currentSearch && !currentSearch.error && currentSearch.posts?.length === 0
     ? "No posts match your search."
     : undefined;
 
@@ -181,81 +198,7 @@ export function HomeTimelineBoard({
     }
 
     setConnectFromId(null);
-  }, [connectFromId]);
-
-  const patchElement = useCallback(async (id: string, patch: Record<string, unknown>) => {
-    await fetch(`/api/home-board/elements/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(patch),
-    }).catch(() => {});
-  }, []);
-
-  const updatePhoto = useCallback((id: string, patch: Partial<HomePhotoElementData>) => {
-    setElements((prev) => prev.map((element) => element.id === id ? { ...element, ...patch } as HomeSpatialElementData : element));
-  }, []);
-
-  const runPhotoMoveQueue = useCallback(async (id: string) => {
-    const queue = photoMoveQueuesRef.current.get(id);
-    if (!queue || queue.running) return;
-
-    queue.running = true;
-    try {
-      while (queue.pending) {
-        const target = queue.pending;
-        queue.pending = null;
-        setPhotoMoveSaveStates((current) => ({
-          ...current,
-          [id]: { ...target, status: "saving" },
-        }));
-
-        let saved = false;
-        try {
-          const response = await fetch(`/api/home-board/elements/${id}`, {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(target),
-          });
-          saved = response.ok;
-        } catch {
-          saved = false;
-        }
-
-        if (!saved) {
-          if (queue.pending) continue;
-
-          queue.pending = target;
-          setPhotoMoveSaveStates((current) => ({
-            ...current,
-            [id]: { ...target, status: "failed" },
-          }));
-          return;
-        }
-
-        if (queue.pending) continue;
-
-        photoMoveQueuesRef.current.delete(id);
-        setPhotoMoveSaveStates((current) => {
-          const next = { ...current };
-          delete next[id];
-          return next;
-        });
-      }
-    } finally {
-      queue.running = false;
-    }
-  }, []);
-
-  const savePhotoMove = useCallback((id: string, x: number, y: number) => {
-    const queue = photoMoveQueuesRef.current.get(id) ?? { pending: null, running: false };
-    queue.pending = { x, y };
-    photoMoveQueuesRef.current.set(id, queue);
-    setPhotoMoveSaveStates((current) => ({
-      ...current,
-      [id]: { x, y, status: "saving" },
-    }));
-    void runPhotoMoveQueue(id);
-  }, [runPhotoMoveQueue]);
+  }, [connectFromId, setConnections]);
 
   return (
     <div
@@ -281,31 +224,23 @@ export function HomeTimelineBoard({
         anchors={anchors}
         photos={photos}
         connections={connections}
+        deletingPhotoIds={photos.filter((photo) => saveStates[`photo-delete:${photo.id}`]?.status === "saving").map((photo) => photo.id)}
+        deletingConnectionIds={connections.filter((connection) => saveStates[`connection-delete:${connection.id}`]?.status === "saving").map((connection) => connection.id)}
         connectFromId={connectFromId}
         contextMenu={contextMenu}
         onSelectElement={selectElement}
         onMovePhoto={(id, x, y) => updatePhoto(id, { x, y })}
         onMovePhotoEnd={(id, x, y) => {
-          updatePhoto(id, { x, y });
-          savePhotoMove(id, x, y);
+          savePhotoPatch(id, { x, y });
         }}
         onResizePhotoEnd={(id, width, height) => {
-          updatePhoto(id, { width, height });
-          void patchElement(id, { width, height });
+          savePhotoPatch(id, { width, height });
         }}
         onCaptionPhoto={(id, caption) => {
-          updatePhoto(id, { caption });
-          void patchElement(id, { caption });
+          savePhotoPatch(id, { caption: caption.trim() });
         }}
-        onDeletePhoto={async (id) => {
-          setElements((prev) => prev.filter((element) => element.id !== id));
-          setConnections((prev) => prev.filter((connection) => connection.fromId !== id && connection.toId !== id));
-          await fetch(`/api/home-board/elements/${id}`, { method: "DELETE" }).catch(() => {});
-        }}
-        onDeleteConnection={async (id) => {
-          setConnections((prev) => prev.filter((connection) => connection.id !== id));
-          await fetch(`/api/home-board/connections?id=${id}`, { method: "DELETE" }).catch(() => {});
-        }}
+        onDeletePhoto={deletePhoto}
+        onDeleteConnection={deleteConnection}
         onAddPhotoFromMenu={() => {
           if (!contextMenu) return;
           setUploadPosition({ x: contextMenu.boardX, y: contextMenu.boardY });
@@ -314,23 +249,23 @@ export function HomeTimelineBoard({
         registerPhotoAnchor={registerPhotoAnchor}
       />
 
-      {Object.keys(photoMoveSaveStates).length > 0 ? (
+      {Object.keys(saveStates).length > 0 ? (
         <div className="fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 flex-col gap-2">
-          {Object.entries(photoMoveSaveStates).map(([id, state]) => (
+          {Object.entries(saveStates).map(([key, state]) => (
             <div
-              key={id}
+              key={key}
               className="flex items-center gap-3 rounded-lg border border-black/10 bg-white px-4 py-3 text-sm text-black/70 shadow-lg"
             >
               {state.status === "saving" ? (
-                <span role="status">正在保存照片位置…</span>
+                <span role="status">正在{state.action}{state.subject}…</span>
               ) : (
                 <>
-                  <span role="alert">照片位置保存失败。</span>
+                  <span role="alert">{state.subject}{state.action}失败。</span>
                   <button
                     type="button"
                     className="rounded-md bg-sage-700 px-3 py-1.5 font-medium text-white hover:bg-sage-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-700"
-                    aria-label="重试保存照片位置"
-                    onClick={() => void runPhotoMoveQueue(id)}
+                    aria-label={`重试${state.action}${state.subject}`}
+                    onClick={() => retry(state)}
                   >
                     重试
                   </button>
@@ -342,15 +277,31 @@ export function HomeTimelineBoard({
       ) : null}
 
       <main className="relative z-20 mx-auto max-w-3xl px-6 py-12">
-        <Timeline
-          posts={displayPosts}
-          currentUserId={currentUserId}
-          postElementByPostId={postElementByPostId}
-          connectFromId={connectFromId}
-          onSpatialElementClick={selectElement}
-          registerSpatialAnchor={registerAnchor}
-          emptyMessage={emptyMessage}
-        />
+        {searchPending ? <p role="status" className="mb-6 text-sm text-black/60">正在搜索…</p> : null}
+        {searchError ? (
+          <div role="alert" className="mb-6 rounded-lg border border-black/10 bg-white p-4 text-sm text-black/70">
+            <p>{searchError}</p>
+            {displayPosts.length > 0 ? <p className="mt-1">仍显示上次成功加载的内容。</p> : null}
+            <button
+              type="button"
+              className="mt-3 rounded-md bg-sage-700 px-3 py-1.5 font-medium text-white hover:bg-sage-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sage-700"
+              onClick={() => setSearchAttempt((attempt) => attempt + 1)}
+            >
+              重试搜索
+            </button>
+          </div>
+        ) : null}
+        {!q || displayPosts.length > 0 || (!searchPending && !searchError) ? (
+          <Timeline
+            posts={displayPosts}
+            currentUserId={currentUserId}
+            postElementByPostId={postElementByPostId}
+            connectFromId={connectFromId}
+            onSpatialElementClick={selectElement}
+            registerSpatialAnchor={registerAnchor}
+            emptyMessage={emptyMessage}
+          />
+        ) : null}
       </main>
 
       <HomeUploadModal

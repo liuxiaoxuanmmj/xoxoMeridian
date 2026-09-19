@@ -5,6 +5,7 @@ import { PostCard } from "@/components/blog/PostCard";
 import { AgentLogCard } from "@/components/blog/AgentLogCard";
 import { PostCardSpatialShell } from "@/components/home/PostCardSpatialShell";
 import { useScrollReveal } from "@/lib/useScrollReveal";
+import { compareTimelinePosts } from "@/lib/post-timeline";
 import { cn } from "@/lib/utils";
 
 type Direction = "left" | "right" | "center";
@@ -96,10 +97,7 @@ export function Timeline({
   emptyMessage?: string;
 } & TimelineSpatialProps) {
   const sorted = useMemo(
-    () =>
-      [...posts].sort(
-        (a, b) => new Date(a.publishedAt).getTime() - new Date(b.publishedAt).getTime()
-      ),
+    () => [...posts].sort(compareTimelinePosts),
     [posts]
   );
   const entries = useMemo<TimelineEntry[]>(

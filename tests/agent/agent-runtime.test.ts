@@ -214,6 +214,6 @@ describe("readPersistedAgentPlan", () => {
   });
 
   it("rejects incomplete persisted data instead of resuming it", () => {
-    expect(readPersistedAgentPlan({ intent: "create_memo" })).toBeNull();
+    expect(() => readPersistedAgentPlan({ intent: "create_memo" })).toThrow(/plan validation/i);
   });
 });

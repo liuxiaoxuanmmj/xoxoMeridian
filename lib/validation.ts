@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { memoCreateFields, memoUpdateFields, scheduleDescriptionSchema } from "@/lib/life-authoring-contract";
 import {
   hasAtMostOneScheduledJobTrigger,
   hasExactlyOneScheduledJobTrigger,
@@ -57,17 +58,13 @@ const safeMetadataSchema = z
   );
 
 export const memoPostSchema = z.object({
-  title: z.preprocess(trim, z.string().min(1).max(200)),
-  content: z.preprocess(trim, z.string().min(1).max(8000)),
-  pinned: z.boolean().optional().default(false),
+  ...memoCreateFields,
   metadata: safeMetadataSchema,
 });
 
 export const memoPatchSchema = z
   .object({
-    title: z.preprocess(trim, z.string().min(1).max(200)).optional(),
-    content: z.preprocess(trim, z.string().min(1).max(8000)).optional(),
-    pinned: z.boolean().optional(),
+    ...memoUpdateFields,
     metadata: safeMetadataSchema,
   })
   .refine((v) => Object.values(v).some((x) => x !== undefined), {
@@ -80,7 +77,7 @@ export const scheduledJobPostSchema = z
     cron: z.string().min(9).max(128).optional(),
     timezone: z.string().min(1).max(64),
     prompt: z.preprocess(trim, z.string().min(1).max(500)),
-    description: z.preprocess(trim, z.string().max(200)).optional(),
+    description: scheduleDescriptionSchema.optional(),
     runOnce: z.boolean().optional(),
   })
   .refine(hasExactlyOneScheduledJobTrigger, {
@@ -93,7 +90,7 @@ export const scheduledJobPatchSchema = z
     cron: z.string().min(9).max(128).optional(),
     timezone: z.string().min(1).max(64).optional(),
     prompt: z.preprocess(trim, z.string().min(1).max(500)).optional(),
-    description: z.preprocess(trim, z.string().max(200)).optional().nullable(),
+    description: scheduleDescriptionSchema.optional(),
     runOnce: z.boolean().optional(),
     enabled: z.boolean().optional(),
   })

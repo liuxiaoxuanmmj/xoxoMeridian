@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/prisma";
+import { getChatMessages } from "@/lib/chat-messages";
 import { listRoomsForUser } from "@/lib/room-list";
 import { normalizeFocusStatus } from "@/lib/study";
 
@@ -13,24 +14,7 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     room,
     rooms
   ] = await Promise.all([
-    prisma.message.findMany({
-      where: { roomId },
-      orderBy: { createdAt: "asc" },
-      take: 80,
-      include: {
-        sender: { select: { id: true, displayName: true, avatarLabel: true } },
-        senderAgent: { select: { id: true, displayName: true, slug: true } },
-        finalTask: {
-          select: {
-            id: true,
-            status: true,
-            toolCalls: { select: { id: true, toolName: true, status: true, durationMs: true, error: true } },
-            llmCalls: { select: { id: true, provider: true, model: true, status: true, totalTokens: true } }
-          }
-        },
-        sourceTask: { select: { id: true, status: true } }
-      }
-    }),
+    getChatMessages(roomId),
     prisma.memo.findMany({
       where: { roomId },
       orderBy: [{ pinned: "desc" }, { createdAt: "desc" }],

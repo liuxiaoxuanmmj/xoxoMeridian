@@ -5,6 +5,15 @@ import type { ChatUser, LifeMemo, LifeScheduledJob } from "@/components/chat/typ
 import { BaseModal, ModalActions } from "@/components/chat/BaseModal";
 import { TimezoneSelector, getDefaultTimezone } from "@/components/chat/TimezoneSelector";
 import { CronBuilder } from "@/components/chat/CronBuilder";
+import {
+  DEFAULT_MEMO_TITLE,
+  MEMO_CONTENT_MAX_LENGTH,
+  MEMO_TITLE_MAX_LENGTH,
+  SCHEDULE_DESCRIPTION_MAX_LENGTH,
+  memoContentSchema,
+  memoTitleSchema,
+  scheduleDescriptionSchema,
+} from "@/lib/life-authoring-contract";
 import { showError, submitForm } from "@/lib/ui-utils";
 import { formatWallClockInZone, wallClockInZoneToDate } from "@/lib/zoned-time";
 
@@ -42,7 +51,7 @@ export function MemoModal({ isOpen, onClose, roomId, memo, onSuccess }: MemoModa
 function MemoModalForm({ onClose, roomId, memo, onSuccess }: Omit<MemoModalProps, "isOpen">) {
   const [busy, setBusy] = useState(false);
   const [formData, setFormData] = useState(() => ({
-      title: memo?.title ?? "",
+      title: memo?.title ?? DEFAULT_MEMO_TITLE,
       content: memo?.content ?? "",
       pinned: memo?.pinned ?? false,
   }));
@@ -55,11 +64,17 @@ function MemoModalForm({ onClose, roomId, memo, onSuccess }: Omit<MemoModalProps
     try {
       const url = memo ? `/api/rooms/${roomId}/memos/${memo.id}` : `/api/rooms/${roomId}/memos`;
       const method = memo ? "PATCH" : "POST";
-      await submitForm(url, method, {
-        title: formData.title.trim(),
-        content: formData.content.trim(),
+      // PATCH 只提交修改过的文本，保留旧记录未编辑字段的完整原文。
+      const payload = memo ? {
+        ...(formData.title !== memo.title ? { title: memoTitleSchema.parse(formData.title) } : {}),
+        ...(formData.content !== memo.content ? { content: memoContentSchema.parse(formData.content) } : {}),
         pinned: formData.pinned,
-      });
+      } : {
+        title: memoTitleSchema.parse(formData.title),
+        content: memoContentSchema.parse(formData.content),
+        pinned: formData.pinned,
+      };
+      await submitForm(url, method, payload);
       onSuccess();
       onClose();
     } catch (err) {
@@ -81,8 +96,10 @@ function MemoModalForm({ onClose, roomId, memo, onSuccess }: Omit<MemoModalProps
             onChange={(e) => setFormData({ ...formData, title: e.target.value })}
             className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             required
-            maxLength={200}
+            maxLength={Math.max(MEMO_TITLE_MAX_LENGTH, memo?.title.length ?? 0)}
+            aria-describedby={memo && memo.title.length > MEMO_TITLE_MAX_LENGTH ? "memo-title-legacy" : undefined}
           />
+          <LegacyTextHint id="memo-title-legacy" value={memo?.title} maxLength={MEMO_TITLE_MAX_LENGTH} />
         </div>
         <div>
           <label htmlFor="memo-content" className="block text-sm font-medium text-black/70">内容 *</label>
@@ -93,8 +110,10 @@ function MemoModalForm({ onClose, roomId, memo, onSuccess }: Omit<MemoModalProps
             className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             rows={5}
             required
-            maxLength={8000}
+            maxLength={Math.max(MEMO_CONTENT_MAX_LENGTH, memo?.content.length ?? 0)}
+            aria-describedby={memo && memo.content.length > MEMO_CONTENT_MAX_LENGTH ? "memo-content-legacy" : undefined}
           />
+          <LegacyTextHint id="memo-content-legacy" value={memo?.content} maxLength={MEMO_CONTENT_MAX_LENGTH} />
         </div>
         <div className="flex items-center gap-2">
           <input
@@ -148,6 +167,7 @@ function ScheduledJobModalForm({
 }: Omit<ScheduledJobModalProps, "isOpen">) {
   const [busy, setBusy] = useState(false);
   const isOnce = !!job?.payload?.runOnce;
+  const existingDescription = (job?.payload?.description as string | null) ?? "";
   const [mode, setMode] = useState<"once" | "recurring">(
     isOnce ? "once" : "recurring"
   );
@@ -174,9 +194,11 @@ function ScheduledJobModalForm({
     try {
       const payload: Record<string, unknown> = {
         prompt: formData.prompt.trim(),
-        description: formData.description.trim() || null,
         timezone: formData.timezone,
       };
+      if (!job || formData.description !== existingDescription) {
+        payload.description = scheduleDescriptionSchema.parse(formData.description);
+      }
 
       if (mode === "once") {
         if (!formData.fireAt) {
@@ -253,8 +275,10 @@ function ScheduledJobModalForm({
             onChange={(e) => setFormData({ ...formData, description: e.target.value })}
             className="mt-1 w-full rounded-[10px] border border-[#d9d9d9] bg-white px-4 py-3 text-[15px] leading-normal transition-colors duration-200 focus:border-[#3a5b22] focus:ring-2 focus:ring-[#3a5b22]/15 focus:outline-none"
             placeholder="例如：每天早上的问候"
-            maxLength={200}
+            maxLength={Math.max(SCHEDULE_DESCRIPTION_MAX_LENGTH, existingDescription.length)}
+            aria-describedby={existingDescription.length > SCHEDULE_DESCRIPTION_MAX_LENGTH ? "job-description-legacy" : undefined}
           />
+          <LegacyTextHint id="job-description-legacy" value={existingDescription} maxLength={SCHEDULE_DESCRIPTION_MAX_LENGTH} />
         </div>
         <div>
           <label htmlFor="job-prompt" className="block text-sm font-medium text-black/70">执行指令 *</label>
@@ -300,5 +324,14 @@ function ScheduledJobModalForm({
         <ModalActions busy={busy} onCancel={onClose} />
       </form>
     </BaseModal>
+  );
+}
+
+function LegacyTextHint({ id, value, maxLength }: { id: string; value?: string; maxLength: number }) {
+  if (!value || value.length <= maxLength) return null;
+  return (
+    <p id={id} className="mt-1 text-sm text-black/60">
+      此字段是较长的旧记录，未修改时会完整保留；如需修改，请缩短至 {maxLength} 字符以内。
+    </p>
   );
 }

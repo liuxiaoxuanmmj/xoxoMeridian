@@ -5,43 +5,43 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-03 双人生活信息与计划管理 |
-| 快照日期 | 2026-09-12 |
+| 快照日期 | 2026-09-13 |
 | 审查 Skill | [`xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-03、Cross-cutting Concerns、共享映射、BU-03/BU-04 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+5`（QAM-03-004 resolved；85→90） |
-| 当前基线命令 | 开始 `./init.sh`：退出 0，72 文件/472 项 Vitest；实现后 `npm run check:quick`：退出 0，72 文件/480 项；最终 `check:full` 单次退出 0，含 production build、覆盖率 48.26/42.98/53.55/49.14、20 文件/63 项真实 PostgreSQL 与 30/30 Playwright |
-| 风险匹配命令 | 修复前 one-shot/Tool contract 定向回归 2 文件/50 项中 6 项失败：resolver 在 Asia/Shanghai 与 America/Los_Angeles 进程中分别把同一无 offset 值解释为不同绝对时刻，四组 Agent create/update 非法 trigger 越过 Registry validation；修复后同命令 50/50。真实 PostgreSQL 定向 11/11，回读 Agent create/update 与 Route 的 `nextRunAt`、`cron`、`runOnce`；完整门禁 72/480、20/63、30/30 全部通过 |
+| 本轮 Delta | `+3`（QAM-03-005 resolved；90→93；共享字段 contract 消除 HTTP/Agent/UI 漂移并明确旧记录兼容） |
+| 当前基线命令 | `./init.sh` exit 0（75/544）；最终 `E2E_APP_MODE=production ./scripts/run-node22.sh npm run check:full` exit 0：77 文件/576 项 Vitest、production build、覆盖率 49.32/43.91/54.03/50.00、26 文件/96 项 PostgreSQL、35/35 Playwright（无跳过）。两次默认开发门禁的 Study 失败独立登记 feat-063；首次生产 CSP 回归已修正，完整迭代见进度 |
+| 风险匹配命令 | Node 契约 26/26；组件 11/11；PostgreSQL 定向 3 文件/23 项（新增字段 9 + one-shot 11 + active cap 3）；Chromium Agent 创建长记录后 UI 编辑/刷新 2/2（含 setup），均 exit 0。原始命令、负向对照与完整门禁进展见 [progress.md](../../progress.md) |
 | 证据纪律 | E3 为本轮实际执行的测试/可复现实验；E2 为源码、schema、迁移与测试交叉证据；未把 mock 结果写成真实 PostgreSQL 或浏览器验证 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **90 / 100** |
+| Score | **93 / 100** |
 | Score Level | **L4** |
 | Gate Level | **L4** |
 | Final Level | **L4** |
-| Trend | `+5`（QAM-03-004 resolved） |
-| Evidence Confidence | 高（一次性 trigger 的合法/非法输入具有跨进程 TZ、Tool Registry 与真实 PostgreSQL Route/Agent parity E3；active cap 和参与者身份既有 E3 继续通过，剩余两项 P2 有可执行/源码证据） |
+| Trend | `+3`（QAM-03-005 resolved，90→93） |
+| Evidence Confidence | 高（本轮 E3 覆盖两入口 create/update 的边界、trim、空值、省略与 JSON schema；真实 PostgreSQL 证明无损往返、拒绝超限及保留旧值，Chromium 证明 Agent 创建后 UI 编辑/刷新一致；最终生产模式完整门禁 35/35，默认开发序列的独立失败仍按 feat-063 跟踪） |
 
-QAM-03-004 已关闭：HTTP 与 Agent `schedule.create/update` 复用同一 offset datetime 及 trigger 组合谓词，Tool Registry 在 execute/`ScheduledJob` 写入前拒绝无 offset 和 `fireAt+cron`，resolver 仍保留防御性校验。跨进程 TZ 与真实 PostgreSQL E3 证明合法 offset 始终解析为同一绝对时刻；字段约束漂移和表单可访问名称缺口仍分别作为 QAM-03-005/006 开放。当前无开放 P0/P1，开放 P2×2。
+QAM-03-005 已关闭：Memo 的 title/content 与 Schedule description 由同一领域 contract 定义，HTTP、Agent 与表单共同消费。保留原 Agent 的 500/20000/500 字符上限，空值与省略语义一致；编辑未改字段不会截断、trim 或重写旧内容，超过现行上限的旧字段也有明确保留说明。Node、组件、真实 PostgreSQL 与 Chromium 已验证这些行为；QAM-03 当前无开放 P0/P1/P2。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
-| 架构与责任边界 | 13 | 14 | `lib/scheduled-job-authoring.ts` 拥有 cap/原子写入，`lib/scheduled-job-one-shot.ts` 同时拥有 trigger contract 与时间派生，`lib/participant-resolution.ts` 统一 UI/Agent 身份解析（E2/E3）；Memo/Schedule 字段上限仍平行维护（QAM-03-005）。 |
+| 架构与责任边界 | 14 | 14 | cap、trigger、参与者与 Memo/Schedule 字段各有 QAM-03 的 `lib/` 事实源；新增 `life-authoring-contract.ts` 不依赖 Route、Agent 或数据库，可被 HTTP、Tool 与客户端单向复用；仅服务端组装 Zod 对象 schema，客户端基础字段解析不触发 eval 探测（E2/E3）。 |
 | 代码结构与复杂度 | 8 | 10 | CRUD、cron、天气和客户端交互均可定位；主要复杂度来自 Route/Tool 平行分支，而非业务本身（E2）。 |
-| 抽象与复用 | 7 | 8 | active cap、Room 锁、一次性 trigger/时间派生和参与者解析已有共享实现；但 Memo/Schedule 输入上限尚无共享字段 contract，仍有可执行差异（E2/E3，QAM-03-005）。 |
+| 抽象与复用 | 8 | 8 | 字段上限、trim、默认标题、Memo 必填/可选与 nullable 描述统一为共享 schema；Registry 从同一 contract 导出 JSON schema，表单引用相同 schema/常量；26 项入口行为与导出回归通过（E3）。 |
 | 数据流与状态一致性 | 12 | 12 | Room scope、active count/write transaction、显式参与者身份与 one-shot 绝对时刻一致；跨进程 TZ 和 PostgreSQL parity 证明合法 offset 不漂移，非法 trigger 不进入持久化（E3）。 |
-| 接口与依赖关系 | 9 | 10 | Weather Route/Tool 的参与者目标一致，Schedule cap、offset datetime、trigger 组合与 one-shot 派生跨 HTTP/Agent 复用；Memo/Schedule 字段长度仍不一致（E3，QAM-03-005）。 |
+| 接口与依赖关系 | 10 | 10 | Memo/Schedule 字段的 create/update 契约已统一；Agent 边界长度记录可被 HTTP 原样保存，nullable 描述新建/清空/省略有相同持久化结果。沿用较大上限与部分 PATCH 保护旧记录，不需要迁移（E3）。 |
 | 健壮性、并发与生命周期 | 12 | 14 | Room 行锁、29→30 竞争、非法 cron/时区/过期或无 offset `fireAt`、`fireAt+cron`、参与者缺失和天气 timeout/fallback 均有失败控制；run-once 触发终态由 QAM-04 独立保护（E3）。 |
 | 性能与资源使用 | 7 | 8 | Memo/Job 的 snapshot/Tool 查询有 room/index 与 take 边界，天气 cache 有 `MAX_CACHE_SIZE=500` 淘汰阈值；`who=both` 顺序请求天气是局部延迟成本（E2）。 |
 | 安全与隐私 | 9 | 10 | 生活 Route 统一认证、成员校验和 roomId 归属检查；Memo/Job Tool 也检查资源所属房间，天气只读取房间参与者档案（E2）。 |
-| 可测试性与验证可信度 | 8 | 8 | one-shot 正常/非法输入有 resolver、跨进程 TZ、Tool Registry 与真实 PostgreSQL Route/Agent create/update E3；参与者有组件/Agent/Route/Chromium E3。Cron/Timezone 可访问名称断言仍单独登记为 QAM-03-006。 |
-| 可维护性、演进与技术债 | 5 | 6 | 共享 helper 让参与者、cap、trigger contract 与时间派生可导航；字段上限、Tool JSON contract 的其他字段和 ScheduledJob 更新矩阵仍需在平行入口同步（E2/E3）。 |
-| **合计** | **90** | **100** | 算术精确合计。 |
+| 可测试性与验证可信度 | 8 | 8 | 本轮新增契约、组件、真实 PostgreSQL 与 Chromium 字段往返 E3，并有旧 contract 25/26 failed、旧 Modal 5/6 failed 的负向对照；原 one-shot/cap 定向回归 14/14 保持。原满分维度不再额外加分。 |
+| 可维护性、演进与技术债 | 5 | 6 | 字段 contract 与旧值兼容策略已有单一修改入口；ScheduledJob 更新矩阵及非本轮字段的平行入口仍需在相关变更时一起复核（E2）。本轮不扩大为其他输入或调度治理。 |
+| **合计** | **93** | **100** | 算术精确合计。 |
 
 ## Level Gate
 
@@ -65,25 +65,28 @@ QAM-03-004 已关闭：HTTP 与 Agent `schedule.create/update` 复用同一 offs
 
 ### P2
 
-#### QAM-03-005：Memo/Schedule 的 Route 与 Agent 字段约束已发生可执行漂移
+当前无开放项。
 
-- **状态**：`open`。
-- **问题**：HTTP Memo schema 把 title/content 限为 200/8000（[`validation.ts`](../../lib/validation.ts#L53)），Schedule description 限为 200（[`validation.ts`](../../lib/validation.ts#L71)）；Agent contract 则分别允许 500/20000 与 500（[`tool-contracts.ts`](../../agent/tool-contracts.ts#L33)）。Tool 实现把验证后的值直接写入 Memo 或 Job payload（[`memo-tool.ts`](../../agent/tools/memo-tool.ts#L63)、[`schedule-tool.ts`](../../agent/tools/schedule-tool.ts#L146)），两条入口没有共享字段约束。
-- **证据**：本轮使用当前 schema/contract 执行 create 与 update 对照：Memo title 300、content 9000、Schedule description 300 在 HTTP create/patch schema 中均为 `false`，在对应 Agent create/update contract 中均为 `true`（E3）。组件又以 `maxLength=200/8000/200` 呈现这些字段（[`LifePanelModals.tsx`](../../components/chat/LifePanelModals.tsx#L76)），因此 Agent 写入的合法值不能原样经 UI 保存（E2）。
-- **质量影响**：同一实体的合法状态取决于写入入口；Agent 能制造 UI/HTTP 无法 round-trip 的 Memo/Job，后续任何小改动都必须先人工缩短内容。约束继续独立演进时还会再次产生 Route/Tool 漂移。
-- **最小修正**：在 QAM-03 `lib/` 边界导出共享字段常量或 Zod fragments，由 HTTP schema、Tool contract 与组件属性共同引用；选定当前产品既有上限之一并明确兼容已有较长记录，不新增字段或实体。
-- **验收证据**：参数化 contract 测试对 create/update 两条入口逐一断言边界值、边界+1、trim 与 nullable description；真实 PostgreSQL 回读证明 Agent 创建的合法记录可在 HTTP PATCH 原样保存。
-- **影响范围**：QAM-03 直接受影响；QAM-08 只消费 QAM-03 提供的 Tool contract。
+### Resolved — QAM-03-005：Memo/Schedule 的 Route 与 Agent 字段约束漂移
 
-#### QAM-03-006：Cron 与时区表单控件缺少可访问名称
+- **状态**：`resolved`。
+- **原问题与影响**：HTTP/UI 的 Memo title/content 与 Schedule description 上限为 200/8000/200，Agent 分别允许 500/20000/500；Agent 已创建的合法较长记录在 UI 中不能原样修改保存。另有空白、默认标题与 nullable 描述的差异，UI 新建空描述会发送原 HTTP create schema 不接受的 null。
+- **共享 contract**：[`life-authoring-contract.ts`](../../lib/life-authoring-contract.ts) 统一 trim 后的 500/20000/500 上限（按 JavaScript 字符串长度）；[`validation.ts`](../../lib/validation.ts) 的 HTTP create/patch、[`tool-contracts.ts`](../../agent/tool-contracts.ts) 的 Agent create/update 与 [`LifePanelModals.tsx`](../../components/chat/LifePanelModals.tsx) 共同引用。Memo 创建省略标题使用“新的备忘录”，UI 预填相同默认值；显式空白/null 标题或正文被拒绝。更新省略字段不改写；描述 null、空字符串和空白均清空为 null，undefined 表示省略。
+- **已有记录兼容**：采用原 Agent 已允许的较大上限，无迁移、不批量改写或截断数据。UI 仅发送实际修改的 Memo title/content 和 Schedule description；即使旧字段超过现行上限，改置顶或其他字段仍可完整保留原文及首尾空白。超限旧字段通过 `aria-describedby` 说明“未修改时完整保留，修改需缩短至上限”；修改后的超限值明确报错，用户草稿保留在弹窗中。
+- **Node/组件 E3**：[`life-authoring-contract.test.ts`](../../tests/lib/life-authoring-contract.test.ts) 旧 contract 25/26 失败→26/26 通过，覆盖四入口边界、边界加一、trim、空白/null/非字符串、省略/default 及 Tool JSON schema 导出。[`life-authoring-fields.test.tsx`](../../tests/component/life-authoring-fields.test.tsx) 旧 Modal + 新 contract 5/6 失败，修复后与既有 Modal 共 11/11；用键盘替换边界字段末字、粘贴新建边界值、清空描述、仅改置顶/指令保留超限旧字段，MSW 用实际 HTTP schema 验证请求。
+- **PostgreSQL E3**：[`life-authoring-fields.integration.test.ts`](../../tests/integration/life-authoring-fields.integration.test.ts) 新增 9/9。实际 Registry/ToolCall 事务创建和更新，HTTP POST/PATCH 后回读 Prisma，确认 500/20000/500 边界值往返无损；501/20001/501 的 create/update 被两入口拒绝、原记录和 ToolCall 数量不变；null/空白清空、省略保留及超限旧字段首尾空白完整保留。连同既有 one-shot 11 项、active cap 3 项定向合计 23/23，nextRunAt、cron、runOnce 与 cap 竞争语义保持。
+- **Chromium E3**：[`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts) 的“Agent 创建的较长备忘录和计划可在 UI 编辑保存并刷新回读”在隔离房间预置计划，经独立 Agent Runtime 进程与真实 Registry 消费，持久化 300/9000/300 字符记录、2 条 completed ToolCall。浏览器键盘替换末字后两个 PATCH 均 200，真实 DB 回读和刷新重开表单一致，计划 nextRunAt/cron 未移位；定向 2/2（含 setup）。不把预置计划称为真实 LLM 规划验证。
+- **生产 CSP 迭代 E3**：初版把 Zod 对象 schema 带入客户端，生产完整门禁在 Agent Entry Chat 往返观察到 `script-src` violation（34 passed/1 failed，Study 两项通过）；源码定位到对象构造时 `allowsEval` 的动态代码探测。修正为客户端仅消费基础字段 schema，HTTP/Agent 使用共享 field shape 组装对象；未改 CSP 或全局 Zod 配置。Node/组件/Agent 定向 67/67、生产入口/长记录旅程 3/3（含 setup）通过，长记录用例新增跨导航和表单提交的 CSP 事件断言。完整门禁最终终态见基线与进度。
+- **影响范围**：QAM-03 直接负责字段与旧值兼容；QAM-08 继续消费共享 contract，未修改通用 Registry/Planner，QAM-04 Scheduler 未改。完整命令、门禁终态与清理见 [progress.md](../../progress.md)。
 
-- **状态**：`open`。
-- **问题**：[`CronBuilder`](../../components/chat/CronBuilder.tsx#L69) 的“执行时间”文本未通过 `htmlFor`/`aria-*` 关联到小时、分钟两个 number input，两个输入本身也没有可区分名称；[`TimezoneSelector`](../../components/chat/TimezoneSelector.tsx#L19) 的 label 同样没有关联 select。可见文字存在，但辅助技术无法确定三个表单控件的用途，且不满足仓库“表单字段必须绑定可查询 label”的约束。
-- **证据**：源码直接显示 label 无 `htmlFor`，input/select 无 `id`、`aria-label` 或 `aria-labelledby`（E2）；现有 [`life-panel-modals.test.tsx`](../../tests/component/life-panel-modals.test.tsx) 只能以无 name 的 `getByRole("combobox")` 查询时区，未验证可访问名称（E2）。
-- **质量影响**：键盘仍能聚焦，但屏幕阅读器用户无法辨认小时、分钟和时区字段；未来加入同类控件时，测试也不能通过语义名称稳定定位。
-- **最小修正**：为时区 select 绑定稳定 `id/htmlFor`，为小时/分钟提供独立 label 或 `aria-label`，并用 `fieldset/legend` 保留“执行时间”分组语义；可同时为日期快捷按钮暴露 `aria-pressed`，不改变视觉和 cron 规则。
-- **验收证据**：组件测试用 `getByRole("spinbutton", { name: /小时|分钟/ })` 与 `getByRole("combobox", { name: "时区" })` 查询并完成纯键盘修改；axe 或等价语义检查不再报告 form control 缺 label。
-- **影响范围**：QAM-03 UI；共享可访问性规范属于 Cross-cutting，不影响 Agent、schema 或 QAM-04。
+### Resolved — QAM-03-006：Cron 与时区表单控件缺少可访问名称
+
+- **状态**：`resolved`。
+- **原问题与影响**：Cron 的小时、分钟和时区控件没有 label 关联，可见文字无法成为辅助技术可识别的名称；原时区测试使用无 name 的角色查询，掩盖了缺口。
+- **修正**：[`CronBuilder.tsx`](../../components/chat/CronBuilder.tsx) 使用 `fieldset/legend` 表达“执行时间”，为小时、分钟分别提供 `sr-only` label 与 `id/htmlFor`；[`TimezoneSelector.tsx`](../../components/chat/TimezoneSelector.tsx) 绑定可见 label 与 select。两者的 ID 均由 `useId` 生成，多实例不会共享同一个标签目标；原有样式、cron 生成和默认时区解析保持。
+- **组件 E3**：[`cron-timezone-controls.test.tsx`](../../tests/component/cron-timezone-controls.test.tsx) 用带 name 的 `group`、`spinbutton`、`combobox` 查询，验证双 Cron 实例、默认/自定义时区标签各自的关联和聚焦，并以 Tab/键盘把工作日 09:00 改为 18:45，输出仍为 `45 18 * * 1-5`。[`life-panel-modals.test.tsx`](../../tests/component/life-panel-modals.test.tsx) 的既有时区默认值/one-shot 回归改用名称查询；旧组件定向 5/8 失败（无名输入及缺失分组），修复后 8/8。
+- **浏览器 E3**：[`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts) 的“仅用键盘创建计划”从入口到提交全程使用 Tab/Enter/文本键与原生 select 的 ArrowDown；真实 PostgreSQL 回读 `45 18 * * *`、`Europe/London` 及原始 prompt/description，刷新后键盘重开编辑表单，按名称读回 18、45、Europe/London。定向 Chromium 2/2（含 setup）；第二参与者默认时区旅程也已通过名称查询。jsdom 时区值变化仍用 `selectOptions` 模拟原生选择，不把它称作真实方向键验证。
+- **影响范围**：仅 QAM-03 UI 语义和对应测试；没有改动 QAM-04 调度、one-shot trigger、active cap、schema 或字段长度。完整门禁与测试迭代记录见 [feat-054 完整进度](../../progress.md#feat-054)。
 
 ### Resolved — QAM-03-004：Agent Schedule 接受无 offset 的 `fireAt` 并按 Worker 时区持久化错误时刻
 
@@ -128,13 +131,14 @@ ScheduledJob definition (QAM-03) ──> scheduler-tick CAS/dispatch (QAM-04)
 Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥有生活规则。
 ```
 
-事实源是 Prisma `Memo` 与 `ScheduledJob`；RoomSnapshot、Agent context 和客户端 modal 是派生视图/输入。Route 在入口处认证并 `assertRoomAccess`，资源 Route 和生活 Tool 再校验目标记录的 `roomId`；天气使用进程内 location/weather TTL cache，并在 QWeather 失败时返回标识为 mock 的降级结果。ScheduledJob 的 offset datetime schema、create XOR、update at-most-one 与正常时间派生由 `lib/scheduled-job-one-shot.ts` 共享；HTTP/Agent 在入口复用 contract，resolver 再防御性校验，随后 create/re-enable 经 authoring service 进入 Room 行锁串行化的 count-and-write。Route 自己开启 transaction，Agent Tool 使用 QAM-08 Executor 已有 transaction。LifePanel/Modal 的 `currentUserId` 与 Tool context 的 `requestedById` 均进入 `lib/participant-resolution.ts`，数组排序只用于稳定展示/上下文，不承担身份协议。ScheduledJob 到期 claim、任务派生和触发失败计数留给 QAM-04；Tool 通用 executor/审批/trace 留给 QAM-08。
+字段输入事实源为 `lib/life-authoring-contract.ts`：HTTP schema、Agent schema 与表单共享，Agent Registry 导出的 JSON schema 同步反映长度和 nullable；UI PATCH 省略未编辑文本以保留旧值。持久化事实源是 Prisma `Memo` 与 `ScheduledJob`；RoomSnapshot、Agent context 和客户端 modal 是派生视图/输入。Route 在入口处认证并 `assertRoomAccess`，资源 Route 和生活 Tool 再校验目标记录的 `roomId`；天气使用进程内 location/weather TTL cache，并在 QWeather 失败时返回标识为 mock 的降级结果。ScheduledJob 的 offset datetime schema、create XOR、update at-most-one 与正常时间派生由 `lib/scheduled-job-one-shot.ts` 共享；HTTP/Agent 在入口复用 contract，resolver 再防御性校验，随后 create/re-enable 经 authoring service 进入 Room 行锁串行化的 count-and-write。Route 自己开启 transaction，Agent Tool 使用 QAM-08 Executor 已有 transaction。LifePanel/Modal 的 `currentUserId` 与 Tool context 的 `requestedById` 均进入 `lib/participant-resolution.ts`，数组排序只用于稳定展示/上下文，不承担身份协议。ScheduledJob 到期 claim、任务派生和触发失败计数留给 QAM-04；Tool 通用 executor/审批/trace 留给 QAM-08。
 
 ## Verified Strengths
 
+- Cron/Timezone 使用原生 label 与 fieldset/legend；同屏多实例、标签聚焦、小时/分钟键盘输入、浏览器原生时区选择和保存后刷新一致性已有 E3。视觉名称和实际提交值一致，默认时区与 one-shot 既有回归继续通过。
 - Memo、ScheduledJob、Weather Route 都先调用 `requireCurrentUser` 与 `assertRoomAccess`；Memo/Job 单记录 Route 和对应 Agent Tool 都再次核对 `roomId`，形成房间隔离的双重边界（E2）。
 - ScheduledJob active cap 已由共享 service 统一应用于 Route POST/PATCH 和 Agent create/update；真实 PostgreSQL 延迟触发器将原竞争窗口稳定放大，修复后证明 30 条上限、冲突语义和非 re-enable 编辑行为（E3）。
-- Memo 输入、计划 body 和 Agent Tool 输入都有 Zod/运行时契约；计划 trigger 的 offset datetime 与组合谓词由 HTTP/Agent 共享，cron-parser 按 IANA timezone 解析，合法 offset `fireAt` 有五分钟宽限并强制 one-shot（E2/E3）。Memo/Schedule 字段上限差异仍单独登记为 QAM-03-005。
+- Memo 输入、计划 body 和 Agent Tool 输入都有 Zod/运行时契约；计划 trigger 的 offset datetime 与组合谓词由 HTTP/Agent 共享，cron-parser 按 IANA timezone 解析，合法 offset `fireAt` 有五分钟宽限并强制 one-shot（E2/E3）。Memo/Schedule 字段 contract 也已共享，QAM-03-005 resolved。
 - 一次性计划的 trigger contract、`fireAt` 解析、宽限、`nextRunAt` 与合成 cron 只由 `lib/scheduled-job-one-shot.ts` 实现，Route POST/PATCH 与 Agent `schedule.create/update` 共用；跨进程 TZ 和真实 PostgreSQL 断言合法 offset 产生同一绝对时刻与 `cron`，避免入口或 Worker 环境再次漂移（E3）。
 - HTTP 对不可解析/无 offset/超出宽限的 `fireAt`、`fireAt+cron`、非法 cron 和未知 IANA 时区有稳定 400；Agent Registry 对对应 contract 错误在 execute 前抛 `ToolValidationError`，不产生 `ScheduledJob` 写入（E3）。
 - 客户端编辑弹窗的 `datetime-local` 墙面时间按任务时区的双向换算显示与提交，未改动字段直接保存不会移动触发时刻；组件回归在未修复组件上有 3/4 失败的负向对照（E3）。
@@ -145,10 +149,7 @@ Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥
 
 ## Recommended Improvements
 
-1. **修复 QAM-03-005（P2）**：收敛 Memo/Schedule 的共享字段约束，再让 HTTP、Tool 与组件引用同一上限，消除不能跨入口 round-trip 的记录。
-2. **修复 QAM-03-006（P2）**：为 CronBuilder 小时/分钟和 TimezoneSelector 建立可查询名称及分组语义，以键盘与语义查询回归验收。
-
-以上均为既有 Memo/计划/天气边界的最小修正，不新增生活实体或产品能力。
+当前无开放修正项。后续修改 QAM-03 字段或入口时，以 QAM-03-005 的参数化 contract、PostgreSQL 往返和 UI 编辑回归作为验证入口；触发时间或数量限制变更仍按 QAM-03-001/002/004 的独立回归验收，不新增生活实体或产品能力。
 
 ## Sustainable Review Record
 
@@ -160,8 +161,8 @@ Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥
 | QAM-03-002 | P1 | `resolved` | 2026-09-06 | QAM-03 Job authoring boundary | QAM-04 扫描输入；QAM-08 schedule Tool 入口 |
 | QAM-03-003 | P1 | `resolved` | 2026-09-06 | QAM-03 UI/Tool participant resolution | QAM-01 profile source、QAM-02 snapshot transport |
 | QAM-03-004 | P1 | `resolved` | 2026-09-12 | QAM-03 Schedule input/time semantics | QAM-08 Tool contract；QAM-04 触发输入 |
-| QAM-03-005 | P2 | `open` | 2026-09-12 | QAM-03 Memo/Schedule field contracts | QAM-08 Tool contract |
-| QAM-03-006 | P2 | `open` | 2026-09-12 | QAM-03 LifePanel form accessibility | Cross-cutting accessibility |
+| QAM-03-005 | P2 | `resolved` | 2026-09-12 | QAM-03 Memo/Schedule field contracts | QAM-08 Tool contract |
+| QAM-03-006 | P2 | `resolved` | 2026-09-12 | QAM-03 LifePanel form accessibility | Cross-cutting accessibility |
 
 ### 复审触发条件
 
@@ -179,5 +180,9 @@ Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥
 | 2026-09-12 | 92 | L4 | L4 | L4 | +4（QAM-03-003 resolved） | `lib/participant-resolution.ts` 以显式 ID 统一 UI/Agent 的 self/partner，缺失或不匹配时不猜数组位置；LifePanel/Modal 使用 `currentUserId`，weather/timezone/schedule Tool 使用 `requestedById`。未修复组件 2/5、Agent 2/6 失败，修复后组件 7/7、Agent/Server 4 文件/35 项；Route/Tool 对第二参与者的伙伴结果一致，真实 Chromium 验证伙伴天气、时间顺序与本人默认时区。独立依赖隔离副本的 `check:full` 单次 exit 0：72 文件/466 项 Vitest、production build、覆盖率 48.18/42.99/53.42/49.10、19 文件/57 项 PostgreSQL 与 29/29 Playwright。 |
 | 2026-09-12 | 85 | L3 | L2 | L2 | -7（全范围复审纠正遗漏） | feat-044 参与者实现与 9 文件/77 项定向回归仍通过，QAM-03-003 保持 resolved；可复现实验确认 Agent contract 接受无 offset `fireAt`，并在 Worker TZ 与业务 timezone 不同时把 London 20:40 错存为 12:40Z（应为 19:40Z），新增 QAM-03-004。create/update contract 对照另确认 Memo 300/9000 与 Schedule description 300 的 Route/Tool 接受范围分叉，新增 QAM-03-005；源码复核确认 Cron/Timezone 表单缺可访问名称，新增 QAM-03-006。本轮未改业务代码，未重复运行 Docker/全量门禁；根基线 `./init.sh` 72/472 已通过。 |
 | 2026-09-12 | 90 | L4 | L4 | L4 | +5（QAM-03-004 resolved） | HTTP/Agent 共用 offset datetime 与 trigger 组合谓词，resolver 防御性拒绝无 offset。修复前 resolver/Registry 2 文件/50 项中 6 项失败，修复后 50/50；两个不同进程 TZ 对合法 offset 均得到 19:40Z，对无 offset 均拒绝。真实 PostgreSQL 11/11 回读 Route/Agent create/update 的 `nextRunAt`、`cron`、`runOnce` parity，并确认非法 Agent trigger 无 Job/ToolCall 副作用；`check:full` 单次 exit 0：72/480 Vitest、production build、覆盖率 48.26/42.98/53.55/49.14、20/63 PostgreSQL 与 30/30 Playwright。QAM-03-005/006 仍开放。 |
+
+| 2026-09-13 | 90 | L4 | L4 | L4 | 0（QAM-03-006 resolved） | feat-054：`useId` 绑定独立小时/分钟 label 与时区 select，fieldset/legend 表达执行时间；旧组件 5/8 失败→修复后 8/8，多实例关联和键盘输入通过。Chromium 原生方向键选择时区、键盘提交、真实 DB 回读与刷新重开一致。完整门禁各项通过：75/544 Vitest、production build、覆盖率 48.95/43.58/53.54/49.68、25/87 PostgreSQL；保留的 Playwright 报告确认 34 expected/0 unexpected/0 flaky/0 skipped、ok=true，`.last-run.json` 为 passed。原 shell 退出句柄在环境切换后不可用，不补造退出码。字段 contract 的 QAM-03-005 保持开放，原满分验证维度不再额外加分。 |
+
+| 2026-09-13 | 93 | L4 | L4 | L4 | +3（QAM-03-005 resolved） | feat-055：HTTP/Agent/UI 共享 Memo 500/20000 与 description 500、trim/default/nullable/省略规则，部分 PATCH 无损保留旧值。旧 contract 25/26 failed→26/26 passed，旧 Modal 5/6 failed→组件 11/11；PostgreSQL 定向 23/23、Agent 创建后 UI 编辑/刷新 E3。初版客户端 Zod 对象构造触发 CSP，改为客户端仅用基础字段 schema 后生产入口/编辑 3/3 无违规；最终生产 check:full exit 0：77/576、build、覆盖率 49.32/43.91/54.03/50.00、26/96 PostgreSQL、35/35 Playwright。默认开发完整门禁两次 Study 超时为独立 feat-063，未将生产通过写成开发通过；原失败与清理见 progress.md。 |
 
 复审时保留上述 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate 与 Final。

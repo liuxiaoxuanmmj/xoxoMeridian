@@ -131,7 +131,8 @@ export class ExecutionTracer {
 
   async failWithMessage(
     messageData: Prisma.MessageUncheckedCreateInput,
-    error: string
+    error: string,
+    errorCategory: "runtime" | "validation" = "runtime"
   ) {
     if (!this.lease) {
       throw new Error("Agent task failure requires lease ownership.");
@@ -155,7 +156,7 @@ export class ExecutionTracer {
             data: {
               status: "failed",
               error,
-              errorCategory: "runtime",
+              errorCategory,
               completedAt: new Date()
             }
           });
@@ -180,6 +181,7 @@ export class ExecutionTracer {
             type: "agent.task.failed",
             payload: {
               error,
+              errorCategory,
               finalMessageId: finalMessage.id,
               attemptId: this.lease?.attemptId
             }

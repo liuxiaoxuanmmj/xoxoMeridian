@@ -3,6 +3,8 @@
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 
+import { notifySessionLogout } from "@/lib/session-logout";
+
 type Initial = {
   displayName: string;
   city: string;
@@ -81,6 +83,7 @@ export function MeForm({ initial }: { initial: Initial }) {
       console.log("[Logout] calling /api/auth/logout...");
       const response = await fetch("/api/auth/logout", { method: "POST" });
       console.log("[Logout] logout response:", response.status);
+      if (response.ok) notifySessionLogout();
     } catch (error) {
       console.error("[Logout] logout failed:", error);
     } finally {

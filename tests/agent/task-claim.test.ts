@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { cancelOnlyPlan, scheduleClarificationPrompt } from "@/tests/fixtures/schedule-clarification";
+
 const mocks = vi.hoisted(() => ({
   claimAgentTask: vi.fn(),
   buildAgentContext: vi.fn(),
@@ -21,7 +23,10 @@ const mocks = vi.hoisted(() => ({
   budgetAssertWithinDeadline: vi.fn(),
   budgetAssertCanFinalize: vi.fn(),
   budgetDispose: vi.fn(),
-  budgetReserveToolCall: vi.fn()
+  budgetReserveToolCall: vi.fn(),
+  reserveModelTurn: vi.fn(),
+  completeModelTurn: vi.fn(),
+  failModelTurn: vi.fn()
 }));
 
 vi.mock("@/agent/durable-step", () => ({
@@ -55,6 +60,9 @@ vi.mock("@/agent/runtime-budget", () => ({
     assertWithinDeadline: mocks.budgetAssertWithinDeadline,
     assertCanFinalize: mocks.budgetAssertCanFinalize,
     reserveToolCall: mocks.budgetReserveToolCall,
+    reserveModelTurn: mocks.reserveModelTurn,
+    completeModelTurn: mocks.completeModelTurn,
+    failModelTurn: mocks.failModelTurn,
     dispose: mocks.budgetDispose
   }))
 }));
@@ -196,5 +204,93 @@ describe("runAgentTask claim handling", () => {
       intent: persistedPlan.intent,
       requiredTools: []
     });
+  });
+});
+
+describe("runAgentTask semantic clarification", () => {
+  const planner = vi.fn();
+
+  beforeEach(() => {
+    vi.resetAllMocks();
+    mocks.claimAgentTask.mockResolvedValue({
+      claimed: true,
+      claimedAt: new Date("2026-09-13T00:00:00Z"),
+      attemptId: "attempt-clarify",
+      workerId: "test-worker",
+      leaseDurationMs: 60_000
+    });
+    mocks.findUnique.mockResolvedValue({
+      id: "task-clarify", roomId: "room-1", agentId: "agent-1", requestedById: null,
+      input: { normalizedContent: scheduleClarificationPrompt },
+      plan: null, agent: { systemPrompt: null }
+    });
+    mocks.buildAgentContext.mockResolvedValue({
+      recentMessages: [], memos: [],
+      roomContext: { requestedById: null }
+    });
+    mocks.beginAgentStep.mockResolvedValue({ step: { status: "running", output: null }, resumed: false });
+    mocks.reserveModelTurn.mockResolvedValue({ maxCompletionTokens: 1000 });
+    mocks.createLLMProvider.mockReturnValue({ name: "test-planner", model: "test-model", plan: planner });
+    mocks.completeWithMessage.mockImplementation(async (message) => ({
+      ...message, id: "message-clarify", createdAt: new Date("2026-09-13T00:00:01Z")
+    }));
+  });
+
+  it("asks for clarification after two cancel-only plans without confirming any unexecuted action", async () => {
+    const invalidPlan = cancelOnlyPlan("job-1");
+    planner.mockResolvedValue(invalidPlan);
+
+    await runAgentTask("task-clarify");
+
+    expect(planner).toHaveBeenCalledTimes(2);
+    expect(planner.mock.calls[1][0].validationFeedback.previousPlan).toEqual(invalidPlan);
+    expect(mocks.executeDurableToolStep).not.toHaveBeenCalled();
+    expect(mocks.tracerEvent).toHaveBeenCalledWith("agent.plan.validation.fallback", expect.objectContaining({
+      issueCodes: ["one_shot_promise_without_create"]
+    }));
+    expect(mocks.completeWithMessage).toHaveBeenCalledWith(expect.objectContaining({
+      content: expect.stringMatching(/(?:具体|确认).*(?:时间|什么时候|日期)/),
+      metadata: expect.objectContaining({ intent: "clarify_schedule", toolResults: [] })
+    }), expect.objectContaining({ toolResults: [] }));
+    const reply = mocks.completeWithMessage.mock.calls[0][0].content;
+    expect(reply).not.toMatch(/已经.*(?:取消|创建|更新|安排)|已(?:取消|创建|更新|安排)|帮你取消/);
+    expect(reply).not.toBe(invalidPlan.finalResponseText);
+    expect(mocks.failWithMessage).not.toHaveBeenCalled();
+  });
+
+  it("executes a valid one-shot repair after repeated recurring plans", async () => {
+    planner.mockResolvedValue({
+      ...cancelOnlyPlan("job-1"),
+      requiredTools: ["schedule.create"],
+      toolInputs: { "schedule.create": { cron: "0 20 * * *", timezone: "Asia/Shanghai", prompt: "提醒散步" } }
+    });
+    mocks.executeDurableToolStep.mockResolvedValue({ toolName: "schedule.create", output: { id: "job-new" } });
+
+    await runAgentTask("task-clarify");
+
+    expect(planner).toHaveBeenCalledTimes(2);
+    expect(mocks.executeDurableToolStep).toHaveBeenCalledTimes(1);
+    expect(mocks.executeDurableToolStep).toHaveBeenCalledWith(expect.objectContaining({
+      toolName: "schedule.create", toolInput: expect.objectContaining({ runOnce: true })
+    }));
+    expect(mocks.completeWithMessage).toHaveBeenCalledOnce();
+    expect(mocks.failWithMessage).not.toHaveBeenCalled();
+  });
+
+  it("preserves a normal zero-Tool reply without retrying or asking for clarification", async () => {
+    mocks.findUnique.mockResolvedValue({
+      id: "task-clarify", roomId: "room-1", agentId: "agent-1", requestedById: null,
+      input: { normalizedContent: "你好" }, plan: null, agent: { systemPrompt: null }
+    });
+    planner.mockResolvedValue({
+      ...cancelOnlyPlan("job-1"), intent: "chat_assist", requiredTools: [], toolInputs: {}, finalResponseText: "你好。"
+    });
+
+    await runAgentTask("task-clarify");
+
+    expect(planner).toHaveBeenCalledOnce();
+    expect(mocks.executeDurableToolStep).not.toHaveBeenCalled();
+    expect(mocks.completeWithMessage).toHaveBeenCalledWith(expect.objectContaining({ content: "你好。" }), expect.anything());
+    expect(mocks.failWithMessage).not.toHaveBeenCalled();
   });
 });

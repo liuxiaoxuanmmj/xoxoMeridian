@@ -65,8 +65,9 @@ export function buildClarifyPlan(
 
   let finalResponseText: string;
   if (codes.has("one_shot_promise_without_create")) {
+    // 澄清发生在 Tool 执行前，不能从已丢弃的计划推断取消或其他写入已完成。
     finalResponseText =
-      "之前那个已经帮你取消了。要不要再新安排一次？告诉我具体什么时候发，我马上排上。";
+      "请再确认这次一次性任务的具体日期、时间和时区。";
   } else if (codes.size === 0) {
     finalResponseText =
       "我对你说的时间还有点不确定，能再具体说一下吗？例如「今晚 22:00 发一次」或者「以后每晚 22:00 都发」。";

@@ -1,11 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import type { HomePhotoElementData } from "@/components/home/types";
 import { clampPhotoSize } from "@/lib/home-spatial";
 
 export function HomePhotoElement({
   element,
+  deleting,
   selected,
   onSelect,
   onMove,
@@ -16,6 +17,7 @@ export function HomePhotoElement({
   registerAnchor,
 }: {
   element: HomePhotoElementData;
+  deleting: boolean;
   selected: boolean;
   onSelect: (id: string) => void;
   onMove: (id: string, x: number, y: number) => void;
@@ -26,6 +28,7 @@ export function HomePhotoElement({
   registerAnchor: (id: string, getRect: () => DOMRect | null) => () => void;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
+  const captionInputId = useId();
   const [caption, setCaption] = useState(element.caption ?? "");
   const [editingCaption, setEditingCaption] = useState(false);
   const dragRef = useRef({
@@ -46,12 +49,14 @@ export function HomePhotoElement({
 
   const commitCaption = () => {
     setEditingCaption(false);
+    if (deleting) return;
     if (caption !== (element.caption ?? "")) {
       onCaption(element.id, caption);
     }
   };
 
   const onPointerDown = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (deleting) return;
     const target = event.target as HTMLElement;
     if (target.closest("[data-caption-area]") || target.closest("button")) return;
 
@@ -67,9 +72,10 @@ export function HomePhotoElement({
       startY: element.y,
       downTime: Date.now(),
     };
-  }, [element.x, element.y]);
+  }, [deleting, element.x, element.y]);
 
   const onResizePointerDown = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+    if (deleting) return;
     event.preventDefault();
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -82,17 +88,17 @@ export function HomePhotoElement({
       startWidth: element.width,
       aspectRatio: element.width / Math.max(element.height, 1),
     };
-  }, [element.width, element.height]);
+  }, [deleting, element.width, element.height]);
 
   const onPointerMove = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current.active || dragRef.current.resizing) return;
+    if (deleting || !dragRef.current.active || dragRef.current.resizing) return;
     const dx = event.clientX - dragRef.current.startClientX;
     const dy = event.clientY - dragRef.current.startClientY;
     onMove(element.id, dragRef.current.startX + dx, dragRef.current.startY + dy);
-  }, [element.id, onMove]);
+  }, [deleting, element.id, onMove]);
 
   const onPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
-    if (!dragRef.current.active || dragRef.current.resizing) return;
+    if (deleting || !dragRef.current.active || dragRef.current.resizing) return;
     dragRef.current.active = false;
     const dx = event.clientX - dragRef.current.startClientX;
     const dy = event.clientY - dragRef.current.startClientY;
@@ -105,10 +111,10 @@ export function HomePhotoElement({
     }
 
     onMoveEnd(element.id, dragRef.current.startX + dx, dragRef.current.startY + dy);
-  }, [element.id, onMoveEnd, onSelect]);
+  }, [deleting, element.id, onMoveEnd, onSelect]);
 
   const onResizePointerMove = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragRef.current.active || !dragRef.current.resizing) return;
+    if (deleting || !dragRef.current.active || !dragRef.current.resizing) return;
     const dx = event.clientX - dragRef.current.startClientX;
     const size = clampPhotoSize({
       width: dragRef.current.startWidth + dx,
@@ -116,10 +122,10 @@ export function HomePhotoElement({
     });
     rootRef.current?.style.setProperty("--home-photo-width", `${size.width}px`);
     rootRef.current?.style.setProperty("--home-photo-height", `${size.height}px`);
-  }, []);
+  }, [deleting]);
 
   const onResizePointerUp = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
-    if (!dragRef.current.active || !dragRef.current.resizing) return;
+    if (deleting || !dragRef.current.active || !dragRef.current.resizing) return;
     dragRef.current.active = false;
     dragRef.current.resizing = false;
     const dx = event.clientX - dragRef.current.startClientX;
@@ -128,12 +134,13 @@ export function HomePhotoElement({
       aspectRatio: dragRef.current.aspectRatio,
     });
     onResizeEnd(element.id, size.width, size.height);
-  }, [element.id, onResizeEnd]);
+  }, [deleting, element.id, onResizeEnd]);
 
   return (
     <div
       ref={rootRef}
       data-home-photo
+      aria-busy={deleting}
       className={`home-photo-element absolute select-none ${selected ? "is-selected" : ""}`}
       style={{
         left: element.x,
@@ -159,25 +166,32 @@ export function HomePhotoElement({
 
         <div className="home-photo-caption" data-caption-area>
           {editingCaption ? (
-            <input
-              value={caption}
-              onChange={(event) => setCaption(event.target.value)}
-              onBlur={commitCaption}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" || event.key === "Escape") commitCaption();
-              }}
-              className="w-full bg-transparent text-xs text-black/60 outline-none"
-              data-caption-area
-              autoFocus
-              maxLength={200}
-            />
+            <>
+              <label htmlFor={captionInputId} className="sr-only">照片标注</label>
+              <input
+                id={captionInputId}
+                disabled={deleting}
+                value={caption}
+                onChange={(event) => setCaption(event.target.value)}
+                onBlur={commitCaption}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === "Escape") commitCaption();
+                }}
+                className="w-full bg-transparent text-xs text-black/60 outline-none"
+                data-caption-area
+                autoFocus
+                maxLength={200}
+              />
+            </>
           ) : (
             <button
               type="button"
+              disabled={deleting}
               className="block w-full truncate text-left text-xs text-black/45 cursor-text"
               data-caption-area
               onClick={(event) => {
                 event.stopPropagation();
+                setCaption(element.caption ?? "");
                 setEditingCaption(true);
               }}
             >
@@ -189,6 +203,8 @@ export function HomePhotoElement({
         <button
           type="button"
           className="home-photo-delete"
+          aria-label={`删除照片：${element.caption || "未标注照片"}`}
+          disabled={deleting}
           onClick={(event) => {
             event.stopPropagation();
             onDelete(element.id);
@@ -201,6 +217,16 @@ export function HomePhotoElement({
         <button
           type="button"
           className="home-photo-resize"
+          aria-label={`调整照片大小：${element.caption || "未标注照片"}`}
+          disabled={deleting}
+          onKeyDown={(event) => {
+            const step = { ArrowLeft: -10, ArrowDown: -10, ArrowRight: 10, ArrowUp: 10 }[event.key];
+            if (step === undefined) return;
+            event.preventDefault();
+            event.stopPropagation();
+            const size = clampPhotoSize({ width: element.width + step, aspectRatio: element.width / Math.max(element.height, 1) });
+            onResizeEnd(element.id, size.width, size.height);
+          }}
           onPointerDown={onResizePointerDown}
           onPointerMove={onResizePointerMove}
           onPointerUp={onResizePointerUp}

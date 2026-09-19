@@ -132,7 +132,7 @@ describe("repairPlan", () => {
 });
 
 describe("buildClarifyPlan", () => {
-  it("produces a context-specific message for missing-create-after-cancel", () => {
+  it("asks for the missing time without confirming discarded cancellation or other writes", () => {
     const plan = buildClarifyPlan(
       [
         {
@@ -145,7 +145,8 @@ describe("buildClarifyPlan", () => {
     expect(plan.intent).toBe("clarify_schedule");
     expect(plan.requiredTools).toEqual([]);
     expect(plan.toolInputs).toEqual({});
-    expect(plan.finalResponseText).toMatch(/取消|新.*?安排|什么时候/);
+    expect(plan.finalResponseText).toMatch(/(?:具体|确认).*(?:时间|什么时候|日期)/);
+    expect(plan.finalResponseText).not.toMatch(/已经.*(?:取消|创建|更新|安排)|已(?:取消|创建|更新|安排)|帮你取消/);
   });
 
   it("falls back to a generic ask when issue code is unknown", () => {

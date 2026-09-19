@@ -1,5 +1,6 @@
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
+import { scheduleDescriptionSchema } from "@/lib/life-authoring-contract";
 import {
   createActiveScheduledJob,
   updateScheduledJobWithActiveCap,
@@ -17,7 +18,7 @@ type ScheduleCreateInput = {
   fireAt?: string;
   timezone?: string;
   prompt?: string;
-  description?: string;
+  description?: string | null;
   runOnce?: boolean;
 };
 
@@ -33,7 +34,7 @@ type ScheduleUpdateInput = {
   fireAt?: string;
   timezone?: string;
   prompt?: string;
-  description?: string;
+  description?: string | null;
   runOnce?: boolean;
 };
 
@@ -119,6 +120,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
       const fireAtRaw = input.fireAt?.trim();
       const timezone = input.timezone?.trim() || inferRequesterTimezone(context) || "Asia/Shanghai";
       const prompt = input.prompt?.trim();
+      const description = scheduleDescriptionSchema.optional().parse(input.description) ?? null;
 
       if (!prompt) throw new Error("prompt is required.");
       if (prompt.length > 500) throw new Error("prompt too long (>500 chars).");
@@ -152,7 +154,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
           timezone,
           payload: {
             prompt,
-            description: input.description ?? null,
+            description,
             runOnce
           },
           enabled: true,
@@ -166,7 +168,7 @@ export function createScheduleCreateTool(): AgentTool<ScheduleCreateInput> {
         cron: job.cron,
         timezone: job.timezone,
         nextRunAt: job.nextRunAt.toISOString(),
-        description: input.description ?? null,
+        description,
         runOnce
       };
     }
@@ -317,7 +319,7 @@ export function createScheduleUpdateTool(): AgentTool<ScheduleUpdateInput> {
             ? input.runOnce === true
             : existingRunOnce;
           const description = input.description !== undefined
-            ? input.description
+            ? scheduleDescriptionSchema.parse(input.description)
             : prevPayload.description ?? null;
 
           // An explicit instant defines the whole schedule, exactly as it does on

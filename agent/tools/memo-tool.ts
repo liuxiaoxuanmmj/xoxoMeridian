@@ -1,5 +1,11 @@
+import { z } from "zod";
+
 import type { AgentTool } from "@/agent/types";
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
+import { memoCreateFields, memoUpdateFields } from "@/lib/life-authoring-contract";
+
+const memoCreateSchema = z.object(memoCreateFields);
+const memoUpdateSchema = z.object(memoUpdateFields);
 
 type MemoInput = {
   title?: string;
@@ -61,19 +67,14 @@ export function createMemoTool(): AgentTool<MemoInput> {
       }
     },
     async execute(input, context) {
-      const content = input.content?.trim();
-      if (!content) {
-        throw new Error("Memo content is required.");
-      }
+      const fields = memoCreateSchema.parse(input);
 
       const memo = await context.prisma.memo.create({
         data: {
           roomId: context.roomId,
           createdById: context.requestedById ?? undefined,
           agentTaskId: context.taskId,
-          title: input.title?.trim() || "新的备忘录",
-          content,
-          pinned: Boolean(input.pinned)
+          ...fields,
         }
       });
 
@@ -123,10 +124,7 @@ export function createMemoUpdateTool(): AgentTool<MemoUpdateInput> {
         throw new Error("Memo does not belong to this room.");
       }
 
-      const data: Record<string, unknown> = {};
-      if (input.title !== undefined) data.title = input.title.trim() || existing.title;
-      if (input.content !== undefined) data.content = input.content.trim() || existing.content;
-      if (input.pinned !== undefined) data.pinned = input.pinned;
+      const data = memoUpdateSchema.parse(input);
 
       const updated = await context.prisma.memo.update({ where: { id: memoId }, data });
 

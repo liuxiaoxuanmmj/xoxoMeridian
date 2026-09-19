@@ -184,7 +184,7 @@ describe("LifePanel modals", () => {
       />
     );
 
-    await user.selectOptions(screen.getByRole("combobox"), "Europe/London");
+    await user.selectOptions(screen.getByRole("combobox", { name: "时区" }), "Europe/London");
 
     // The wall clock the user sees is unchanged; only its meaning moves. August
     // is BST (UTC+1), so 09:30 in London is 08:30Z — one hour later than the
@@ -211,6 +211,6 @@ describe("LifePanel modals", () => {
       />
     );
 
-    expect(screen.getByRole("combobox")).toHaveValue("Europe/London");
+    expect(screen.getByRole("combobox", { name: "时区" })).toHaveValue("Europe/London");
   });
 });

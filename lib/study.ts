@@ -1,7 +1,10 @@
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
+import { buildStudyStats, getLocalDateKey, getStudyDateWindow } from "@/lib/study-calendar";
 import { reconcileExpiredFocusTimer } from "@/lib/study-transitions";
 import type { RoomSnapshot } from "@/components/chat/types";
+
+export { buildStudyStats, getLocalDateKey } from "@/lib/study-calendar";
 
 export async function getStudyRoomForUser(userId: string) {
   const participant = await prisma.roomParticipant.findFirst({
@@ -13,58 +16,6 @@ export async function getStudyRoomForUser(userId: string) {
     throw new Response("The current user does not belong to a room.", { status: 404 });
   }
   return participant.room;
-}
-
-type StudySessionLike = {
-  id: string;
-  userId: string;
-  startedAt: string | Date;
-  endedAt: string | Date;
-  actualMinutes: number;
-  mode?: string | null;
-  status?: string | null;
-  user?: { displayName: string } | null;
-};
-
-function getLocalDateParts(date: Date, timeZone: string) {
-  const formatter = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
-  const parts = formatter.formatToParts(date);
-  const year = Number(parts.find((part) => part.type === "year")?.value);
-  const month = Number(parts.find((part) => part.type === "month")?.value);
-  const day = Number(parts.find((part) => part.type === "day")?.value);
-  return { year, month, day };
-}
-
-function getDayKey(date: Date, timeZone: string) {
-  const { year, month, day } = getLocalDateParts(date, timeZone);
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-}
-
-export function getLocalDateKey(date: Date, timeZone: string): string {
-  return getDayKey(date, timeZone);
-}
-
-function getTimezoneOffset(date: Date, timeZone: string): string {
-  const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone,
-    timeZoneName: "longOffset",
-  }).formatToParts(date);
-  const offset = parts.find((p) => p.type === "timeZoneName")?.value ?? "GMT";
-  if (offset === "GMT") return "Z";
-  return offset.replace("GMT", "");
-}
-
-function getWeekKey(date: Date, timeZone: string) {
-  const { year, month, day } = getLocalDateParts(date, timeZone);
-  const utcDate = new Date(Date.UTC(year, month - 1, day));
-  const weekday = utcDate.getUTCDay(); // 0 = Sunday
-  utcDate.setUTCDate(utcDate.getUTCDate() - weekday);
-  return utcDate.toISOString().slice(0, 10);
 }
 
 type StudyMode = "focus" | "short" | "long";
@@ -100,70 +51,6 @@ export function serializeFocusState(state: {
   };
 }
 
-function extractStreakDays(
-  sessions: StudySessionLike[],
-  now: Date,
-  timeZone: string
-): number {
-  const dateSet = new Set<string>();
-  for (const s of sessions) {
-    dateSet.add(getDayKey(new Date(s.startedAt), timeZone));
-  }
-
-  const todayKey = getDayKey(now, timeZone);
-  if (!dateSet.has(todayKey)) return 0;
-
-  let streak = 0;
-  const cursor = new Date(now);
-  while (true) {
-    const key = getDayKey(cursor, timeZone);
-    if (dateSet.has(key)) {
-      streak += 1;
-      cursor.setDate(cursor.getDate() - 1);
-    } else {
-      break;
-    }
-  }
-
-  return streak;
-}
-
-export function buildStudyStats(
-  sessions: StudySessionLike[],
-  now: Date,
-  timeZone: string
-) {
-  const todayKey = getDayKey(now, timeZone);
-  const weekKey = getWeekKey(now, timeZone);
-
-  const filteredSessions = sessions.filter(
-    (s) =>
-      (s.mode === undefined || s.mode === null || s.mode === "focus") &&
-      (s.status === undefined || s.status === null || s.status === "completed")
-  );
-
-  const stats = filteredSessions.reduce(
-    (acc, session) => {
-      const startedAt = new Date(session.startedAt);
-      if (getDayKey(startedAt, timeZone) === todayKey) {
-        acc.todayCount += 1;
-        acc.todayMinutes += session.actualMinutes;
-      }
-      if (getWeekKey(startedAt, timeZone) === weekKey) {
-        acc.weekCount += 1;
-        acc.weekMinutes += session.actualMinutes;
-      }
-      return acc;
-    },
-    { todayCount: 0, todayMinutes: 0, weekCount: 0, weekMinutes: 0 }
-  );
-
-  return {
-    ...stats,
-    streakDays: extractStreakDays(filteredSessions, now, timeZone),
-  };
-}
-
 export async function getStudyPageData(
   user: { id: string; displayName: string; avatarLabel: string },
   timeZone: string
@@ -172,11 +59,8 @@ export async function getStudyPageData(
   const now = new Date();
   await reconcileExpiredFocusTimer(userId, now);
   const room = await getStudyRoomForUser(userId);
-  const statsWindowStart = new Date(now.getTime() - 8 * 24 * 60 * 60 * 1000);
+  const { statsWindowStart, todayStartUtc, tomorrowStartUtc } = getStudyDateWindow(now, timeZone);
   const todayKey = getLocalDateKey(now, timeZone);
-  const localDateParts = getLocalDateParts(now, timeZone);
-  const localDateStr = `${localDateParts.year}-${String(localDateParts.month).padStart(2, "0")}-${String(localDateParts.day).padStart(2, "0")}`;
-  const todayStartUtc = new Date(`${localDateStr}T00:00:00${getTimezoneOffset(now, timeZone)}`);
 
   const [state, goals, recentSessions, statsSessions, participants, memberStates] = await Promise.all([
     prisma.focusState.findUnique({
@@ -246,7 +130,7 @@ export async function getStudyPageData(
       userId: { in: memberIds },
       status: "completed",
       mode: "focus",
-      startedAt: { gte: todayStartUtc },
+      startedAt: { gte: todayStartUtc, lt: tomorrowStartUtc },
     },
   });
 

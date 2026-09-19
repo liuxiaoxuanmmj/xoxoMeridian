@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { memoCreateFields, memoUpdateFields, scheduleDescriptionSchema } from "@/lib/life-authoring-contract";
 import {
   hasAtMostOneScheduledJobTrigger,
   hasExactlyOneScheduledJobTrigger,
@@ -37,19 +38,13 @@ export const BUILT_IN_TOOL_CONTRACTS = {
     })
   },
   "memo.create": {
-    inputSchema: z.object({
-      title: z.string().max(500).optional(),
-      content: z.string().min(1).max(20_000),
-      pinned: z.boolean().optional()
-    }).strict(),
+    inputSchema: z.object(memoCreateFields).strict(),
     outputSchema: memoSummary.pick({ memoId: true, title: true, content: true })
   },
   "memo.update": {
     inputSchema: z.object({
+      ...memoUpdateFields,
       memoId: id,
-      title: z.string().max(500).optional(),
-      content: z.string().max(20_000).optional(),
-      pinned: z.boolean().optional()
     }).strict(),
     outputSchema: memoSummary.pick({
       memoId: true,
@@ -96,7 +91,7 @@ export const BUILT_IN_TOOL_CONTRACTS = {
       fireAt: scheduledJobFireAtSchema.optional(),
       timezone: z.string().min(1).max(200),
       prompt: z.string().min(1).max(500),
-      description: z.string().max(500).optional(),
+      description: scheduleDescriptionSchema.optional(),
       runOnce: z.boolean().optional()
     }).strict().refine(hasExactlyOneScheduledJobTrigger, {
       message: "Exactly one of fireAt or cron is required",
@@ -121,7 +116,7 @@ export const BUILT_IN_TOOL_CONTRACTS = {
       fireAt: scheduledJobFireAtSchema.optional(),
       timezone: z.string().min(1).max(200).optional(),
       prompt: z.string().min(1).max(500).optional(),
-      description: z.string().max(500).optional(),
+      description: scheduleDescriptionSchema.optional(),
       runOnce: z.boolean().optional()
     }).strict().refine(hasAtMostOneScheduledJobTrigger, {
       message: "fireAt and cron cannot be provided together",

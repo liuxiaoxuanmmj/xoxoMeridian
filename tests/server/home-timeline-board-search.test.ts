@@ -66,7 +66,7 @@ describe("HomeTimelineBoard search", () => {
     expect(html).toContain("Test Post");
   });
 
-  it("shows empty state when q present and posts is empty", () => {
+  it("查询尚未完成且首页为空时只显示正在搜索，不提前宣称无内容", () => {
     mockUseSearchParams.mockReturnValue(new URLSearchParams("?q=nonexistent"));
 
     const html = renderToStaticMarkup(
@@ -77,7 +77,8 @@ describe("HomeTimelineBoard search", () => {
       })
     );
 
-    // With no initial posts and no search results yet, Timeline renders empty state
-    expect(html).toContain("No moments yet.");
+    expect(html).toContain("正在搜索");
+    expect(html).not.toContain("No moments yet.");
+    expect(html).not.toContain("No posts match your search.");
   });
 });

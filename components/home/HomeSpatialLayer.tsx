@@ -11,6 +11,8 @@ export function HomeSpatialLayer({
   anchors,
   photos,
   connections,
+  deletingPhotoIds,
+  deletingConnectionIds,
   connectFromId,
   contextMenu,
   onSelectElement,
@@ -27,6 +29,8 @@ export function HomeSpatialLayer({
   anchors: Map<string, HomeAnchor>;
   photos: HomePhotoElementData[];
   connections: AtlasConnectionData[];
+  deletingPhotoIds: string[];
+  deletingConnectionIds: string[];
   connectFromId: string | null;
   contextMenu: HomeContextMenuState | null;
   onSelectElement: (id: string) => void;
@@ -46,6 +50,7 @@ export function HomeSpatialLayer({
           <HomePhotoElement
             key={photo.id}
             element={photo}
+            deleting={deletingPhotoIds.includes(photo.id)}
             selected={connectFromId === photo.id}
             onSelect={onSelectElement}
             onMove={onMovePhoto}
@@ -62,6 +67,7 @@ export function HomeSpatialLayer({
         boardRect={boardRect}
         anchors={anchors}
         connections={connections}
+        deletingIds={deletingConnectionIds}
         onDelete={onDeleteConnection}
       />
 

@@ -1,4 +1,6 @@
+import { parsePlannerResponse } from "@/agent/plan-contract";
 import { SCHEDULER_BLOCKED_TOOLS, TRIGGER_MARKER } from "@/agent/scheduler-tick";
+import { createToolRegistry, type ToolRegistry } from "@/agent/tool-registry";
 import type { AgentPlan, LLMPlanRequest, LLMPlanResult, LLMProvider } from "@/agent/types";
 import { env } from "@/lib/env";
 import { AGENT_DISPLAY_NAME, MENTION_AGENT } from "@/lib/identity";
@@ -16,7 +18,7 @@ type OpenAICompatibleResponse = {
   };
 };
 
-export function createLLMProvider(): LLMProvider {
+export function createLLMProvider(registry = createToolRegistry()): LLMProvider {
   if (env.LLM_PROVIDER === "mock" || !env.LLM_API_KEY) {
     return createMockLLMProvider();
   }
@@ -26,7 +28,7 @@ export function createLLMProvider(): LLMProvider {
     baseURL: env.LLM_BASE_URL,
     model: env.LLM_MODEL,
     timeoutMs: env.LLM_TIMEOUT_MS
-  });
+  }, registry);
 }
 
 export function createMockLLMProvider(): LLMProvider {
@@ -147,7 +149,7 @@ function createOpenAICompatibleProvider(config: {
   baseURL: string;
   model: string;
   timeoutMs: number;
-}): LLMProvider {
+}, registry: ToolRegistry): LLMProvider {
   return {
     name: "openai-compatible",
     model: config.model,
@@ -275,9 +277,8 @@ function createOpenAICompatibleProvider(config: {
           throw new Error("LLM response did not contain message content.");
         }
 
-        const parsed = JSON.parse(content);
         return {
-          ...coercePlan(parsed, request.availableTools.map((t) => t.name)),
+          ...parsePlannerResponse(content, registry, request.availableTools.map((tool) => tool.name)),
           rawResponse: payload,
           usage: {
             promptTokens: payload.usage?.prompt_tokens,
@@ -295,23 +296,5 @@ function createOpenAICompatibleProvider(config: {
         request.signal?.removeEventListener("abort", forwardAbort);
       }
     }
-  };
-}
-
-function coercePlan(raw: Record<string, unknown>, availableTools: string[]): AgentPlan {
-  const requiredTools = Array.isArray(raw.required_tools)
-    ? raw.required_tools.filter((tool): tool is string => typeof tool === "string" && availableTools.includes(tool))
-    : [];
-
-  const toolInputs = typeof raw.tool_inputs === "object" && raw.tool_inputs !== null ? raw.tool_inputs : {};
-
-  return {
-    intent: typeof raw.intent === "string" ? raw.intent : "unknown",
-    confidence: typeof raw.confidence === "number" ? raw.confidence : 0.5,
-    requiredTools,
-    taskSteps: Array.isArray(raw.task_steps) ? raw.task_steps.map(String) : [],
-    finalResponsePlan: typeof raw.final_response_plan === "string" ? raw.final_response_plan : "回复用户任务已处理。",
-    finalResponseText: typeof raw.final_response_text === "string" ? raw.final_response_text.trim() : "",
-    toolInputs: toolInputs as Record<string, unknown>
   };
 }

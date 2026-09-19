@@ -7,6 +7,7 @@ import { ScrollRestore } from "@/components/layout/ScrollRestore";
 import { HomeTimelineBoard } from "@/components/home/HomeTimelineBoard";
 import { ensureHomePostElements, getHomeBoardSnapshot, getOrCreateHomeBoard } from "@/lib/home-board";
 import { getPostVisibilityWhere } from "@/lib/post-visibility";
+import { postTimelineOrderBy, postTimelineSelect } from "@/lib/post-timeline";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +16,9 @@ export default async function HomePage() {
 
   const posts = await prisma.post.findMany({
     where: getPostVisibilityWhere(user.id),
-    orderBy: { publishedAt: "desc" },
+    orderBy: postTimelineOrderBy,
     take: 50,
-    include: {
-      author: { select: { id: true, displayName: true, avatarLabel: true, profile: { select: { timezone: true, city: true, country: true } } } },
-    },
+    select: postTimelineSelect,
   });
 
   const board = await getOrCreateHomeBoard();
