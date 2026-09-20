@@ -413,6 +413,67 @@ test("renders the authenticated home navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: E2E_USERS[0].displayName })).toBeVisible();
 });
 
+test("keeps the Home felt surface covering content appended after the page element", async ({ page }) => {
+  await page.goto("/home");
+  await expect(page.locator(".home-linen-page")).toBeVisible();
+
+  // root layout 在 {children} 之后渲染 Agent 入口的留白占位，页面元素的盒子因此总是短于
+  // 文档；该留白依赖 WebGL 模型加载，这里用同形状的尾部内容稳定复现这个结构。
+  await page.evaluate(() => {
+    const tail = document.createElement("div");
+    tail.setAttribute("data-e2e-document-tail", "");
+    tail.style.height = "232px";
+    document.body.appendChild(tail);
+  });
+  const scrollToDocumentEnd = () =>
+    page.evaluate(async () => {
+      window.scrollTo(0, document.documentElement.scrollHeight);
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      window.scrollTo(0, document.documentElement.scrollHeight);
+    });
+  await scrollToDocumentEnd();
+  // 留白可能在上一次滚动之后才出现，滚到新的文档末尾再取一次。
+  await scrollToDocumentEnd();
+
+  // 文档最后一个像素行必须仍落在承载毡板纹理的表面上，且该表面覆盖整个文档；
+  // 纹理挂在页面元素上时，末尾留白由 body 的纯色填充，这里取不到纹理表面。
+  const coverage = await page.evaluate(() => {
+    let surface = document.elementFromPoint(Math.round(window.innerWidth / 2), window.innerHeight - 1);
+    while (surface && getComputedStyle(surface).backgroundImage === "none") {
+      surface = surface.parentElement;
+    }
+    const rect = surface?.getBoundingClientRect() ?? null;
+    return {
+      scrollHeight: document.documentElement.scrollHeight,
+      backgroundImage: surface ? getComputedStyle(surface).backgroundImage : null,
+      top: rect ? rect.top + window.scrollY : null,
+      bottom: rect ? rect.bottom + window.scrollY : null,
+    };
+  });
+
+  expect(coverage.backgroundImage).toContain("repeating-linear-gradient");
+  expect(coverage.top).toBe(0);
+  expect(coverage.bottom).toBeGreaterThanOrEqual(coverage.scrollHeight);
+});
+
+test("scopes the Home felt surface to the Home document", async ({ page }) => {
+  // 毡板纹理挂在文档表面（body:has(.home-linen-page)）而非页面元素上，作用域由页面
+  // 元素上的类名决定；这里固定它只跟随 /home，别的路由的文档表面保持纯色。
+  const response = await page.goto("/study");
+  expect(response?.status()).toBe(200);
+  // 未认证时守卫会因重定向到登录页而「空过」：登录页同样没有毡板类名、body 同样没有背景图。
+  // 这里固定测试确实停在 /study。
+  await expect(page).toHaveURL(/\/study$/);
+  await expect(page.locator(".home-linen-page")).toHaveCount(0);
+
+  const surface = await page.evaluate(() => {
+    const style = getComputedStyle(document.body);
+    return { backgroundImage: style.backgroundImage, backgroundColor: style.backgroundColor };
+  });
+  expect(surface.backgroundImage).toBe("none");
+  expect(surface.backgroundColor).toBe("rgb(243, 247, 240)");
+});
+
 test("keeps room-scoped Home anchors out of non-member payloads and mutations", async ({
   baseURL,
   page,

@@ -198,7 +198,11 @@ input {
 
 /* ── Home spatial timeline layer ── */
 
-.home-linen-page {
+/* 毡板纹理属于 /home 的文档表面，不属于页面里的某个元素：root layout 会在 {children}
+   之后渲染 Agent 入口的留白占位，页面元素的盒子因此总是短于文档，纹理会在文档末尾
+   留出一条没有网格的底色条带。改用 :has() 让渲染 /home 的文档自己承载毡板；不支持
+   :has() 时该规则整体失效，页面退回 body 的 #f3f7f0 底色，不会破坏布局。 */
+body:has(.home-linen-page) {
   background-color: #f3f7f0;
   background-image:
     repeating-linear-gradient(0deg, rgba(63, 93, 56, 0.035) 0, rgba(63, 93, 56, 0.035) 1px, transparent 1px, transparent 5px),
