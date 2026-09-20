@@ -6,6 +6,7 @@ import { promisify } from "node:util";
 
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
 
+import { ABOUT_PHOTOS, aboutPhotoExists, stageAboutPhoto } from "./support/about-photos";
 import { E2E_INVITE_CODE } from "./support/credentials";
 import { e2eAgentEntryTheme, e2eAppMode } from "./support/app-mode";
 
@@ -60,6 +61,7 @@ const prismaCli = resolve("node_modules/prisma/build/index.js");
 const nextCli = resolve("node_modules/next/dist/bin/next");
 let activeChild: ChildProcess | undefined;
 let shuttingDown = false;
+const aboutPhotoCleanups: (() => Promise<void>)[] = [];
 
 async function shutdown(exitCode: number) {
   if (shuttingDown) return;
@@ -72,6 +74,7 @@ async function shutdown(exitCode: number) {
       child.kill("SIGTERM");
     });
   }
+  for (const cleanup of aboutPhotoCleanups) await cleanup().catch(() => undefined);
   await postgres.stop().catch(() => undefined);
   await rm(databaseUrlFile, { force: true });
   await rm(appInfoFile, { force: true });
@@ -107,6 +110,31 @@ try {
       });
     });
   }
+
+  // About 照片是部署资产：`next start` 只在启动时快照 public 目录，照片必须在服务起来之前就位。
+  // 这里只暂存第一张免费的照片且不覆盖交付方资源，浏览器门禁因此能在同一次启动里同时覆盖
+  // “已交付→真实加载”和“缺失→回退”；交付状态写进日志，便于核对本次实际覆盖了哪一条。
+  const deliveredAboutPhotos: string[] = [];
+  const missingAboutPhotos: string[] = [];
+  let aboutPhotoStaged = false;
+  for (const photo of ABOUT_PHOTOS) {
+    if (await aboutPhotoExists(photo.publicPath)) {
+      deliveredAboutPhotos.push(photo.publicPath);
+      continue;
+    }
+    const cleanup = aboutPhotoStaged ? null : await stageAboutPhoto(photo.publicPath);
+    if (cleanup) {
+      aboutPhotoCleanups.push(cleanup);
+      aboutPhotoStaged = true;
+      deliveredAboutPhotos.push(photo.publicPath);
+      continue;
+    }
+    missingAboutPhotos.push(photo.publicPath);
+  }
+  // 走 stderr：Playwright 的 webServer 只把子进程 stderr 转发到测试输出，stdout 看不到。
+  process.stderr.write(
+    `[e2e-app] About 照片交付状态：已交付 ${deliveredAboutPhotos.join("、") || "无"}；缺失 ${missingAboutPhotos.join("、") || "无"}。\n`,
+  );
 
   await writeFile(appInfoFile, JSON.stringify({
     appMode, buildTheme, runtimeTheme, baseURL,

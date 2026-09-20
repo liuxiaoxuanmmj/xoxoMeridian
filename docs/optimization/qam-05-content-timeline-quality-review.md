@@ -5,55 +5,55 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-05 内容发布与时间线 |
-| 快照日期 | 2026-09-14 |
+| 快照日期 | 2026-09-20 |
 | 审查 Skill | [`xoxo-qam-05-content-timeline-review`](../../.agents/skills/xoxo-qam-05-content-timeline-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-05、Cross-cutting Concerns、共享映射、BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `0（QAM-05-009 resolved；其余维度与 Gate 保持）` |
-| 当前基线命令 | 收尾 `VITEST_MAX_WORKERS=1 ./init.sh` 正常权限边界 exit 0（79 文件/685 项，含类型、lint、资产校验）；SearchInput 旧 1 failed/4 passed→5/5，连同 Timeline/SSR 共 3 文件/23 项通过；原始命令见 [feat-067](../../progress.md#feat-067) |
-| 风险匹配命令 | `NODE_OPTIONS=--max-old-space-size=4096 VITEST_MAX_WORKERS=1 E2E_APP_MODE=development ./scripts/run-node22.sh npm run check:full` 单次 exit 0：79/685、生产构建、覆盖率 51.58/45.39/56.06/52.25、29/110 真实 PostgreSQL、42/42 Playwright（5.0m）；最终生产搜索/分页与 Focus 定向 6/6，完整命令及历史失败见 [progress.md](../../progress.md#feat-063) |
-| 证据纪律 | 本轮 E3 确认首次挂载输入/StrictMode 重放与取消语义；搜索投影、成员和同时间分页既有证据保持。全程 trace/软件 WebGL、浏览器性能计时错误归 feat-068，不能借定向通过关闭；slug、Agent projection 和 Post/Atlas 交错仍限制 Gate |
-| 工作区说明 | 只修正 feat-067 的 SearchInput 防抖生命周期及其回归；用户已授权先处理本项再返回 feat-063。保留既有 Post 读取/分页、空间和其他未提交改动，未修改 API、schema、依赖、Next 配置或错误断言 |
+| 本轮 Delta | `+3（QAM-05-004 resolved；Score 84→87、Gate/Final L2→L3）` |
+| 当前基线命令 | 本轮启动基线 `./scripts/run-node22.sh ./init.sh` exit 0（87 文件/760 项，含 Prisma generate、资产校验、类型与 lint）；定向负向对照见下条「证据纪律」；原始命令、红/绿对照与失败输出见 [feat-075](../../progress.md#feat-075) |
+| 风险匹配命令 | 本轮 `./scripts/run-node22.sh npm run check:full` **单次 exit 0**：87 文件/771 项 Vitest（`✓ Compiled successfully in 4.9s`）、覆盖率 53.86/47.46/58.91/54.56（statements/branches/functions/lines，门槛 40/35/45/40）、真实 PostgreSQL **35 文件/140 项**（139.93s）、生产 Playwright **44/44**（4.2 分钟，无 skip/retry/未通过项）。原始输出与命令见 [feat-075](../../progress.md#feat-075) |
+| 证据纪律 | 本轮把「Agent 完成事实已提交、时间线投影丢失」这一派生恢复缺口补成 E3，并**区分红证据与守卫**：对照 A 只退回 `agent/execution-tracer.ts` 的旧内联投影，真实 PostgreSQL 下同一用例 `1 failed \| 9 passed (10)`——完成后 `timelineProjectedAt` 仍为 `null`（无持久终态决策），修复后通过；对照 B 只退回 `agent/agent-worker.ts`（去掉恢复调用），进程级用例 `1 failed (1)`——Worker 正常启动（`[worker] dispatch loop started, base poll 1000ms`）但在预算内从不补做投影，即旧实现下该条 agent_log 永久缺失；两处恢复后均按 sha256 与修复版本逐文件比对一致。**幂等重放、崩溃窗口重放、节流终态与迁移回填四项在旧实现下无法以行为方式失败**（旧代码根本没有该投影入口，`projectAgentTaskTimeline` 不存在），因此它们是防回归守卫而不是红灯证据，`可测试性与验证可信度` 的加分依据是对照 A/B 与新增的进程级 E3，不是测试数量。并发 slug、搜索投影、成员、同时间分页、Home anchor 交错、搜索防抖与写入契约既有证据保持。通用错误 message 泄漏（QAM-05-006）仍限制 L4/保持开放，不能借本轮定向通过关闭 |
+| 工作区说明 | 本轮改产品代码与 schema：`lib/agent-posts.ts` 新增幂等投影与有界恢复扫描、`agent/execution-tracer.ts` 改为调用该投影、`agent/agent-worker.ts` 在 dispatch 循环中补做投影，并新增迁移 `20260920120000_agent_timeline_projection`（`AgentTask.timelineProjectedAt` + `Post.agentTaskId` 唯一键与 FK，含历史完成任务回填）。未改 Post 读写契约、可见性、分页、slug 分配、节流阈值、metadata 字段、Next 配置或依赖；通用错误策略（QAM-05-006）未纳入 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **80 / 100** |
+| Score | **87 / 100** |
 | Score Level | **L3** |
-| Gate Level | **L2** |
-| Final Level | **L2** |
-| Trend | `0（QAM-05-009 resolved）` |
-| Evidence Confidence | 中高（StrictMode 单次原生输入旧实现无导航，修正后导航一次；清空、卸载、URL 参数与外部查询保持。完整开发 42/42、最终生产定向 6/6；其他并发/派生恢复缺口保持） |
-| 当前开放问题 | 5 项（P2×5） |
+| Gate Level | **L3** |
+| Final Level | **L3** |
+| Trend | `+3（QAM-05-004 resolved）` |
+| Evidence Confidence | 中高（Agent 时间线投影现在可从持久事实重建：真实 PostgreSQL 覆盖「写入失败→恢复补做恰好一次」与「Post 已提交、终态未推进」的崩溃窗口重放，以及并发只收敛到一条；进程级用例证明 Worker 自己会补做，旧 Worker 下同一条 agent_log 在预算内永不出现。对照 A（旧内联投影）在真实 PostgreSQL 下 `1 failed \| 9 passed`，完成后终态未推进。并发 slug、Home anchor 交错、搜索防抖、成员、同时间分页、写入契约与编辑器浏览器旅程证据保持。风险匹配的 `npm run check:full` 本轮单次 exit 0，生产 Playwright 44/44 无 skip/retry） |
+| 当前开放问题 | 1 项（P2×1） |
 
-SearchInput 的防抖创建与清理现在属于同一个 effect，首次挂载期间收到的输入在开发重放后仍可提交，清空/卸载仍取消待提交查询；已提交草稿不会因后续 effect 恢复而重复提交。旧组件稳定复现输入保留但导航 0 次，修正后 5/5；完整开发门禁与最终生产搜索/分页对照通过，QAM-05-009 已关闭。本轮恢复既有搜索契约并补齐生命周期证据，共享展示投影、成员可见性、两键排序和复合 cursor 保持；其余五个 P2 与关键并发验证缺口没有变化，因此维持 80 分、Score L3、Gate/Final L2。
+Agent 时间线投影现在是一个**以 AgentTask 为幂等键、可从持久事实重建的投影**：`AgentTask.timelineProjectedAt` 记录投影的终态决策（已创建条目、已按节流规则判定不创建、或任务无 ToolCall），`Post.agentTaskId` 的唯一约束让同一任务至多派生一条时间线 Post。`ExecutionTracer.completeWithMessage` 仍在 lease 事务内提交 final Message/AgentStep/AgentTask/EventLog，事务外只调用 `projectAgentTaskTimeline` 并保留失败隔离；写入失败不推进终态，由 Worker dispatch 循环中的有界恢复扫描（`recoverPendingTimelineProjections`，按 `completedAt` 升序、每轮上限 5）补做。旧实现在同一位置内联投影、异常只 `console.error`、节流分支直接 `return null`，且 schema 中 AgentTask 与 Post 之间没有任何关联，因此「任务已完成」这一持久事实无法重建其时间线投影。真实 PostgreSQL 覆盖失败→恢复、崩溃窗口重放、并发与节流终态，迁移回填使历史完成任务不被补发陈旧 Post；对照 A（仅退回旧内联投影）在真实 PostgreSQL 下完成后 `timelineProjectedAt` 仍为 `null`（`1 failed \| 9 passed`），对照 B（仅退回旧 Worker）进程级用例 `1 failed`——Worker 正常启动但永不补做投影。因此数据流与状态一致性由 11 升至 12、健壮性由 12 升至 13、可测试性由 7 升至 8，总分 84→**87**、Score L3；模块最高风险不变量（派生投影的失败恢复与幂等）已有风险匹配 E3，Gate 的 L2 上限解除，Gate/Final 由 L2 升至 **L3**。通用错误 message 泄漏（QAM-05-006，E2）仍开放，故 L4 未通过。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
 | 架构与责任边界 | 11 | 14 | 页面、Route、Server Action、Post helper 和组件职责基本可导航，读取授权已下沉到共享领域条件；但首页仍直接拥有 Post 查询，Timeline 又复用 Home spatial shell，且 QAM-05/QAM-06 没有单向 composition boundary（[`post-visibility.ts`](../../lib/post-visibility.ts#L1-L18)、[`app/home/page.tsx`](../../app/home/page.tsx#L13-L30)、BU-05，E2/E3）。 |
-| 代码结构与复杂度 | 8 | 10 | CRUD 与呈现控制流局部简单，首页/搜索已共用展示 select；复杂度仍来自 HTTP/Action 两套写路径及 Agent completion 后置投影（[`post-timeline.ts`](../../lib/post-timeline.ts#L18)、QAM-05-001/004，E2/E3）。 |
-| 抽象与复用 | 7 | 8 | 位置快照、ownership、可见性、最小展示字段和排序键有共享入口；首页/API 复用 select/orderBy，Timeline 消费同一时间/ID 约定。Post body、其余 query 字段与写入服务仍待收敛（[`post-timeline.ts`](../../lib/post-timeline.ts#L18)、QAM-05-001，E2/E3）。 |
-| 数据流与状态一致性 | 11 | 12 | 共享投影与搜索失败恢复保持；复合 cursor 严格排除已读位置，真实 PostgreSQL 证明同毫秒跨页无遗漏或重复，首页/搜索集合一致，Timeline 输入重排后仍稳定。Agent log 派生恢复仍开放（[`分页集成回归`](../../tests/integration/post-pagination.integration.test.ts#L82)、QAM-05-004，E3/E2）。 |
-| 接口与依赖关系 | 8 | 10 | 首页/搜索同时复用 Post 可见性与最小展示 select，只有合法成功空集合显示无匹配；401/500 不再被伪装为空结果。HTTP/Action 输入、空字段和错误返回仍重复（[`posts route`](../../app/api/posts/route.ts#L35)、QAM-05-001/006，E2/E3）。 |
-| 健壮性、并发与生命周期 | 9 | 14 | 搜索取消/迟到响应保护保持；防抖 timer 的创建/清理收归同一 effect，首次输入重放、清空和卸载有组件红/绿证据（QAM-05-009）；畸形及旧 cursor 返回验证错误，非正或无效页大小不会进入查询，游标记录删除后仍按原位置续读。slug race、Agent projection 和 Home anchor 删除交错仍缺恢复或并发证明（[`post-pagination.ts`](../../lib/post-pagination.ts#L4)、[`删除游标回归`](../../tests/integration/post-pagination.integration.test.ts#L123)、QAM-05-002/004/008，E2/E3）。 |
-| 性能与资源使用 | 6 | 8 | 首页/API 各限制 50/100 条，Post 有 type/author/room 索引；搜索对 title/content 使用 contains，首页还为每次访问执行 board 查询和 anchor 补齐，规模增长时查询与重复装配成本可见，但当前没有凭数量直接扣分（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`home-board.ts`](../../lib/home-board.ts#L18-L54)，E2）。 |
+| 代码结构与复杂度 | 8 | 10 | CRUD 与呈现控制流局部简单，首页/搜索已共用展示 select；写入边界的形状判断已从两个入口移出，Agent completion 处的后置投影也由内联块收归单一函数调用，剩余复杂度集中在 HTTP/Action 两套写路径（[`post-timeline.ts`](../../lib/post-timeline.ts#L18)、[`agent-posts.ts`](../../lib/agent-posts.ts#L100-L173)，E2/E3）。 |
+| 抽象与复用 | 8 | 8 | 位置快照、ownership、可见性、最小展示字段和排序键有共享入口；首页/API 复用 select/orderBy，Timeline 消费同一时间/ID 约定。Post 发布/更新的字段类型、trim、长度与空 patch 规则已收归同一 Zod 契约，HTTP 与 Server Action 不再各自判断；Agent 投影的幂等键判定、终态推进与恢复扫描也收归 `lib/agent-posts.ts` 单一入口，完成路径与恢复路径不再各写一份。写入服务与其余 query 字段仍分散（[`validation.ts`](../../lib/validation.ts#L148-L187)、[`post-timeline.ts`](../../lib/post-timeline.ts#L18)、QAM-05-006，E2/E3）。 |
+| 数据流与状态一致性 | 12 | 12 | 共享投影与搜索失败恢复保持；复合 cursor 严格排除已读位置，真实 PostgreSQL 证明同毫秒跨页无遗漏或重复，首页/搜索集合一致，Timeline 输入重排后仍稳定。Agent 完成事实与时间线投影现在由持久终态 `timelineProjectedAt` 与幂等键 `Post.agentTaskId` 连接：失败可恢复、重放不重复、节流与无 ToolCall 都是可审计终态，历史任务由迁移回填排除在补发之外（[`分页集成回归`](../../tests/integration/post-pagination.integration.test.ts#L82)、[`投影恢复回归`](../../tests/integration/agent-timeline-projection.integration.test.ts)、QAM-05-004，E3）。 |
+| 接口与依赖关系 | 8 | 10 | 首页/搜索同时复用 Post 可见性与最小展示 select，只有合法成功空集合显示无匹配；401/500 不再被伪装为空结果；HTTP/Action 的写入输入与空 patch 语义已同源，Route 保持 `400 {error:"Invalid request",issues:[…]}`、Action 保持稳定字段文案。字段级文案变化仍是客户端隐式契约，通用错误返回仍重复（[`posts route`](../../app/api/posts/route.ts#L58)、QAM-05-006，E2/E3）。 |
+| 健壮性、并发与生命周期 | 13 | 14 | 搜索取消/迟到响应保护保持；防抖 timer 的创建/清理收归同一 effect，首次输入重放、清空和卸载有组件红/绿证据（QAM-05-009）；畸形及旧 cursor 返回验证错误，非正或无效页大小不会进入查询，游标记录删除后仍按原位置续读；Home anchor 补齐的跨写删除交错已有恢复路径，真实 PostgreSQL 先红后绿且逐条补写保持幂等，只容忍 Post 已不存在与 anchor 已存在（QAM-05-008）；slug 候选改由数据库唯一约束裁定，冲突时有界顺延重试，并发创建/改标题与 Agent 投影均有真实 PostgreSQL 先红后绿证据，非 slug 冲突不上抛重试（QAM-05-002）；发布/更新入口的超长、非字符串、纯空白与空 patch 输入现在都在生成 slug 前变成验证错误，只填空格的更新不再以 `update({ data: {} })` 静默成功。Agent 投影的失败恢复已有真实 PostgreSQL 与进程级 E3：终态未推进的任务被有界补做且只补一次，崩溃窗口重放与并发重放都不产生第二条，节流与无 ToolCall 有显式终态，进程终止窗口由 Worker 自行收敛（QAM-05-004）。写入边界的通用错误分类仍由 QAM-05-006 跟踪（[`post-pagination.ts`](../../lib/post-pagination.ts#L4)、[`删除游标回归`](../../tests/integration/post-pagination.integration.test.ts#L123)、[`anchor 交错回归`](../../tests/integration/home-post-anchor-interleave.integration.test.ts#L130)、[`slug 并发回归`](../../tests/integration/post-slug-allocation.integration.test.ts#L107)、[`写入契约回归`](../../tests/integration/post-write-contract.integration.test.ts#L66)、[`投影恢复回归`](../../tests/integration/agent-timeline-projection.integration.test.ts)、[`Worker 恢复回归`](../../tests/integration/agent-timeline-worker-recovery.integration.test.ts)，E3）。 |
+| 性能与资源使用 | 6 | 8 | 首页/API 各限制 50/100 条，Post 有 type/author/room 索引；搜索对 title/content 使用 contains，首页还为每次访问执行 board 查询和 anchor 补齐，规模增长时查询与重复装配成本可见，但当前没有凭数量直接扣分（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`home-board.ts`](../../lib/home-board.ts#L82-L139)，E2）。 |
 | 安全与隐私 | 8 | 10 | 认证、ownership 和 Markdown 防护保持；本轮真实 PostgreSQL 重证成员/孤儿过滤，首页/搜索只返回作者公开身份与 city/country/timezone，明确排除 email、passwordHash、IP、preferences 和 profileNote。通用错误泄漏仍由 QAM-05-006 跟踪（[`投影集成回归`](../../tests/integration/post-timeline-projection.integration.test.ts#L33)，E2/E3）。 |
-| 可测试性与验证可信度 | 7 | 8 | StrictMode 单次原生输入先复现导航 0 次再验证导航一次，取消/清空和外部 q 回归保持；真实 PostgreSQL 先红后绿确认漏读和顺序；组件验证可访问标题的 DOM 顺序，production Chromium 以 53 条乱序写入记录验证首页/刷新/搜索与真实 API 分页。slug、Agent projection 和 Post/Atlas 交错仍缺对应 E3，不以测试数量代替风险覆盖（[`分页回归`](../../tests/integration/post-pagination.integration.test.ts#L82)、[`浏览器旅程`](../../tests/e2e/authenticated.spec.ts#L1280)，E3）。 |
-| 可维护性、演进与技术债 | 5 | 6 | 展示字段与排序各有单一落点，cursor 编解码/验证/比较留在服务层；写入和 Agent log 等规则仍跨 Route/Action/服务，整体演进债务未消除（QAM-05-001/004，E2/E3）。 |
-| **合计** | **80** | **100** | 算术核对：11+8+7+11+8+9+6+8+7+5 = 80。 |
+| 可测试性与验证可信度 | 8 | 8 | StrictMode 单次原生输入先复现导航 0 次再验证导航一次，取消/清空和外部 q 回归保持；真实 PostgreSQL 先红后绿确认漏读、顺序和本次 Post/Atlas 交错删除；组件验证可访问标题的 DOM 顺序，production Chromium 以 53 条乱序写入记录验证首页/刷新/搜索与真实 API 分页。slug 并发已补齐 E3；写入边界新增的两层回归全部先红后绿（Node 旧 15 failed\|5 passed、真实 PostgreSQL 旧 6 failed\|2 passed），并把「不触库」写成可观察断言而不是实现细节；编辑器错误横幅与「成功才跳转」由 production Chromium 用例覆盖，旧写入契约下确定性失败、恢复后通过，并含合法保存对照排除假阳性。Agent 投影失败恢复的两条对照各自只退回一个文件：旧内联投影在真实 PostgreSQL 下 `1 failed \| 9 passed`（完成后终态未推进），旧 Worker 的进程级用例 `1 failed`（正常启动但永不补做，故该 agent_log 永久缺失）；同时明确标注幂等重放、崩溃窗口重放、节流终态与迁移回填四项在旧实现下无法行为化失败（旧代码没有该投影入口），属防回归守卫而非红灯，不以测试数量代替风险覆盖（[`分页回归`](../../tests/integration/post-pagination.integration.test.ts#L82)、[`写入契约回归`](../../tests/integration/post-write-contract.integration.test.ts#L66)、[`投影恢复回归`](../../tests/integration/agent-timeline-projection.integration.test.ts)、[`迁移边界回归`](../../tests/integration/agent-timeline-projection-migration.integration.test.ts)、[`编辑器浏览器旅程`](../../tests/e2e/authenticated.spec.ts#L1464)、[`浏览器旅程`](../../tests/e2e/authenticated.spec.ts#L1280)，E3）。 |
+| 可维护性、演进与技术债 | 5 | 6 | 展示字段与排序各有单一落点，cursor 编解码/验证/比较留在服务层；写入字段契约已有单一落点，投影规则本身也收归 `lib/agent-posts.ts` 单一入口（完成路径与恢复路径共用），但 Agent log 的触发时机仍跨 `execution-tracer`/Worker 与 Route/Action，整体演进债务未消除（QAM-05-006，E2/E3）。 |
+| **合计** | **87** | **100** | 算术核对：11+8+8+12+8+13+6+8+8+5 = 87。 |
 
 ## Level Gate
 
 | 门禁 | 结果 | 证据与原因 |
 | --- | --- | --- |
 | 开放 P0 | 通过 | 未发现已确认的 P0；既有 Markdown 防护与 Post 删除 FK 级联保持。 |
-| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-05-005 已由共享成员条件关闭并在本轮真实数据库重验；当前没有开放 P0/P1，QAM-05-001/002/004/006/008 继续保持 P2。 |
-| 最高风险不变量有风险匹配行为验证 | 部分通过 | 成员/孤儿可见性、展示投影、搜索恢复、同时间分页及稳定排序有当前 E3；slug 并发、Agent projection 失败恢复及 Post/Atlas FK 交错仍缺专项真实数据库证据，Gate 不高于 L2。 |
-| L4 要求 | 未通过 | 当前无开放 P0/P1，但关键并发、失败恢复和跨写生命周期仍未全部达到 E3。 |
-| **最终判定** | **L2** | Score Level=L3；Gate Level=L2；Final Level=min(L3,L2)=L2。 |
+| 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | 当前没有开放 P0/P1，仅剩 QAM-05-006 一项 P2；QAM-05-004 本轮关闭，QAM-05-001/002 已分别由 feat-071/feat-070 关闭，QAM-05-005 已由共享成员条件关闭并在真实数据库重验。 |
+| 最高风险不变量有风险匹配行为验证 | 通过 | 成员/孤儿可见性、展示投影、搜索恢复、同时间分页、稳定排序、slug 并发分配、Post/Atlas FK 交错与写入输入契约均有当前 E3；本轮补上的 Agent 投影失败恢复同时具备真实 PostgreSQL（失败→补做恰好一次、崩溃窗口重放、并发收敛、节流终态、迁移回填）与进程级（Worker 启动后自行补做，旧 Worker 下同一条 agent_log 永不出现）证据，本模块最高风险不变量的 L2 上限因此解除。 |
+| L4 要求 | 未通过 | 已无开放 P0/P1，关键失败/并发/生命周期路径也有 E3；但 QAM-05-006 的「通用错误响应不泄漏内部异常」仍只有 E2，未注入 Prisma/JSON/provider 异常做端到端响应验证，不满足 L4 的「全部风险不变量已有风险匹配验证」。 |
+| **最终判定** | **L3** | Score Level=L3；Gate Level=L3；Final Level=min(L3,L3)=L3。 |
 
 ## Critical Issues
 
@@ -72,27 +72,29 @@ SearchInput 的防抖创建与清理现在属于同一个 effect，首次挂载�
 
 ### P2
 
-#### QAM-05-001：HTTP Route 与 Server Action 绕过统一 Post 输入契约
+#### QAM-05-001：HTTP Route 与 Server Action 绕过统一 Post 输入契约（resolved）
 
-- **状态**：`open`
-- **优先级复核**：由 P1 降为 P2。它确实违反运行时输入边界并造成双入口维护扩散，但当前证据只显示 malformed body 可能返回不稳的 500/错误信息或接受无界文本；没有权限绕过、已证明的不可恢复持久化损坏或持续故障，因此不满足 P1 门槛。
-- **问题**：`POST /api/posts` 与 `PUT /api/posts/:slug` 直接从 `request.json()` 解构 title/content，只检查 truthy/`trim()`；`createPost`、`updatePost` Server Action 也只做同样的局部判断。没有复用 [`lib/validation.ts`](../../lib/validation.ts#L1-L221) 的 Zod schema，未限制字符串类型、长度、对象形状或空更新；Action 的参数同样是客户端可构造的边界，不应以 TypeScript 类型代替运行时校验。两个写入口还分别维护成功返回和错误语义（[`app/api/posts/route.ts`](../../app/api/posts/route.ts#L52-L86)、[`Post detail route`](../../app/api/posts/%5Bslug%5D/route.ts#L43-L74)、[`app/actions/posts.ts`](../../app/actions/posts.ts#L17-L103)）（E2）。
-- **证据**：仓库通用 Route 已使用 `readJsonBody`/Zod（[`validation.ts`](../../lib/validation.ts#L208-L221)），而 Post Route/Action 没有；`tests/server/posts-api.test.ts` 的写入场景只覆盖空字符串和正常创建，没有 malformed body、超长内容、PUT 或 Action 行为（[`posts-api.test.ts`](../../tests/server/posts-api.test.ts#L83-L183)）（E2）。
-- **质量影响**：畸形或无界请求可进入 Prisma、触发不稳定 500 或造成不受控内容存储；新字段/规则必须在两个写入口重复同步，已形成契约漂移和回归扩散面。
-- **最小修正**：增加 Post create/update/list query 的同域 Zod contract；HTTP 与 Server Action 均在进入 slug/Prisma 前解析同一 contract，统一 trim、长度、禁止空 patch 和稳定错误响应。保留现有 user_post/Markdown 功能，不新增发布能力。
-- **验收证据**：Route 与 Action 对非对象、非字符串、超长、空 patch 返回同一可观察验证错误且不调用 Prisma；合法中文/Markdown 仍创建或更新。补 `tests/server` Route 行为测试和 Server Action Node 测试；若验证字段持久化边界，再加真实 PostgreSQL。
-- **影响范围**：QAM-05 直接受影响；QAM-01 提供认证但不拥有 Post body contract，QAM-06 只消费 Post→Atlas 映射。
+- **状态**：`resolved`（2026-09-20，feat-071）
+- **优先级复核**：由 P1 降为 P2。它确实违反运行时输入边界并造成双入口维护扩散，但当时证据只显示 malformed body 可能返回不稳的 500/错误信息或接受无界文本；没有权限绕过、已证明的不可恢复持久化损坏或持续故障，因此不满足 P1 门槛。本轮补上 E3 后按原优先级归档，不因修复而改变它在总览中的排序。
+- **原问题**：`POST /api/posts` 与 `PUT /api/posts/:slug` 直接从 `request.json()` 解构 title/content，只检查 truthy/`trim()`；`createPost`、`updatePost` Server Action 也只做同样的局部判断。没有复用 [`lib/validation.ts`](../../lib/validation.ts) 的 Zod schema，未限制字符串类型、长度、对象形状或空更新；Action 的参数同样是客户端可构造的边界，不应以 TypeScript 类型代替运行时校验（[`app/api/posts/route.ts`](../../app/api/posts/route.ts)、[`Post detail route`](../../app/api/posts/%5Bslug%5D/route.ts)、[`app/actions/posts.ts`](../../app/actions/posts.ts)）（E2）。
+- **原证据**：仓库通用 Route 已使用 `readJsonBody`/Zod，而 Post Route/Action 没有；`tests/server/posts-api.test.ts` 的写入场景只覆盖空字符串和正常创建，没有 malformed body、超长内容、PUT 或 Action 行为（[`posts-api.test.ts`](../../tests/server/posts-api.test.ts#L83-L183)）（E2）。
+- **质量影响**：畸形或无界请求可进入 Prisma、触发不稳定 500 或造成不受控内容存储；新字段/规则必须在两个写入口重复同步，已形成契约漂移和回归扩散面。用户可见面是编辑器把原始异常 message 当作文案显示（`Server error: title?.trim is not a function`），以及只填空格的更新静默成功并跳转、库内实际未变。
+- **复现**：新增 [`tests/server/post-write-contract.test.ts`](../../tests/server/post-write-contract.test.ts) 与 [`tests/integration/post-write-contract.integration.test.ts`](../../tests/integration/post-write-contract.integration.test.ts) 在旧实现下执行：Node 层 `15 failed | 5 passed (20)`，`POST`/`PUT` 对非字符串、数组字段与畸形 JSON 返回 `500`（`expected 500 to be 400`），`PUT` 空 patch 与超长正文返回 `200`（`expected 200 to be 400`），`createPost` 返回逐字 `{"error": "Server error: title?.trim is not a function"}`，非字符串 slug 的 `deletePost` 仍执行删除；真实 PostgreSQL 层 `6 failed | 2 passed (8)`，除同样的 `500`/`200` 偏差外，`createPost` 在真实 Prisma 下返回 `Server error: Invalid \`prisma.post.findUnique()\` invocation in …`（E3）。
+- **已实施修正**：[`lib/validation.ts`](../../lib/validation.ts#L148-L187) 新增 Post 写入契约：`POST_TITLE_MAX_LENGTH`(200)、`POST_CONTENT_MAX_LENGTH`(20000)、`postCreateSchema`、`postUpdateSchema`（可省略字段 + `At least one field is required` 的 refinement）与 `postSlugSchema`。字段 schema 用 `z.string({ error: "…" })` 给出类型错误文案，`.trim()` 在校验前生效，因此纯空白等价于缺字段；未知键被 Zod 默认剥离，`type`/`authorId` 无法注入。四个写入点改为共享实现：[`POST /api/posts`](../../app/api/posts/route.ts#L58) 与 [`PUT /api/posts/:slug`](../../app/api/posts/%5Bslug%5D/route.ts#L56) 用 `readJsonBody(request, …)`（Route 侧错误经既有 `errorToResponse` 变为 `400 {error:"Invalid request",issues:[…]}`），[`createPost`/`updatePost`/`deletePost`](../../app/actions/posts.ts) 用 `parseBody(…)` 并在 catch 中把 `ValidationError` 映射为稳定的首条 issue 文案（`invalidInput()`），`serverError` 原样保留给其余异常。更新路径改为由 `title !== undefined` 同时驱动 `slug` 重分配与 `data` 组装，未提供标题即不重新分配 slug，与发布契约语义一致。
+- **验收证据**：Node 层 [`tests/server/post-write-contract.test.ts`](../../tests/server/post-write-contract.test.ts) 20 项覆盖 POST/PUT/Action 三个入口的非字符串、数组、畸形 JSON、超长（200/20000 边界与 +1）、纯空白、空 patch（issue path 为 `[""]`）与多余字段不改变写入内容；旧 `15 failed | 5 passed` → 修复后 20/20。真实 PostgreSQL 层 [`tests/integration/post-write-contract.integration.test.ts`](../../tests/integration/post-write-contract.integration.test.ts) 8 项验证畸形 body 返回 400 且 `post.count()` 为 0、纯空白不写库、超长拒绝而 20000 边界接受、只填空格的更新使整行（含 `updatedAt`）与修复前完全相等、非字符串字段更新不变、合法中文/Markdown 以 trim 后的值写入且 `slug === generateSlug("中文标题")`、Action 与 Route 同一契约、Action 的非法 slug 不查询不删除；旧 `6 failed | 2 passed` → 修复后 8/8，连同 [`post-slug-allocation.integration.test.ts`](../../tests/integration/post-slug-allocation.integration.test.ts) 共 2 文件/13 项通过（17.18s）。定向 Node 回归 4 文件/96 项（含 `tests/server/posts-api.test.ts`、`tests/lib/posts.test.ts`、`tests/agent/agent-posts.test.ts`）通过，`npm run typecheck`/`lint` exit 0。浏览器层由 [feat-072](../../progress.md#feat-072) 补齐：[`编辑器浏览器旅程`](../../tests/e2e/authenticated.spec.ts#L1464) 以已登录用户在 `/posts/edit/:slug` 提交纯空白正文（不能真正留空，原生 `required` 会拦下提交使 Action 不被调用），断言错误横幅 `Content is required` 可见、URL 仍停在编辑页、库内 content/slug/`updatedAt` 与提交前完全相等；同用例内改成合法内容后必须跳转 `/posts/:slug` 且库内等于 trim 后的输入。把 `updatePost` 退回 truthy 组装 patch 的旧写入契约后同一用例 `1 failed | 1 passed (53.2s)`（exit 1，失败点 `tests/e2e/authenticated.spec.ts:1497`），失败快照显示页面已渲染文章详情且无横幅；恢复后同一命令 `2 passed (48.3s)`（exit 0），未放宽断言/加 skip/改断言超时（E3）。
+- **影响范围**：QAM-05 直接受影响；QAM-01 提供认证但不拥有 Post body contract，QAM-06 只消费 Post→Atlas 映射。未把 `createAgentLogPost` 的服务端内部投影纳入该契约，未改变通用错误响应策略（QAM-05-006 保持开放）、成功响应形状、slug 产品规则、读取/分页投影或 schema。
 
-#### QAM-05-002：slug 唯一性是 check-then-create，合法并发发布会失败
+#### QAM-05-002：slug 唯一性是 check-then-create，合法并发发布会失败（resolved）
 
-- **状态**：`open`
-- **优先级复核**：由 P1 降为 P2。并发时后到请求可能被数据库 unique 拒绝，但 unique constraint 仍保证数据不重复；当前没有重复副作用、错误状态或跨用户影响的 E3 证据，属于可见性/可用性与重试债务而非 P1 数据一致性破坏。
-- **问题**：`ensureUniqueSlug` 先 `findUnique` 再返回候选 slug；随后 API/Action `post.create` 或 update，Agent log 也走相同 helper（[`lib/posts.ts`](../../lib/posts.ts#L24-L36)、[`app/api/posts/route.ts`](../../app/api/posts/route.ts#L65-L78)、[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L13-L38)）。两个请求可同时观察 slug 不存在并写入同一候选，数据库 unique index 只能让后到者报错，不能为请求提供可重试的唯一 slug 结果。
-- **证据**：`Post.slug` 只有数据库 `@unique`/唯一索引（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`20260613120000_add_post_model/migration.sql`](../../prisma/migrations/20260613120000_add_post_model/migration.sql#L24-L34)）（E2）；现有测试 mock `findUnique`，没有并发真实 PostgreSQL 行为测试（[`agent-posts.test.ts`](../../tests/agent/agent-posts.test.ts#L41-L74)、[`posts-api.test.ts`](../../tests/server/posts-api.test.ts#L95-L116)）（E2）。
+- **状态**：`resolved`（2026-09-20，feat-070）
+- **原问题**：`ensureUniqueSlug` 先 `findUnique` 再返回候选 slug；随后 API/Action `post.create` 或 update，Agent log 也走相同 helper（[`lib/posts.ts`](../../lib/posts.ts#L24-L36)、[`app/api/posts/route.ts`](../../app/api/posts/route.ts#L65-L78)、[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L13-L38)）。两个请求可同时观察 slug 不存在并写入同一候选，数据库 unique index 只能让后到者报错，不能为请求提供可重试的唯一 slug 结果。
+- **优先级复核**：由 P1 降为 P2。并发时后到请求可能被数据库 unique 拒绝，但 unique constraint 仍保证数据不重复；当时没有重复副作用、错误状态或跨用户影响的 E3 证据，属于可见性/可用性与重试债务而非 P1 数据一致性破坏。本轮补上 E3 后按原优先级归档，不因修复而改变它在总览中的排序。
+- **原证据**：`Post.slug` 只有数据库 `@unique`/唯一索引（[`schema.prisma`](../../prisma/schema.prisma#L517-L539)、[`20260613120000_add_post_model/migration.sql`](../../prisma/migrations/20260613120000_add_post_model/migration.sql#L24-L34)）（E2）；当时测试 mock `findUnique`，没有并发真实 PostgreSQL 行为测试（[`agent-posts.test.ts`](../../tests/agent/agent-posts.test.ts#L41-L74)、[`posts-api.test.ts`](../../tests/server/posts-api.test.ts#L95-L116)）（E2）。
 - **质量影响**：同时发相同标题、同时改成相同标题或高并发 Agent log 时，合法操作随机返回 500/`Server error`，用户重试还可能生成更多重复尝试；唯一约束成为错误出口而不是服务内部的并发事实来源。
-- **最小修正**：保留数据库 unique index，并将候选分配收敛到可重试的 atomic insert/unique-violation retry（或等价的数据库序列化/锁定边界）；API、Action 和 Agent projection 共用该实现。更新 slug 时也需在冲突后重新生成后缀，不扩大 slug 产品规则。
-- **验收证据**：真实 PostgreSQL 并发创建/更新相同标题，所有成功记录 slug 唯一且失败请求按稳定冲突/重试策略返回；Agent log 高并发不会因候选相同而随机 500。测试需包含同毫秒创建和唯一约束冲突恢复。
-- **影响范围**：QAM-05 直接受影响；QAM-08 仅关联 Agent log 调用时的投影失败，不重复登记 Agent Task lease/Tool 问题。
+- **复现**：真实 PostgreSQL 上用 `BEFORE INSERT/UPDATE` 触发器 `pg_sleep(0.5)`（与 session-issuance 并发夹具同形）让两个请求都越过“检查”阶段后再写唯一索引。旧实现在并发发布相同标题时返回 `[200, 500]`，失败体为 `Server error: … Unique constraint failed on the fields: ('slug')`；同一套用例在旧实现下 `4 failed | 1 passed (5)`，修复后 5/5（E3）。
+- **已实施修正**：唯一性事实改由数据库裁定——[`writePostWithUniqueSlug(baseSlug, write)`](../../lib/posts.ts#L41-L60) 直接以候选 slug 执行写入，只在 Post slug 唯一冲突时按 `-2`、`-3`… 顺延重试，最多 `POST_SLUG_ATTEMPT_LIMIT`（5）次候选，超限上抛最后一次冲突。冲突归因只认 `P2002` 且 `meta.target` 含 `slug`（真实探针实测形状为 `{ code: "P2002", meta: { modelName: "Post", target: ["slug"] } }`），缺少或指向其他字段的 `P2002` 与其他数据库错误一律原样上抛，避免把非 slug 冲突当作竞态重试。四个写入调用点共用该实现：[`POST /api/posts`](../../app/api/posts/route.ts#L66-L84)、[`PUT /api/posts/:slug`](../../app/api/posts/%5Bslug%5D/route.ts#L55-L79)、[`createPost`/`updatePost` Server Action](../../app/actions/posts.ts#L26-L85) 与 [`createAgentLogPost`](../../lib/agent-posts.ts#L23-L42)；更新路径只在提交了新标题时才重新分配 slug（未改标题不再触发候选生成）。`lib/posts.ts` 不再导入 Prisma，`ensureUniqueSlug` 与它的 `findUnique` 一并删除。slug 产品规则未变：字符集过滤、80 字符截断、`post` 兜底、`-2` 起的后缀序列与“取第一个可用候选”语义均保持。
+- **验收证据**：[`真实 PostgreSQL 并发回归`](../../tests/integration/post-slug-allocation.integration.test.ts) 五项分别覆盖并发发布相同标题（两个 200，slug 为 `base`/`base-2`）、并发把两篇改成同一标题（两个 200，slug 为 `base`/`base-2`）、编辑器 `createPost` 并发（两者均成功且 slug 不同）、`updatePost` 并发、以及 Agent 时间线投影在基础 slug 被占用时顺延为 `agent-log-<ms>-2` 而不是抛错。修复前 `4 failed | 1 passed`、修复后 5/5；把 helper 恢复成旧的 check-then-write 可再次复现 `expected [ 200, 500 ] to deeply equal [ 200, 200 ]` 与 `Unique constraint failed on the fields: ('slug')`，非测试侧放宽（E3）。定向 Node 回归 [`tests/lib/posts.test.ts`](../../tests/lib/posts.test.ts#L53-L128)（首次直用基础 slug、`-2`/`-3` 顺延、非冲突错误不重试、`target: ["email"]` 的 `P2002` 不重试、到上限后上抛最后一次冲突）与 Route/Agent 两份现有套件共 3 文件/76 项通过，其中 `P2002` 形状按实测固定，形状变化会显式失败而不是静默退化。风险匹配的 `./scripts/run-node22.sh npm run check:full` 本轮单次 exit 0（84 文件/711 项、生产构建、覆盖率 52/45.91/56.53/52.66、31 文件/118 项真实 PostgreSQL、43/43 生产 Playwright）。
+- **影响范围**：QAM-05 直接受影响；QAM-08 仅关联 Agent log 调用时的投影失败，不重复登记 Agent Task lease/Tool 问题。未改变 Post 可见性、分页契约、timeline 投影内容、Atlas anchor 行为或 slug 的产品规则。
 
 #### QAM-05-003：cursor 与时间线排序没有稳定的第二排序键（resolved）
 
@@ -104,15 +106,16 @@ SearchInput 的防抖创建与清理现在属于同一个 effect，首次挂载�
 - **浏览器与门禁**：[`production Chromium`](../../tests/e2e/authenticated.spec.ts#L1280) 乱序写入 53 条同毫秒记录，首页/刷新/搜索均稳定呈现最新 50 条的反向顺序，17 条一页的真实 API 搜索读回全部 53 条且无重复，旧时间 cursor 返回 400；未 mock 搜索或服务端排序。完整生产门禁单次通过：78/653 Vitest、build/coverage、28/101 PostgreSQL、40/40 Playwright。命令、测试编写阶段的两类修正及未运行边界见 [progress.md](../../progress.md)（E3）。
 - **影响范围**：QAM-05；QAM-06 继续消费相同 Post/anchor 映射。共享比较模块仅含纯函数和 Prisma 类型导入，cursor/Zod/Buffer 留在服务端。未改 schema/index、slug、Post 写入、Agent projection、空间生命周期或既有搜索恢复。
 
-#### QAM-05-004：Agent log 投影在完成事务外 best-effort，失败后无 durable retry/idempotency
+#### QAM-05-004：Agent log 投影在完成事务外 best-effort，失败后无 durable retry/idempotency（resolved）
 
-- **状态**：`open`
-- **优先级复核**：由 P1 降为 P2。异常时可能永久丢失派生 timeline log，但 AgentTask、final Message 和 Trace 事实已在前一事务中完成，没有任务状态损坏或重复高风险副作用的证据；这是派生可见性/恢复债务，除非运行数据证明持续丢失，否则不升为 P1。
-- **问题**：`ExecutionTracer.completeWithMessage` 先在 lease 事务内完成 final Message、AgentStep、AgentTask 和 EventLog，随后再查询 Task 并调用 `createAgentLogPost`；projection 异常被 catch 后只写 console，throttle 达到 3 条/10 分钟也直接返回 null（[`agent/execution-tracer.ts`](../../agent/execution-tracer.ts#L40-L129)、[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L13-L38)）。Post 没有 `agentTaskId`/幂等约束，且没有 pending/failed projection 状态或 Worker 补偿入口。
-- **证据**：AgentTask final 状态已在事务内完成后才进入 Post 写入（[`execution-tracer.ts`](../../agent/execution-tracer.ts#L47-L102)）（E2）；现有测试只验证 throttle 返回 null 和 under-limit create，未验证 Post create 失败、进程重启或同一 task 重试（[`tests/agent/agent-posts.test.ts`](../../tests/agent/agent-posts.test.ts#L41-L74)）（E2）。
-- **质量影响**：数据库短暂故障、slug 冲突、进程在两段写入间退出或节流都会让已完成 Agent 任务没有 timeline entry，且用户无法区分“没有重要日志”和“投影丢失”；补偿重试若直接重放又可能产生重复 Post。
-- **最小修正**：为任务投影建立以 taskId 为键的 durable/idempotent 边界：最小可行方案是在同一完成事务中写入唯一 projection/outbox 记录，由 Worker 重试 Post 创建并记录失败；保留现有降噪策略，但把跳过原因持久化。不要把 Trace 生成、Tool lease 或新的内容类型移入 QAM-05。
-- **验收证据**：真实 PostgreSQL 注入 Post 写失败后，任务完成事实仍可查询且 projection 会重试；同一 task 多次恢复最多一个 agent_log；重启/重复消费不会重复；达到节流上限时有可审计的 skipped 状态。Agent Task 状态机与 Trace 仍按 QAM-08 验收。
+- **状态**：`resolved`（2026-09-20，feat-075）
+- **原问题**：`ExecutionTracer.completeWithMessage` 先在 lease 事务内完成 final Message、AgentStep、AgentTask 和 EventLog，随后再查询 Task 并调用 `createAgentLogPost`；projection 异常被 catch 后只写 console，throttle 达到 3 条/10 分钟也直接返回 null（[`agent/execution-tracer.ts`](../../agent/execution-tracer.ts#L40-L129)、[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L13-L38)）。Post 没有 `agentTaskId`/幂等约束，且没有 pending/failed projection 状态或 Worker 补偿入口。
+- **原证据**：AgentTask final 状态已在事务内完成后才进入 Post 写入（[`execution-tracer.ts`](../../agent/execution-tracer.ts#L47-L102)）（E2）；旧测试只验证 throttle 返回 null 和 under-limit create，未验证 Post create 失败、进程重启或同一 task 重试（E2）。
+- **质量影响**：数据库短暂故障、进程在两段写入间退出或节流都会让已完成 Agent 任务没有 timeline entry，且用户无法区分“没有重要日志”和“投影丢失”；补偿重试若直接重放又可能产生重复 Post。
+- **复现（对照 A／B，各自只退回一个文件）**：**对照 A** 只把 `agent/execution-tracer.ts` 退回内联投影，真实 PostgreSQL 下同一用例 `1 failed \| 9 passed (10)`——完成任务后 `timelineProjectedAt` 仍为 `null`（旧实现不记录任何投影终态，也无幂等键）。**对照 B** 只把 `agent/agent-worker.ts` 退回（去掉恢复调用），进程级用例 `1 failed (1)`——Worker 正常启动（`[worker] dispatch loop started, base poll 1000ms`）但在 50 秒预算内从不补做投影，即旧实现下这条 agent_log 永久缺失（E3）。
+- **已实施修正**：投影成为以 AgentTask 为幂等键、可从持久事实重建的派生视图。[`lib/agent-posts.ts`](../../lib/agent-posts.ts#L100-L173) 新增 `projectAgentTaskTimeline(taskId)`：读持久 task/agent/toolCalls，未完成或已决策则跳过；无 ToolCall 的任务记为已决策终态；否则带 `agentTaskId` 写入 `createAgentLogPost`，撞 `agentTaskId` 唯一键（真实探针形状 `{code:"P2002",meta:{target:["agentTaskId"]}}`）即视为已投影，其他错误原样上抛**且不推进终态**，交给恢复扫描重做；最后以 `updateMany({where:{id,timelineProjectedAt:null}})` 做 CAS 推进终态。`recoverPendingTimelineProjections(limit=5)` 按 `completedAt` 升序有界挑选「已完成 + 终态未推进 + 有 ToolCall」的任务逐条补做，单条失败不影响整轮。[`execution-tracer.ts`](../../agent/execution-tracer.ts#L102-L109) 的完成路径改为调用同一函数并保留失败隔离；[`agent-worker.ts`](../../agent/agent-worker.ts#L45-L53) 在 dispatch 循环中补做投影，与任务分发互相隔离（任一侧失败不拖住另一侧，也不影响退避计数）。迁移 [`20260920120000_agent_timeline_projection`](../../prisma/migrations/20260920120000_agent_timeline_projection/migration.sql) 增加 `AgentTask.timelineProjectedAt`、`Post.agentTaskId`（唯一键 + FK `SetNull`）与 `(status, timelineProjectedAt)` 索引，并把 `status='completed'` 的历史任务回填为 `COALESCE(completedAt, updatedAt)`。节流阈值、无 ToolCall 规则、metadata 字段、slug 顺延重试与可见性均未改变。
+- **验收证据**：[`真实 PostgreSQL 投影回归`](../../tests/integration/agent-timeline-projection.integration.test.ts) 10 项覆盖经真实 `ExecutionTracer` 完成的终态与幂等键、重复投影不产生第二条且不覆盖已有决策时间、崩溃窗口（Post 已提交而 `timelineProjectedAt` 未提交）重放、注入一次写失败后完成事实照常提交且恢复恰好补一次（第二轮扫描返回 0）、节流与无 ToolCall 的显式终态、非完成任务不进扫描集合、按 `completedAt` 升序的有界扫描、并发投影只收敛到一条。[`迁移边界回归`](../../tests/integration/agent-timeline-projection-migration.integration.test.ts) 在独立临时库上按历史迁移集部署后回放：已完成任务（含 `completedAt` 为空的历史行）全部被回填为非空，非完成任务保持 `null`，恢复扫描的候选集合为空（不补发陈旧 Post），且迁移不新增/改动任何 Post。[`Worker 恢复回归`](../../tests/integration/agent-timeline-worker-recovery.integration.test.ts) 以真实子进程启动 Worker 连到测试容器数据库，等待 `[worker] recovered 1 timeline projection(s)` 并断言库中恰好一条且指向该 task，重启后再跑一个周期也不得出现第二条。Node 层 [`agent-posts` 单元回归](../../tests/agent/agent-posts.test.ts) 15 项（原 4 项 + 新增 11 项）覆盖跳过条件、CAS 推进、唯一键判定、失败不推进终态与单条失败隔离。
+- **边界（不要误读）**：幂等重放、崩溃窗口重放、节流终态与迁移回填四类用例**在旧实现下无法以行为方式失败**（旧代码没有 `projectAgentTaskTimeline` 入口），它们是防回归守卫而不是红灯证据；本项的 E3 依据是对照 A/B 与上述真实 PostgreSQL/进程级证据。`timelineProjectedAt` 为空且无 ToolCall 的完成任务不会被扫描重新标记（扫描条件含 `toolCalls: { some: {} }`），这只影响可审计性，不影响时间线内容。恢复扫描超时/积压只受 `limit=5` 约束，长积压需多轮收敛。迁移不回填历史 `Post.agentTaskId`（历史条目保持未关联），因为历史任务已被回填为已决策、不会被重新投影。
 - **影响范围**：QAM-05 直接受影响；QAM-08 只负责调用时机和任务完成事实，QAM-09 负责 Worker 生命周期，不重复登记其运行时问题。
 
 #### QAM-05-006：Server Action 与开发环境 API 错误响应泄漏内部异常
@@ -134,15 +137,16 @@ SearchInput 的防抖创建与清理现在属于同一个 effect，首次挂载�
 - **浏览器与边界**：[`Playwright`](../../tests/e2e/authenticated.spec.ts#L1178) 在真实 Next.js/PostgreSQL/Chromium 搜索两篇文章，500/401/网络故障注入后两篇仍可见，键盘重试使用真实 API 恢复并进入原文章详情；Tokyo fallback 和 London 快照前后一致。故障仅在浏览器路由注入，成功查询和详情均为真实服务；401 注入不代表 Session 签发/失效流程已复验。首轮全局 alert 查询误中 Next 路由播报器，修正为 main 内查询后定向 2/2 通过。`E2E_APP_MODE=production ./scripts/run-node22.sh npm run check:full` 单次 exit 0：77 文件/607 项 Vitest、Next.js 16.3.3 production build、覆盖率 50.05/44.64/54.45/50.61、27 文件/97 项真实 PostgreSQL、37/37 Playwright（3.0 分钟，无跳过）；原始命令与失败摘要见 [progress.md](../../progress.md)。
 - **影响范围**：QAM-05 直接受影响，QAM-06 的空间保存/锚点生命周期保持；feat-057 当时未合并 QAM-05-001 写入/query parser、QAM-05-003 cursor 或 QAM-05-006 通用错误契约；cursor 已由本轮 feat-059 独立修复。
 
-#### QAM-05-008：Home Post anchor 补齐与 Post 删除存在跨写交错失败路径
+#### QAM-05-008：Home Post anchor 补齐与 Post 删除存在跨写交错失败路径（resolved）
 
-- **状态**：`open`
-- **问题**：首页先读取最多 50 个 Post，再单独调用 `ensureHomePostElements` 的 `findMany → createMany`；若用户在两次查询之间删除 Post，`createMany` 可能用已被 FK 删除的 postId 失败，导致首页请求失败。当前 `Post→AtlasElement` ON DELETE CASCADE 是正确的删除方向，但并没有覆盖这个“旧首页读结果补 anchor”的交错边界（[`app/home/page.tsx`](../../app/home/page.tsx#L15-L29)、[`lib/home-board.ts`](../../lib/home-board.ts#L18-L54)、[`20260614120000_add_home_post_atlas_links/migration.sql`](../../prisma/migrations/20260614120000_add_home_post_atlas_links/migration.sql#L1-L20)）。
-- **证据**：`createMany` 使用 `skipDuplicates` 只能处理唯一冲突，不能把不存在的 Post FK 变成可见的稳定结果；现有 Home board 测试只验证正常缺失 anchor 补齐，未覆盖删除交错或真实 FK（[`tests/lib/home-board.test.ts`](../../tests/lib/home-board.test.ts#L35-L66)）（E2）。
+- **状态**：`resolved`（2026-09-19，feat-069）
+- **原问题**：首页先读取最多 50 个 Post，再单独调用 `ensureHomePostElements` 的 `findMany → createMany`；若用户在两次查询之间删除 Post，`createMany` 可能用已被 FK 删除的 postId 失败，导致首页请求失败。当前 `Post→AtlasElement` ON DELETE CASCADE 是正确的删除方向，但并没有覆盖这个“旧首页读结果补 anchor”的交错边界（[`app/home/page.tsx`](../../app/home/page.tsx#L15-L29)、[`lib/home-board.ts`](../../lib/home-board.ts#L82-L139)、[`20260614120000_add_home_post_atlas_links/migration.sql`](../../prisma/migrations/20260614120000_add_home_post_atlas_links/migration.sql#L1-L20)）。
+- **原证据**：`createMany` 使用 `skipDuplicates` 只能处理唯一冲突，不能把不存在的 Post FK 变成可见的稳定结果；旧 Home board 测试只验证正常缺失 anchor 补齐，未覆盖删除交错或真实 FK（[`tests/lib/home-board.test.ts`](../../tests/lib/home-board.test.ts#L35-L66)）（E2）。
 - **质量影响**：删除自己的 Post 或清理任务与并发首页请求交错时，用户可能收到 500；错误重试再进入同一路径，形成首页时间线与空间 anchor 的暂时不可用窗口。
-- **最小修正**：在 anchor 补齐前重新确认 Post 存在并过滤已删除 ID，或将读取/补齐设计为可重试且 FK 冲突被安全忽略；保留数据库删除级联和现有首页自动补 anchor 行为，不扩展空间功能。
-- **验收证据**：真实 PostgreSQL 交错删除与首页补齐不会把已删除 Post 写入 Atlas，也不使首页返回 500；Post 删除后 anchor 被级联清除，下一次首页只显示剩余 Post。
-- **影响范围**：QAM-05 与 QAM-06 共享的 Home composition；QAM-06 负责 Atlas 记录/坐标，但本问题的 Post 读取生命周期由 QAM-05 维护。
+- **复现**：真实 PostgreSQL 上确定性把删除放在首页读取与 anchor 写入之间，未修复实现抛出 `PrismaClientKnownRequestError: Foreign key constraint violated: AtlasElement_postId_fkey (index)`（`code=P2003`），并经 [`app/home/page.tsx`](../../app/home/page.tsx#L15-L29) 冒出为首页请求失败；同一用例修复前 `2 failed | 1 passed`，修复后 3/3（E3）。
+- **已实施修正**：`ensureHomePostElements` 保留原批量 `createMany({ skipDuplicates: true })` 快路径，只在整批被打断时进入 [`anchorPostsAfterInterleavedDeletion`](../../lib/home-board.ts#L116-L139)：逐条补写使每个 anchor 独立落库，只容忍“Post 已不存在”（逐条外键冲突后回读该 Post 确认已消失才跳过，不看 schema 名或错误 message）与“anchor 已存在”（`P2002`）两类冲突；无法归因到删除的外键冲突和其他数据库错误继续上抛。Post 删除 cascade、`skipDuplicates` 去重、首页自动补 anchor 行为、Atlas 权限谓词与坐标字段均未改变。
+- **验收证据**：[`真实 PostgreSQL 交错回归`](../../tests/integration/home-post-anchor-interleave.integration.test.ts) 三项覆盖首页仍返回剩余 Post 且被删除 Post 无 anchor、重复补齐不产生重复记录、读取后删除的 anchor 被级联清除。[`Node 定向回归`](../../tests/lib/home-board.test.ts) 六项分别覆盖正常补齐、两类可容忍冲突和两类必须上抛的错误（Post 仍存在的外键冲突、非冲突数据库错误）。修复前 `2 failed | 4 passed`，修复后 6/6；实现恢复原状可再次复现，非测试侧放宽（E3）。本项的 `resolved` 依据是上述定向 E3（缺陷已修复并先红后绿）。对应 feature feat-069 曾因验收标准第 4 条要求 `npm run check:full` 通过而记为 `blocked`；2026-09-20 定位到阻塞根因在 Harness 配置而不是产品——发布门禁的浏览器层从未声明应用模式，`app-mode.ts` 默认 `development`，而 `next dev` 未显式给出 `--max-old-space-size` 时按 `os.totalmem() * 0.5` 推导堆上限、按需编译的路由不卸载，使门禁结论取决于宿主余量。改为 `check:full` 走新增的 `test:e2e:production` 后单次 exit 0（生产 Playwright 43/43），feat-069 已置 `done`；QAM-05-008 的关闭依据、评分与本模块的开放项均不因此改变。
+- **影响范围**：QAM-05 与 QAM-06 共享的 Home composition；QAM-06 负责 Atlas 记录/坐标，但本问题的 Post 读取生命周期由 QAM-05 维护。未改变 Post 可见性、分页契约、Atlas 权限谓词或空间功能。
 
 #### QAM-05-009：首次挂载期间的搜索输入被 effect 重放取消（resolved）
 
@@ -164,15 +168,23 @@ SearchInput 的防抖创建与清理现在属于同一个 effect，首次挂载�
   │                                      └─> HomeTimelineBoard ──> Timeline ──> PostCard/AgentLogCard
   ├─ GET /api/posts ──认证──> postTimelineSelect + Prisma Post(搜索/type/author/cursor)
   ├─ GET /api/posts/:slug ──认证──> Prisma Post detail
-  └─ Server Action ──认证──> generateSlug/ensureUniqueSlug ──> Prisma Post
+  └─ Server Action ──认证──> writePostWithUniqueSlug(generateSlug) ──> Prisma Post(unique slug)
 
-AgentTask completion
+AgentTask completion（QAM-08 的完成事实，本模块只消费）
   └─ ExecutionTracer lease transaction
-       ├─ final Message + AgentStep + AgentTask + EventLog（QAM-08 事实）
-       └─ 事务外 createAgentLogPost(roomId) ──> Post(agent_log, metadata)
+       └─ final Message + AgentStep + AgentTask + EventLog（不变）
+  └─ 事务外 projectAgentTaskTimeline(taskId) ──> Post(agent_log, agentTaskId 唯一)
+       ├─ 成功：Post 携带 agentTaskId ──> CAS 推进 AgentTask.timelineProjectedAt
+       ├─ 节流/无 ToolCall：只推进 timelineProjectedAt，不写 Post
+       └─ 写入失败：不推进终态 ──> 由恢复扫描重做（下）
+
+Agent Worker dispatch loop
+  └─ recoverPendingTimelineProjections(limit=5)
+       └─ 已完成 + timelineProjectedAt IS NULL + 有 ToolCall
+            └─ 按 completedAt 升序逐条 projectAgentTaskTimeline；单条失败不影响整轮
 ```
 
-Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；首页与搜索共享展示 select，失败保留最后成功结果，取消请求不再回写。`AtlasElement.postId` 是 QAM-06 消费的空间派生关系，数据库 FK cascade 负责 Post 删除后的 anchor 清理。Post 可见性现在由单一关系条件下沉到数据库查询，搜索/type/cursor 只是额外收窄，不能绕过成员资格；Room 删除后的孤儿 Agent log 因无关联 Room 而保持隐藏。其余主要失败路径仍是 raw body/未治理的 query 字段进入 Prisma、slug 竞态撞 unique、Agent Post 写失败被吞掉，以及旧 Post 列表与 anchor 补齐交错；不把 QAM-08 Trace 生成或 QAM-06 坐标算法移入本报告。
+Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；首页与搜索共享展示 select，失败保留最后成功结果，取消请求不再回写。`AtlasElement.postId` 是 QAM-06 消费的空间派生关系，数据库 FK cascade 负责 Post 删除后的 anchor 清理；因为 anchor 只是派生投影，补齐在整批写入被打断时逐条补写，并只跳过回读确认已消失的 Post，使旧首页读结果与删除交错不再让首页请求失败。Post 可见性现在由单一关系条件下沉到数据库查询，搜索/type/cursor 只是额外收窄，不能绕过成员资格；Room 删除后的孤儿 Agent log 因无关联 Room 而保持隐藏。slug 候选现在由数据库唯一约束裁定：`writePostWithUniqueSlug` 直接写入候选，只在 Post slug 冲突时按后缀顺延重试，非 slug 冲突与其他数据库错误原样上抛，因此并发写同一候选不再是“检查后写”的竞态出口。Agent 时间线条目不再是一次性副作用：投影终态与幂等键都落库，写失败只留在「未决策」状态由 Worker 的有界扫描补做，因此重放、并发和进程终止都不会重复或丢失条目，节流与无 ToolCall 也各有显式终态可供审计。因此模块内已无「静默吞掉写入失败」的主要路径，剩余失败面是通用异常文案未脱敏（QAM-05-006）；不把 QAM-08 Trace 生成或 QAM-06 坐标算法移入本报告。
 
 ## Verified Strengths
 
@@ -181,8 +193,8 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 - `generateSlug` 对中文转拼音、ASCII、特殊字符、长度和全被清空的标题有纯函数测试；本轮 `tests/lib/posts.test.ts` 通过。数据库仍保留 Post slug unique index，提供最终唯一性底线（E3/E2）。
 - Post 的 authorCity/Country/Timezone 快照优先于当前 profile，避免用户改档案后历史位置全部回写；相关 helper 和测试覆盖 snapshot fallback（[`lib/post-time.ts`](../../lib/post-time.ts#L16-L31)、[`tests/lib/posts.test.ts`](../../tests/lib/posts.test.ts#L70-L99)，E3）。
 - `react-markdown` 使用 GFM/line-break 插件但未开启 raw HTML；2026-09-12 的渲染实验中 `[bad](javascript:...)` 输出空 href，`<script>` 被转义，未形成可执行脚本（[`MarkdownContent.tsx`](../../components/blog/MarkdownContent.tsx#L1-L35)，E3）。
-- Post 删除的数据库关系方向明确：`AtlasElement.postId` 唯一且 FK `ON DELETE CASCADE`；Home anchor 创建使用 `skipDuplicates`，正常重复首页访问不会重复创建（[`schema.prisma`](../../prisma/schema.prisma#L475-L500)、[`home-board.ts`](../../lib/home-board.ts#L27-L54)、[`tests/lib/home-board.test.ts`](../../tests/lib/home-board.test.ts#L35-L66)，E2/E3）。
-- Agent final Message/Step/Task 的完成事实在 lease 事务内提交，timeline projection 异常不会回滚已完成消息；这种失败隔离方向是合理的，当前缺口是 durable retry/idempotency，而非 QAM-08 的 lease 状态机（[`execution-tracer.ts`](../../agent/execution-tracer.ts#L47-L102)，E2）。
+- Post 删除的数据库关系方向明确：`AtlasElement.postId` 唯一且 FK `ON DELETE CASCADE`；Home anchor 创建使用 `skipDuplicates`，正常重复首页访问不会重复创建；读取与补齐之间的删除由逐条补写隔离，不会写入已删除 Post 或打断首页（[`schema.prisma`](../../prisma/schema.prisma#L475-L500)、[`home-board.ts`](../../lib/home-board.ts#L104-L139)、[`交错回归`](../../tests/integration/home-post-anchor-interleave.integration.test.ts)，E3）。
+- Agent final Message/Step/Task 的完成事实在 lease 事务内提交，timeline projection 异常不会回滚已完成消息；失败隔离方向保持，且投影本身已补上 durable 终态、`Post.agentTaskId` 幂等键与 Worker 有界恢复扫描，写失败不再丢失条目（[`execution-tracer.ts`](../../agent/execution-tracer.ts#L47-L109)、[`agent-posts.ts`](../../lib/agent-posts.ts#L100-L173)、[`agent-worker.ts`](../../agent/agent-worker.ts#L45-L53)，E3）。
 - 首页/搜索共享字段白名单；真实 PostgreSQL 对同一可见集合做深比较，证明公开位置和 null fallback 一致，私有档案没有进入投影（[`post-timeline.ts`](../../lib/post-timeline.ts#L18)、[`投影回归`](../../tests/integration/post-timeline-projection.integration.test.ts#L33)，E3）。
 - 搜索失败、有效空集合和请求取消已分别有可观察结果；保留文章、键盘重试和详情导航通过真实浏览器，迟到成功/失败与卸载通过 MSW/组件回归（[`搜索回归`](../../tests/component/home-timeline-board-search.test.tsx#L48)、[`浏览器旅程`](../../tests/e2e/authenticated.spec.ts#L1178)，E3）。
 - 搜索防抖的创建与清理保持对称；StrictMode 首次挂载的一次输入可提交，清空和卸载取消待提交查询，组件先红后绿且完整开发与生产定向浏览器通过（[`SearchInput`](../../components/blog/SearchInput.tsx)、[`生命周期回归`](../../tests/component/search-input.test.tsx)、QAM-05-009，E3）。
@@ -191,10 +203,8 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 
 ## Recommended Improvements
 
-1. **治理 QAM-05-001（P2）**：共享 Post Zod body/query、写入服务和稳定错误 view model，降低 malformed body 与双入口规则扩散；补 Route/Action 行为测试。
-2. **治理 QAM-05-002/004（P2）**：补 slug 冲突重试和 AgentTask→Post 的 durable/idempotent projection；以真实 PostgreSQL 测试确认并发可用性和失败恢复。QAM-05-003 的复合 cursor 与稳定排序已关闭。
-3. **治理 QAM-05-006（P2）**：统一 API/Action 通用错误契约；QAM-05-007 的展示投影与搜索错误反馈已经关闭，不扩大为通用错误治理。
-4. **最后治理 QAM-05-008（P2）**：为首页 Post 与 Atlas anchor 的交错删除增加真实 FK 测试和安全重试；保留 Post 删除 cascade，不把空间坐标责任转给 QAM-05。
+1. **治理 QAM-05-006（P2）**：统一 API/Action 通用错误契约；非法输入已在 QAM-05-001 中收敛为稳定字段文案，剩余缺口是其余异常的分类与脱敏，不扩大为通用错误治理。QAM-05-007 的展示投影与搜索错误反馈已经关闭。
+2. **QAM-05-004 已关闭**：AgentTask→Post 的投影已有 durable 终态、`Post.agentTaskId` 幂等键与 Worker 有界恢复扫描，真实 PostgreSQL 与进程级证据覆盖失败→恢复、崩溃窗口重放、并发与节流终态。后续若要缩短积压收敛时间（当前每轮上限 5 条），应按运行观测另行登记，而不是顺手调参。QAM-05-001 的 Post 写入输入契约、QAM-05-002 的 slug 并发分配、QAM-05-003 的复合 cursor 与稳定排序、QAM-05-008 的 anchor 交错删除均已关闭。
 
 以上均为现有 Post/Agent log/首页时间线的边界修正，不新增内容类型、搜索能力、Trace 能力或空间交互。
 
@@ -204,26 +214,26 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 
 | ID | Priority | 状态 | 首次发现/直接证据 | 复审触发 |
 | --- | --- | --- | --- | --- |
-| QAM-05-001 | P2 | `open` | Post API/Action raw body 与重复 CRUD 规则（E2；优先级复核降级） | Post schema、Route、Action、validation 或错误契约修改 |
-| QAM-05-002 | P2 | `open` | `ensureUniqueSlug` check-then-write + DB unique（E2；优先级复核降级） | slug 算法、Post create/update、Agent log projection 或唯一迁移修改 |
-| QAM-05-004 | P2 | `open` | final completion 后置 Post 写入，异常/节流只 console/null（E2；优先级复核降级） | ExecutionTracer completion、agent-posts、AgentTask/Post relation 或 Worker retry 修改 |
 | QAM-05-006 | P2 | `open` | Action/API 原始异常 message 返回（E2） | `lib/api.ts`、Post Action 或错误响应策略修改 |
-| QAM-05-008 | P2 | `open` | anchor 补齐与 Post 删除跨写 FK 交错（E2） | Post/Atlas FK、home-board 补齐、Home page 或 Post delete 生命周期修改 |
 
 ### 已解决问题
 
 | ID | Priority | 状态 | 修正/证据 | 复审触发 |
 | --- | --- | --- | --- | --- |
+| QAM-05-004 | P2 | `resolved` | 投影改为以 `Post.agentTaskId` 为幂等键、以 `AgentTask.timelineProjectedAt` 为终态决策的派生视图，写失败不推进终态并由 Worker 有界扫描补做；真实 PostgreSQL 失败→恢复/崩溃窗口重放/并发/节流与无 ToolCall 终态 10/10、迁移回填 1/1、Worker 子进程恢复 1/1，对照 A（旧内联投影）旧 `1 failed \| 9 passed`、对照 B（旧 Worker）旧 `1 failed`（E3） | `projectAgentTaskTimeline`/`recoverPendingTimelineProjections`、`AgentTask.timelineProjectedAt`/`Post.agentTaskId` 迁移、Worker dispatch 循环顺序或节流规则修改 |
 | QAM-05-005 | P1 | `resolved` | 统一 Post 可见性条件；真实 PostgreSQL 覆盖列表/type/搜索/详情/首页、双用户成员边界和 Room `SetNull` 孤儿隐藏（E2/E3） | Post read projection、RoomParticipant/Room 删除、首页查询或 Agent log roomId 语义修改 |
 | QAM-05-007 | P2 | `resolved` | 共享最小展示 select；组件 12 failed→15/15、真实 PostgreSQL 0/1→1/1，当前成员可见性/Home 授权 3/3，Chromium 失败保留/键盘重试与位置一致（E3） | Home/Post select、位置 fallback、SearchInput/HomeTimelineBoard 或错误 UI 修改 |
 | QAM-05-003 | P2 | `resolved` | 版本化复合 cursor、稳定两键排序；PostgreSQL 59→51 的旧遗漏修正为 59/59，分页/首页/成员/删除锚点 4/4；Route/组件及 production Chromium 53 条跨页通过（E3） | 搜索、cursor、首页/Timeline 排序、Post ID 或时间字段/索引修改 |
 | QAM-05-009 | P2 | `resolved` | 防抖创建/清理同归 effect；StrictMode 首次输入旧导航 0 次→1 次，清空/卸载回归保持；完整开发 42/42、最终生产定向 6/6，失败清理零残留（E3） | SearchInput 防抖、清空、外部 q 或挂载生命周期修改 |
+| QAM-05-008 | P2 | `resolved` | 批量快路径保留，整批被打断时逐条补写并只跳过回读确认已消失的 Post；真实 PostgreSQL 交错 2 failed\|1 passed→3/3、Node 6/6，旧实现可再次复现 500（E3） | Post/Atlas FK、home-board 补齐、Home page 或 Post delete 生命周期修改 |
+| QAM-05-002 | P2 | `resolved` | 候选 slug 由数据库唯一约束裁定：冲突则按后缀有界重试，只重试含 `slug` 的 `P2002`，其他错误原样上抛；四个写入点共用；真实 PostgreSQL 并发 4 failed\|1 passed→5/5、Node 3 文件/76 项，旧实现可再次复现 `[200,500]`（E3） | slug 算法、`writePostWithUniqueSlug`、Post create/update、Agent log projection 或唯一迁移修改 |
+| QAM-05-001 | P2 | `resolved` | 发布/更新共用的 Post Zod 契约（类型/trim/长度/空 patch）在生成 slug 前解析于四个写入点；Route 保持 `400 Invalid request`、Action 返回稳定字段文案；Node 旧 15 failed\|5 passed→20/20，真实 PostgreSQL 旧 6 failed\|2 passed→8/8，非字符串与纯空白不再触库（E3） | `postCreateSchema`/`postUpdateSchema`/`postSlugSchema`、Post Route/Action 写入路径、成功或错误响应契约修改 |
 
 ### 复审触发与证据规则
 
 - 任一问题修复后保留原 ID，状态只改为 `resolved`、`accepted-risk` 或 `not-reproduced`，并附当前代码和风险匹配测试证据；不得删除历史结论。
 - QAM-05 复审必须重新核对 HTTP/Action 规则是否同源、Agent log room 过滤是否覆盖列表/搜索/详情/home、Post→Atlas FK 是否仍为正确生命周期方向；QAM-06 的坐标/媒体问题和 QAM-08 的 Trace 生成/lease 问题只作为关联证据，不重复计分。
-- 最高风险验证应至少包括真实 PostgreSQL 的并发 slug、同 timestamp cursor、跨房间 Post read、Agent projection 失败/恢复/幂等和 Post 删除与 anchor 补齐交错；本轮浏览器已重跑发帖与搜索旅程；完整编辑/删除生命周期仍需专项覆盖。
+- 最高风险验证应至少包括真实 PostgreSQL 的并发 slug、同 timestamp cursor、跨房间 Post read、Agent projection 失败/恢复/幂等和 Post 删除与 anchor 补齐交错；交错补齐已由 feat-069、并发 slug 已由 feat-070、Agent projection 失败/恢复/幂等已由 feat-075 补齐 E3，五项均已具备风险匹配证据，故「最高风险不变量无风险匹配验证」的 Gate ≤ L2 上限已解除；本模块 Gate 停在 L3 而非 L4 的原因是 QAM-05-006 只有 E2；写入边界的畸形与越界输入已由 feat-071 在 Route/Action 与真实行比对两层覆盖，其用户可见症状（编辑器错误横幅与「成功才跳转」）已由 feat-072 用一条 production Chromium 用例补齐 E3（旧写入契约下确定性失败、恢复后通过，含合法保存对照），编辑交互旅程不再是覆盖缺口；feat-071 登记时按验收标准 ③ 只补 Node 行为与真实 PostgreSQL 两层，浏览器层由随后登记的 feat-072 独立完成。
 - 2026-09-12 根会话 `./init.sh` 通过 72 个测试文件/472 项；本模块定向 Node 7 文件/49 项、组件 2 文件/3 项通过。该轮未运行 Docker、真实 PostgreSQL、Playwright、`check:full` 或 Compose smoke；2026-09-08 的 `check:full` 曾单次通过生产构建、覆盖率、13 文件/30 项真实 PostgreSQL和 Playwright 9/9，不冒充本轮结果。
 
 ### 只追加评分历史
@@ -237,5 +247,14 @@ Post 是内容事实源，`publishedAt`/`slug`/作者位置快照在 Post 上；
 | 2026-09-13 | 77 | L2 | L2 | L2 | `+4（QAM-05-007 resolved）` | 展示 select 同源、搜索失败保留/键盘重试和取消后回写保护；抽象、状态、接口、健壮性各 +1，其余维度保持。组件旧 12/15 failed→15/15，PostgreSQL 旧 0/1→1/1、成员与 Home 授权共 3/3，开发 Chromium 2/2；`E2E_APP_MODE=production ./scripts/run-node22.sh npm run check:full` 单次 exit 0：77 文件/607 项 Vitest、Next.js 16.3.3 production build、覆盖率 50.05/44.64/54.45/50.61、27 文件/97 项真实 PostgreSQL、37/37 Playwright（3.0 分钟，无跳过）。其他六个 P2 保持开放。 |
 | 2026-09-13 | 80 | L3 | L2 | L2 | `+3（QAM-05-003 resolved）` | 复合 cursor、共享第二排序键与校验边界；数据一致性、健壮性、验证可信度各 +1，其他维度保持。真实 PostgreSQL 旧 59 条仅返回 51 条、四项失败→4/4；同时间 Timeline 旧 0/1→1/1。production Chromium 53 条乱序写入后首页/搜索/刷新及分页完整，完整门禁单次 exit 0：78/653 Vitest、构建、覆盖率 50.43/45.03/55.02/50.99、28/101 PostgreSQL、40/40 Playwright。其余五个 P2 与 Gate L2 保持。 |
 | 2026-09-14 | 80 | L3 | L2 | L2 | `0（QAM-05-009 resolved）` | feat-067 修复首次挂载输入被 effect 重放取消，恢复既有搜索契约；旧组件 1 failed/4 passed→5/5，相关组件/SSR 3/23。最终单 worker 开发 `check:full` exit 0：79/685、生产构建、覆盖率 51.58/45.39/56.06/52.25、29/110 PostgreSQL、42/42 Playwright；生产搜索/分页与 Focus 定向 6/6，收尾 init 79/685。其余五个 P2 及并发/派生恢复缺口保持，各维度、Gate 和 Final 不变；高开销环境与独立性能计时错误保留在 feat-068。 |
+| 2026-09-19 | 81 | L3 | L2 | L2 | `+1（QAM-05-008 resolved）` | feat-069 之前，首页读取到的 Post 在 anchor 补齐前被删除会让整批 `createMany` 撞 FK，冒泡为首页请求 500。保留批量快路径，整批被打断时逐条补写，只跳过回读确认已消失的 Post 与已存在的 anchor，其余错误继续上抛。真实 PostgreSQL 交错回归旧 2 failed/1 passed→3/3，Node 定向旧 2 failed/4 passed→6/6，旧实现可再次复现同一 500；健壮性 9→10，其余维度、Gate/Final 不变。本轮风险匹配的完整开发门禁三轮均 exit 1（标准与真实 PostgreSQL 层三轮一致全绿，失败仅在开发 Playwright 层且互不相同、单独复跑均通过，判为宿主容量边界），feat-069 因此记为 `blocked` 而非 `done`，评分依据为定向 E3。 |
+| 2026-09-20 | 81 | L3 | L2 | L2 | `0（门禁形态修复，无评分变化）` | 上一条记录的阻塞根因（连续三轮 `check:full` exit 1）定位为 Harness 配置而非产品缺陷：发布门禁从未声明浏览器层的应用模式，`tests/e2e/support/app-mode.ts` 默认 `development`，而 `next dev` 未显式给出 `--max-old-space-size` 时按 `os.totalmem() * 0.5` 推导堆上限、按需编译的路由不卸载，门禁结论因此取决于宿主余量（实测开发层峰值约 3600MB，生产层 1850MB）。`check:full` 改走新增的 `test:e2e:production` 后单次 exit 0：84 文件/703 项 Vitest、生产构建、覆盖率 51.88/45.71/56.37/52.53、30 文件/113 项真实 PostgreSQL、43/43 生产 Playwright（3.7 分钟，无 skip/retry），前三轮 5 个失败用例全部通过。未放宽断言、未加 skip、未改超时、未改产品代码；QAM-05 的维度得分、Gate、Final 与其余开放项均不变。 |
+| 2026-09-20 | 82 | L3 | L2 | L2 | `+1（QAM-05-002 resolved）` | feat-070：`ensureUniqueSlug` 的 `findUnique → create/update` 让两个并发请求可同时观察到 slug 不存在，后到者被数据库 unique 拒绝并冒泡为 `Server error: … Unique constraint failed on the fields: ('slug')`。改为唯一性事实由数据库裁定：直接以候选 slug 写入，只在 Post slug 冲突时有界顺延重试（`-2`…，上限 5 个候选），只认 `meta.target` 含 `slug` 的 `P2002`，其他错误原样上抛；API POST/PUT、Server Action `createPost`/`updatePost` 与 Agent log 投影四个写入点共用，更新路径只在改标题时重新分配 slug。真实 PostgreSQL 用 `BEFORE INSERT/UPDATE` 触发器延迟 0.5s 让两个请求都越过检查阶段：旧实现 `4 failed \| 1 passed`（`expected [ 200, 500 ] to deeply equal [ 200, 200 ]`），修复后 5/5（并发创建、并发改标题、并发 Action 各得 `base`/`base-2`，Agent 投影顺延 `-2`）；把 helper 换回旧实现可再次复现，非测试侧放宽。定向 Node 3 文件/76 项通过，`P2002` 形状按真实探针固定。健壮性 10→11，其余维度、Gate/Final 不变；本轮 `npm run check:full` 单次 exit 0：84 文件/711 项 Vitest、生产构建、覆盖率 52/45.91/56.53/52.66、31 文件/118 项真实 PostgreSQL、43/43 生产 Playwright（3.9 分钟，无 skip/retry）。 |
+
+| 2026-09-20 | 84 | L3 | L2 | L2 | `+2（QAM-05-001 resolved）` | feat-071：`POST /api/posts`、`PUT /api/posts/:slug` 与 Server Action `createPost`/`updatePost`/`deletePost` 原先各自做 truthy/`trim()` 判断后把值直接交给 Prisma。非字符串 title 让 `title.trim()` 抛错，Route 变成不稳的 500，Action 把逐字的 `Server error: title?.trim is not a function` 交给编辑器显示；超长正文无界入库；`{title:"   ",content:"   "}` 通过 truthy 检查后执行 `prisma.post.update({ data: {} })` 静默 no-op，Action 返回成功、编辑器跳转到文章页而库内实际未变。改为 `lib/validation.ts` 的 `postCreateSchema`/`postUpdateSchema`/`postSlugSchema` 在生成 slug 前解析同一契约（`z.string({error})` 类型文案、trim 先于长度校验、200/20000 上限、`.refine` 拒绝空 patch、Zod 默认剥离未知键使 `type`/`authorId` 无法注入），Route 经既有 `errorToResponse` 返回 `400 {error:"Invalid request",issues:[…]}`，Action 经 `invalidInput()` 返回首条 issue 文案，`serverError` 原样保留给其余异常。Node 层旧 `15 failed \| 5 passed (20)`→20/20，真实 PostgreSQL 层旧 `6 failed \| 2 passed (8)`→8/8（含只填空格的更新整行含 `updatedAt` 不变、20000 边界接受、`slug === generateSlug("中文标题")`、Action 非法 slug 不查询不删除），旧实现可再次复现。抽象与复用 7→8、健壮性 11→12，其余维度、Gate/Final 不变。按 testing-standards 的选择规则只补 `tests/server` 与真实 PostgreSQL 两层：组件测试因 mock 掉 Action 而无法在修复前失败，E2E 超出本项登记的第 3 条验收标准，均未新增。`npm run check:full` 单次 exit 0：85 文件/731 项 Vitest、生产构建、覆盖率 52.57/46.09/57/53.21、32 文件/126 项真实 PostgreSQL（118.25s）、43/43 生产 Playwright（4.0 分钟，无 skip/retry）。 |
+
+| 2026-09-20 | 84 | L3 | L2 | L2 | `0（feat-072 补齐编辑器浏览器 E3，无评分变化）` | feat-072：feat-071 关闭 QAM-05-001 时只补了 Route/Action 行为与真实 PostgreSQL 持久化两层，用户可见的症状链路（PostEditor 的 `if ("error" in result) { setError(...); return; }` 显示横幅不跳转、成功后才 `router.push`）没有测试；组件测试必须整个 mock 掉 `@/app/actions/posts`，修复前不可能失败，故按 testing-standards 第 5 条补一条 production Playwright 用例（authenticated project）。用例以已登录用户打开 `/posts/edit/:slug`，把正文改成纯空白（三个空格——真正留空会被原生 `required` 拦下、Action 根本不被调用）后提交，断言横幅 `Content is required` 可见、URL 仍停在编辑页、库内 content/slug/`updatedAt` 与提交前完全相等；同用例内改成合法内容再提交必须跳转并写入 trim 后的值，排除「提交永远不生效」的假阳性。把 `updatePost` 退回「按 truthy 组装 patch」的旧写入契约后，同一用例 `1 failed \| 1 passed (53.2s)`，失败快照显示页面已渲染文章详情且无横幅，恢复修复版本（sha256 比对一致）后 `2 passed (48.3s)`；未放宽断言、未加 skip、未改断言超时，也未改产品代码。**本项为纯验证补充，不改变任何维度得分**：评分反映当前既定实现质量，且 `可测试性与验证可信度` 低于满分的唯一原因是 Agent projection 失败恢复仍缺 E3，故 Score 维持 84/L3、Gate/Final 维持 L2、开放 P2 仍为 2（QAM-05-004/006）。`npm run check:full` 单次 exit 0：85 文件/731 项 Vitest、生产构建（`✓ Compiled successfully in 14.5s`）、覆盖率 52.53/46.05/57/53.21、32 文件/126 项真实 PostgreSQL（112.51s）、44/44 生产 Playwright（3.8 分钟，无 skip/retry；较上轮 +1 即本用例）。 |
+
+| 2026-09-20 | 87 | L3 | L3 | L3 | `+3（QAM-05-004 resolved）` | feat-075：`ExecutionTracer.completeWithMessage` 在 lease 事务内提交 final Message/AgentStep/AgentTask/EventLog 之后，才在事务外调用 `createAgentLogPost`；异常只 `console.error`、节流分支直接 `return null`，且 schema 中 AgentTask 与 Post 之间没有任何关联，因此「任务已完成」这一持久事实无法重建其时间线投影——瞬时数据库故障或提交与投影之间的进程终止会让该条 agent_log 永久消失，而 Agent 已在聊天室回复「已完成」。改为让投影成为派生视图：`AgentTask.timelineProjectedAt` 记录终态决策（已建条目/已按节流判定不建/无 ToolCall），`Post.agentTaskId` 唯一约束保证同一任务至多一条，`projectAgentTaskTimeline` 承担「读持久事实 → 写入 → CAS 推进终态」，写入失败**不推进终态**并交给 `recoverPendingTimelineProjections`（按 `completedAt` 升序、每轮上限 5、单条失败不影响整轮）补做，恢复调用挂在 Worker dispatch 循环内、与任务分发互相隔离；迁移 `20260920120000_agent_timeline_projection` 增加两列与 `(status, timelineProjectedAt)` 索引，并把历史 `status='completed'` 任务回填为 `COALESCE(completedAt, updatedAt)` 以免补发陈旧 Post。唯一键判定沿用本模块既有做法，按真实探针固定的 `{code:"P2002",meta:{target:["agentTaskId"]}}` 形状识别「已投影」，其他错误原样上抛。**先红后绿（两个对照各自只退回一个文件）**：对照 A 只退回旧内联投影 → 真实 PostgreSQL 同一用例 `1 failed \| 9 passed (10)`，完成后 `timelineProjectedAt` 仍为 `null`；对照 B 只退回旧 Worker → 进程级用例 `1 failed (1)`，Worker 正常启动（`[worker] dispatch loop started, base poll 1000ms`）但从不补做，该 agent_log 在旧实现下永久缺失；恢复后按 sha256 逐文件比对一致。**幂等重放、崩溃窗口重放、节流终态与迁移回填四项在旧实现下无法以行为方式失败**（旧代码没有该投影入口），如实记为防回归守卫而非红灯证据，加分依据是对照 A/B 与新增的进程级 E3，不以测试数量代替风险覆盖。数据流与状态一致性 11→12、健壮性与并发与生命周期 12→13、可测试性与验证可信度 7→8；模块最高风险不变量（派生投影的失败恢复与幂等）自此有风险匹配 E3，Gate 的「最高风险不变量无风险匹配验证 → 不高于 L2」上限解除，Gate/Final 由 L2 升至 **L3**；L4 未通过，因为 QAM-05-006 的通用错误 message 泄漏仍只有 E2。`npm run check:full` 单次 exit 0：87 文件/771 项 Vitest（快速门禁与覆盖率阶段一致）、生产构建（`✓ Compiled successfully in 4.9s`）、覆盖率 53.86/47.46/58.91/54.56、35 文件/140 项真实 PostgreSQL（139.93s，较上轮 +3 文件/+12 项即本项新增的投影/迁移/Worker 三个回归文件）、44/44 生产 Playwright（4.2 分钟，无 skip/retry）；`typecheck`/`lint` exit 0。 |
 
 复审时只在代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate、Final 和所有稳定问题状态。

@@ -84,8 +84,8 @@ describe("AuthPanel", () => {
   });
 
   afterEach(() => {
+    // 全局替身由共享收尾在卸载之后恢复（tests/setup/component.ts）。
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("falls back to the shared visual when the manifest is empty", () => {

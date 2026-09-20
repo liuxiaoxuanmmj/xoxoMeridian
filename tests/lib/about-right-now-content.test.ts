@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { RIGHT_NOW_PEOPLE } from "@/app/about/right-now-content";
+import { RIGHT_NOW_PEOPLE } from "@/components/about/right-now-content";
 
 describe("about right-now duo content", () => {
   it("contains exactly oo and xx in display order", () => {

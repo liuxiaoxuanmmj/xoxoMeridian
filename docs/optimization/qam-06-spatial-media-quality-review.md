@@ -5,28 +5,28 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-06 空间画布与媒体资产 |
-| 快照日期 | 2026-09-12 |
+| 快照日期 | 2026-09-20 |
 | 审查 Skill | [`xoxo-qam-06-spatial-media-review`](../../.agents/skills/xoxo-qam-06-spatial-media-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-06、Cross-cutting Concerns、共享映射、BU-01/BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+5（QAM-06-007 resolved；74→79）` |
-| 当前基线命令 | 启动 `./init.sh` exit 0、72 文件/482 项；最终 `./scripts/run-node22.sh npm run check:full` 中的快速门禁 exit 0、73 文件/496 项，类型、lint 与两主题资产通过 |
-| 风险匹配命令 | `./scripts/run-node22.sh npm run check:full` 单次 exit 0：73/496 Vitest、Next.js production build、覆盖率 47.76/42.59/52.56/48.54、24 文件/75 项真实 PostgreSQL、32/32 Playwright；新增 [组件回归](../../tests/component/home-timeline-board-mutations.test.tsx)、[数据库故障/重试](../../tests/integration/home-mutation-persistence.integration.test.ts) 与 [浏览器编辑/删除旅程](../../tests/e2e/authenticated.spec.ts#L11-L118) 均通过 |
-| 证据纪律 | E3 为本轮实际执行的组件失败/竞态、PostgreSQL trigger 故障注入与真实 Chromium 重试/刷新；初始组件负向对照 12/12 failed，最终该文件 14/14 passed。Home 授权与双进程拖动通过完整门禁复核；Atlas 建板、DB/blob 补偿与 SSE 生命周期仍保留各自证据缺口 |
+| 本轮 Delta | `+2（QAM-06-005 resolved；79→81）` |
+| 当前基线命令 | 收尾 `./scripts/run-node22.sh ./init.sh` exit 0、85 文件/751 项（含 `prisma generate`、类型检查、lint 与两主题资产预算）；`./scripts/run-node22.sh npm run check:full` 内的快速门禁 exit 0、85 文件/750 项 |
+| 风险匹配命令 | `./scripts/run-node22.sh npm run check:full` 单次 exit 0：85 文件 Vitest（快速门禁 750 项、覆盖率阶段 751 项）、Next.js production build、覆盖率 53.06/46.97/57.64/53.78（门槛 40/35/45/40）、32 文件/126 项真实 PostgreSQL（194.00s）、生产 Playwright 44/44（7.4 分钟，无 skip/flaky）；本轮定向 [`上传回归`](../../tests/server/home-board-routes.test.ts) 3 文件/48 项 exit 0。两次标准门禁的用例总数差 1 且仅在首次出现，四次复测（覆盖率阶段、`./init.sh`、两次 `--reporter=json`）稳定为 751 且逐文件计数一致，未复现，已如实登记在进度与交接中 |
+| 证据纪律 | 本轮 E3 为实际执行的上传 Route/适配层行为测试：旧实现负向对照 18 failed/29 passed（伪造 MIME 被接受并调用 `save`、`File` 型 caption 触发 `.trim is not a function` 的 500、`Infinity`/`NaN`/`1e999` 坐标与 201 字符 caption 落库），修复后同一批用例全绿；测试字节由 `sharp` 生成并逐个回读验证可解码，避免用不可解码 fixture 自证。**上传路径本轮未走真实 PostgreSQL 与浏览器**，Home 授权、编辑/删除失败恢复与串行写入的真实 PostgreSQL/浏览器 E3 沿用上一轮结论；Atlas 建板、DB/blob 补偿与 SSE 生命周期仍保留各自证据缺口 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **79 / 100** |
-| Score Level | **L2** |
+| Score | **81 / 100** |
+| Score Level | **L3** |
 | Gate Level | **L2** |
 | Final Level | **L2** |
-| Trend | `+5（74→79；较 baseline +22）` |
-| Evidence Confidence | 中高（Home 权限、编辑/删除失败恢复和串行写入已有真实 PostgreSQL/浏览器 E3；Atlas 首次建板、SSE、DB/blob 与上传生命周期仍缺对应验证） |
-| 当前开放问题 | 5 项（P2×5；无开放 P0/P1） |
+| Trend | `+2（79→81；较 baseline +24）` |
+| Evidence Confidence | 中高（Home 权限、编辑/删除失败恢复与串行写入有真实 PostgreSQL/浏览器 E3；上传内容信任与字段边界有本轮实际执行的 Route/适配层行为测试 E3，**未走真实 PostgreSQL 与浏览器**；Atlas 首次建板、SSE 与 DB/blob 补偿仍缺对应验证） |
+| 当前开放问题 | 4 项（P2×4；无开放 P0/P1） |
 
-当前产品入口仍以 `/home` 中嵌入的空间画布为准。QAM-06-007 已关闭：大小、标注与位置共用按照片串行的保存队列，失败保留待保存内容；照片和连线只在删除确认后移除，迟到响应不会覆盖后续编辑或恢复已清除的错误提示。组件、真实 PostgreSQL 与 Chromium 重试/刷新证明 UI 和持久化记录一致，既有 Home 授权与拖动收敛继续通过。Atlas 首次建板、DB/blob 补偿、multipart 输入、连接约束与 SSE 生命周期仍是五个独立 P2。
+当前产品入口仍以 `/home` 中嵌入的空间画布为准。QAM-06-005 已关闭：两条上传路径的图片信任来源从客户端声明的 `File.type` 改为文件内容，位置/尺寸/标题经同一 Zod form-data 边界解析，失败在读取字节与写存储之前就返回 400，既不落 blob 也不建记录。路由行为测试在旧实现下复现了伪造 MIME 被接受、`File` 型 caption 触发 `.trim is not a function` 的 500、非有限坐标与超长 caption 落库，修复后全部转为稳定 400，三种合法格式仍以判定出的 content type 保存与回读。Atlas 首次建板、DB/blob 补偿、连接约束与 SSE 生命周期仍是四个独立 P2，因此 Gate 仍为 L2。
 
 ## Score Breakdown
 
@@ -36,13 +36,13 @@
 | 代码结构与复杂度 | 8 | 10 | 本轮将 Home 保存/删除状态从页面装配抽取到 [`useHomeBoardMutations`](../../components/home/useHomeBoardMutations.ts#L27)，`HomeTimelineBoard` 保留组合与反馈，失败分支有单一落点；Atlas/Home 上传删除重复与旧 SSE/drag cache 分散状态仍在（E2/E3）。 |
 | 抽象与复用 | 7 | 8 | 位置、大小、标注共享 [`runPhotoQueue`](../../components/home/useHomeBoardMutations.ts#L52) 的最新字段合并、2xx 确认和失败重试，照片 DELETE 复用同一串行边界；Home spatial access、storage key/helper 继续复用。Atlas/Home 上传和 DB/blob 补偿仍未统一（E2/E3）。 |
 | 数据流与状态一致性 | 11 | 12 | 照片 PATCH 失败保留未确认字段，新的同名字段优先；成功响应不整体覆盖后续草稿。照片及连线 DELETE 只有 2xx 才移除，失败无需从旧 snapshot 恢复整张画布；真实 PostgreSQL 与浏览器逐操作重试/reload 证明尺寸、trim 标注和级联记录一致。DB/blob 的跨资源补偿仍开放（E3）。 |
-| 接口与依赖关系 | 8 | 10 | JSON body 有 Zod 校验；Home snapshot、element Route 与 connection Route 共用 QAM-05 的 Post 可见性 contract，connection 还要求两端同时可见并保留 board/type 约束。multipart 字段未经过 schema，Atlas connection 反向重复仍会落入 500/重复记录（QAM-06-005/006，E2/E3）。 |
+| 接口与依赖关系 | 9 | 10 | JSON body 有 Zod 校验；Home snapshot、element Route 与 connection Route 共用 QAM-05 的 Post 可见性 contract，connection 还要求两端同时可见并保留 board/type 约束。本轮把两条上传 Route 的 multipart 字段收敛到 [`lib/validation.ts`](../../lib/validation.ts) 的 `homeUploadFieldsSchema`/`atlasUploadFieldsSchema`：x/y/width/height/caption 与非字符串、非有限数、超长文本的行为有单一边界，Atlas/Home 不再各自 `Number(...)` 与类型断言。Atlas connection 反向重复仍会落入 500/重复记录（QAM-06-006，E2/E3）。 |
 | 健壮性、并发与生命周期 | 10 | 14 | 照片 PATCH/DELETE 串行，失败可重试；deferred 成功/失败证明后续编辑不会被旧响应回退，照片已删除时迟到的连线失败不复活提示，卸载后不派发排队写入。组件四操作分别覆盖 500 与网络拒绝，PostgreSQL 故障验证保留记录/级联语义，Home 授权条件写保持。旧 Atlas 建板、SSE 和 DB/blob 生命周期仍有缺口（E2/E3）。 |
 | 性能与资源使用 | 6 | 8 | board/坐标/z-index 索引和可见元素渲染路径合理；每个 Atlas SSE 连接每 800ms 做完整元素/连接查询，且没有 in-flight guard，慢查询时工作与连接数线性放大（E2）。 |
-| 安全与隐私 | 7 | 10 | 主要入口均要求认证；Home 的 room-scoped `agent_log` anchor 与关联 connection 现按当前用户 RoomParticipant 事实过滤，未授权读写统一表现为 404，且实际数据库写条件也复核授权。legacy Atlas board/Post-anchor 隔离、storage key 与私有读取缓存仍有效；上传只信任客户端 MIME 仍由 QAM-06-005 追踪（E2/E3）。 |
-| 可测试性与验证可信度 | 7 | 8 | 新增组件旧实现 12/12 failed、修复后扩为 14/14，覆盖可访问 pending/error、500/网络拒绝、重试、连续编辑、键盘与迟到响应；PostgreSQL 新 4/4 验证实际 Route 故障/重试/级联，Chromium 逐次刷新并回读真实数据库。全量 24/75 PostgreSQL、32/32 Playwright 通过；Atlas SSE、建板和 DB/blob/上传仍缺 E3，未给满分。 |
+| 安全与隐私 | 8 | 10 | 主要入口均要求认证；Home 的 room-scoped `agent_log` anchor 与关联 connection 现按当前用户 RoomParticipant 事实过滤，未授权读写统一表现为 404，且实际数据库写条件也复核授权。legacy Atlas board/Post-anchor 隔离、storage key 与私有读取缓存仍有效；本轮上传的可信来源从请求元数据（`File.type`）改为文件内容（magic bytes + EOI/IEND/RIFF 长度自洽），落库扩展名与回读 content type 由判定结果而非声明值决定（E3）。 |
+| 可测试性与验证可信度 | 7 | 8 | 组件回归旧实现 12/12 failed、修复后扩为 14/14；PostgreSQL 4/4 验证实际 Route 故障/重试/级联，Chromium 逐次刷新并回读真实数据库。本轮上传契约补齐 E3：旧实现负向对照 18 failed/29 passed，修复后 48/48；覆盖伪造 MIME、截断图片、非有限坐标、File 型/超长 caption、空白归一化与三种合法格式的判定值。Atlas SSE、首次建板与 DB/blob 补偿仍缺风险匹配验证，未给满分。 |
 | 可维护性、演进与技术债 | 5 | 6 | Home 的 mutation queue 与保存状态现集中在单一 hook，UI 控件只提交意图并呈现反馈；修改保持 QAM-06 局部，未引入新的协作协议。旧 Atlas SSE、资源补偿与上传重复仍是可定位的独立技术债（E2/E3）。 |
-| **合计** | **79** | **100** | 算术核对：10+8+7+11+8+10+6+7+7+5 = 79。 |
+| **合计** | **81** | **100** | 算术核对：10+8+7+11+9+10+6+8+7+5 = 81。 |
 
 ## Level Gate
 
@@ -50,9 +50,9 @@
 | --- | --- | --- |
 | 开放 P0 | 通过 | 当前无开放 P0；`AtlasElement.post` 的 FK 方向仍为 `AtlasElement.postId → Post.id`，没有把删除 anchor 错写成删除 Post。 |
 | 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-06-009 已解决，QAM-06 当前无开放 P1；未授权 snapshot 与三个 mutation 均由真实 PostgreSQL/HTTP 证据关闭。 |
-| 最高风险不变量有风险匹配行为验证 | 未通过 | Home 跨房间授权、跨 board 条件写与最终拖动持久化已有 PostgreSQL/浏览器 E3，但上传 DB/blob 部分失败和 Atlas SSE 生命周期仍缺风险匹配验证，因此 Gate 不高于 L2。 |
-| L4 要求 | 未通过 | 五个 P2 仍包含资源部分失败、输入信任和 SSE 生命周期缺口，且对应风险匹配 E3 不完整。 |
-| **最终判定** | **L2** | Score Level=L2；Gate Level=L2；Final Level=min(L2,L2)=L2。 |
+| 最高风险不变量有风险匹配行为验证 | 未通过 | Home 跨房间授权、跨 board 条件写、最终拖动持久化与上传内容契约已有 PostgreSQL/浏览器 E3，但上传 DB/blob 部分失败和 Atlas SSE 生命周期仍缺风险匹配验证，因此 Gate 不高于 L2。 |
+| L4 要求 | 未通过 | 四个 P2 仍包含资源部分失败、首次建板并发与 SSE 生命周期缺口，且对应风险匹配 E3 不完整。 |
+| **最终判定** | **L2** | Score Level=L3；Gate Level=L2；Final Level=min(L3,L2)=L2。 |
 
 ## Critical Issues
 
@@ -111,15 +111,6 @@
 - **验收证据**：注入 PostgreSQL create 失败和进程边界错误，断言 save 后会尝试删除且不会留下记录；注入 blob delete 失败，断言错误可被记录并由维护重试回收；Atlas/Home 两条上传路径均覆盖。
 - **影响范围**：QAM-06；QAM-09 仅关联本地 volume 的持久性与部署清理，不承担 Route 的补偿事务。
 
-#### QAM-06-005：上传只信任 multipart MIME，且位置/标题字段未经过服务端 schema
-
-- **状态**：`open`
-- **问题**：[`validateAtlasImageFile`](../../lib/storage/atlas-storage.ts#L338-L345) 只检查 `File.type` 和 `File.size`；`File.type` 来自请求元数据，不是文件内容。实际运行 `node --import tsx` 以 `File(["not-an-image"], "payload.jpg", { type: "image/jpeg" })` 调用该函数得到 `accepted: true`（E3）。两个上传 Route 还把 `x/y` 直接 `Number(...)`，把 caption 直接类型断言为 string（[`Atlas upload`](../../app/api/atlas/uploads/route.ts#L38-L53)、[`Home upload`](../../app/api/home-board/uploads/route.ts#L37-L56)），没有长度/有限数的统一服务端 contract。
-- **质量影响**：伪造或损坏的字节可以进入图片存储并被当作图片回读；异常 multipart 字段可能静默归零、触发 Prisma 类型错误或带来不必要的大字段处理。当前 key 后缀和响应 content type 限制了直接 HTML 执行路径，但不能替代文件信任校验。
-- **最小修正**：在 storage adapter 内按允许格式校验 magic bytes/可解码性；用同一 Zod/form-data 边界解析有限坐标和标题长度，拒绝非字符串字段和超长输入。保留 JPG/PNG/WebP、5MB 和现有 UI。
-- **验收证据**：Route 行为测试提交 MIME 伪造、截断图片、Infinity 坐标、File 类型 caption 和超长 caption，断言稳定 400 且不调用 save；合法三种图片仍保存并以正确 content type 读取。
-- **影响范围**：QAM-06；QAM-09 只负责存储配置，不承担上传内容校验。
-
 #### QAM-06-006：Atlas connection 只约束有序唯一键，反向重复连接可写入
 
 - **状态**：`open`
@@ -139,6 +130,14 @@
 - **影响范围**：QAM-06 直接受影响；QAM-02-006 仅记录 Room stream 的独立 interval 重入，不作为本问题的替代或共享修复证据；QAM-09 只关联 Web 进程观测，不承担 Route 生命周期。
 
 ### 已解决的 P2
+
+#### QAM-06-005：上传只信任 multipart MIME，且位置/标题字段未经过服务端 schema
+
+- **状态**：`resolved`（2026-09-20）
+- **修复前问题与影响**：[`validateAtlasImageFile`](../../lib/storage/atlas-storage.ts) 只检查 `File.type` 和 `File.size`；`File.type` 来自请求元数据，不是文件内容，因此 `File(["not-an-image"], "payload.jpg", { type: "image/jpeg" })` 被接受并进入存储（E3）。两个上传 Route 还把 `x/y` 直接 `Number(...)`、把 caption 直接类型断言为 string（[`Home upload`](../../app/api/home-board/uploads/route.ts)、[`Atlas upload`](../../app/api/atlas/uploads/route.ts)）：`File` 型 caption 触发 `.trim is not a function` 得到不稳的 500，`Number("Infinity")` 可把非有限数写进 `double precision` 列（已在运行中的 PostgreSQL 容器内以 TEMP 表复现 `Infinity` 可写入），超长 caption 无上界。字段解析发生在 `storage.save` **之后**，失败时 blob 已落盘。
+- **已实施修正**：[`validateAtlasImageContent`](../../lib/storage/atlas-storage.ts) 按内容判定 JPEG/PNG/WebP（magic bytes + EOI/IEND/RIFF 长度自洽），存储用判定结果而不是声明 MIME 决定扩展名与回读 content type；拒绝时抛具名的 [`AtlasImageValidationError`](../../lib/storage/atlas-storage.ts) 由 Route 映射为 400，不再依赖文案匹配。两条 Route 把 `x/y/width/height/caption` 交给 [`homeUploadFieldsSchema`/`atlasUploadFieldsSchema`](../../lib/validation.ts) 解析，并且在 `arrayBuffer()` 与 `storage.save` **之前**完成，失败请求既不落 blob 也不建记录。Atlas 的空/空白 caption 与 Home 统一为 trim + `null`（此前 Atlas 会存 `"   "`），这是一次有意的语义收敛。5MB 上限、三种格式、key 生成与读取授权头均未改动（E3）。
+- **验收证据**：负向对照在旧实现下复现全部缺陷；修复后 [`home-board-routes.test.ts`](../../tests/server/home-board-routes.test.ts)、[`atlas-storage-routes.test.ts`](../../tests/server/atlas-storage-routes.test.ts) 与 [`atlas-storage.test.ts`](../../tests/lib/atlas-storage.test.ts) 全绿，覆盖伪造 MIME、截断图片、非有限坐标（`Infinity`/`-Infinity`/`NaN`/`1e999`/`12abc`）、非正尺寸、`File` 型与 201 字符 caption、空白归一化，并断言拒绝路径不调用 `storage.save` 与 Prisma；三种合法格式仍以判定出的 content type 保存与回读。测试字节由 sharp 生成并逐个回读验证可解码，magic-bytes 契约「不是完整解码」这一边界由 `JPEG_HEADER_ONLY_WITH_EOI` 用例显式固定（E3）。
+- **影响范围**：QAM-06；QAM-09 只负责存储配置，不承担上传内容校验。
 
 #### QAM-06-007：首页非拖动照片 mutation 失败后保留乐观状态且无回滚/重试
 
@@ -174,7 +173,7 @@ Atlas/Home photo upload：File/FormData ──> storage.save(blob) ──> Atlas
 
 Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。当前产品入口 `/home` 不消费 legacy Atlas drag Map/SSE；Home 的乐观位置、大小和标注只负责即时显示，必须经过串行 PATCH 的 2xx 确认；失败保留最新字段及重试状态。照片和连线在 DELETE 2xx 前持续显示，照片删除与在途 PATCH 串行；成功后移除对应本地记录与关联操作。两个独立进程已通过实际 Home snapshot 读取证明成功写入后以 PostgreSQL 坐标收敛。`AtlasElement.postId` 把 Home 空间锚点与 QAM-05 Post 生命周期和可见性相连；空间 snapshot 与 mutation 现通过单一谓词消费相同成员条件，connection 由两端可见性派生。legacy Atlas element/connection 写入口仍在实际条件写中限定 global board；其 URL room scope 不一致按 BU-01 保留，Atlas stream 的 abort/interval 问题继续由 QAM-06-008 追踪。
 
-剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；multipart 内容信任不足；Atlas connection 冲突与 SSE 慢查询/关闭竞态。Home 拖动/大小/标注 PATCH 失败与乱序覆盖、照片/连线 DELETE 的虚假成功均已由队列、确认状态和重试关闭，旧 Atlas mutation 跨 board 路径与 Home anchor 跨房间路径也已由条件写关闭。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束；普通 global Atlas/共享照片读取只做认证仍符合当前 global 实现，room-scoped `agent_log` anchor 则由 RoomParticipant 事实授权。
+剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；Atlas connection 冲突与 SSE 慢查询/关闭竞态。Home 拖动/大小/标注 PATCH 失败与乱序覆盖、照片/连线 DELETE 的虚假成功均已由队列、确认状态和重试关闭，旧 Atlas mutation 跨 board 路径与 Home anchor 跨房间路径也已由条件写关闭，上传内容信任与 multipart 字段边界由统一契约关闭。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束；普通 global Atlas/共享照片读取只做认证仍符合当前 global 实现，room-scoped `agent_log` anchor 则由 RoomParticipant 事实授权。
 
 ## Verified Strengths
 
@@ -189,11 +188,12 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 - storage adapter 通过随机 UUID + 清理后的 basename 生成 key，统一拒绝 prefix 外、`..`、反斜杠和本地 root 外路径；本地 save/read/delete 与路径遍历测试通过（E3）。
 - 图片读取要求当前认证会话，使用 `Cache-Control: private`、`Vary: Cookie` 和 immutable 响应，存储缺失/非法 key 映射 404；本轮定向 Route 测试通过（E3）。
 - Atlas element/connection 创建的两端 board 检查、JSON 输入的有限数/长度约束、Home 照片尺寸 clamp 及 canvas 原生 wheel listener 清理均有清楚落点（E2）。
-- 本轮最终标准与完整门禁通过：73/496 Vitest、24/75 PostgreSQL、32/32 Playwright；QAM-06-001/003/009 的原有授权及双进程拖动回归继续通过。QAM-06-005 的历史 MIME 伪造证据保持；Atlas SSE、建板和 DB/blob/上传仍需各自风险匹配验证。
+- 上传的可信来源由请求元数据改为文件内容：`detectAtlasImageFormat`/`validateAtlasImageContent` 只依据字节判定 JPEG/PNG/WebP，落库扩展名与回读 content type 取自判定结果；字段解析前置于 `arrayBuffer()` 与 `storage.save`，因此 400 路径既不落 blob 也不建记录（E3）。
+- 本轮最终标准与完整门禁通过；QAM-06-001/003/009 的原有授权及双进程拖动回归继续通过。Atlas SSE、首次建板和 DB/blob 补偿仍需各自风险匹配验证。
 
 ## Recommended Improvements
 
-1. 治理 **QAM-06-002/004/005（P2）**：按风险收益补 fixed-ID 建板幂等、DB/blob 补偿与文件内容/表单字段校验。
+1. 治理 **QAM-06-002/004（P2）**：按风险收益补 fixed-ID 建板幂等与 DB/blob 补偿；上传内容信任已由 QAM-06-005 关闭，后续只随格式清单或校验强度变化复审。
 2. 治理 **QAM-06-006/008（P2）**：补稳定的无向连接冲突响应及 Atlas SSE 串行/关闭保护；QAM-02-006 仅作为 Room stream 的关联复审入口。
 
 以上均保持现有 global Atlas、Home board、元素类型、连线类型和存储供应商边界，不新增画布或协作功能。
@@ -206,7 +206,6 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 | --- | --- | --- | --- | --- | --- |
 | QAM-06-002 | P2 | `open` | global board read-then-create；单次首访唯一冲突但数据库保持一致（E2） | QAM-06 board service | QAM-09 运行拓扑启动并发 |
 | QAM-06-004 | P2 | `open` | blob save 后 DB create 无补偿，形成孤儿资源债务（E2） | QAM-06 upload lifecycle | QAM-09 volume/OSS 运维 |
-| QAM-06-005 | P2 | `open` | multipart MIME/字段未形成内容信任 contract（E2/E3） | QAM-06 storage/upload adapter | QAM-09 storage config |
 | QAM-06-006 | P2 | `open` | Atlas connection 缺少反向 pair 约束（E2） | QAM-06 connection Route/schema | 无 |
 | QAM-06-008 | P2 | `open` | Atlas SSE 初始 abort/await enqueue/800ms interval 无串行保护（E2） | QAM-06 Atlas stream lifecycle | QAM-09 Web 进程观测；QAM-02 Room stream 为独立实现 |
 
@@ -214,6 +213,7 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 
 | ID | Priority | 状态 | 解决证据 | 直接责任 | 关联责任 |
 | --- | --- | --- | --- | --- | --- |
+| QAM-06-005 | P2 | `resolved` | 上传按文件内容判定格式（magic bytes + EOI/IEND/RIFF 自洽），multipart 字段走统一 Zod form-data 边界且在读写存储之前；负向对照复现伪造 MIME 被接受、`File` 型 caption 500、非有限坐标与超长 caption 落库，修复后两条 Route 与适配层回归全绿，三种合法格式仍以判定 content type 保存/回读（E3） | QAM-06 storage/upload adapter | QAM-09 storage config |
 | QAM-06-007 | P2 | `resolved` | Home 编辑串行保存与确认删除；组件 14/14、PostgreSQL trigger 故障/重试 4/4、Chromium 四操作重试/reload 与 DB 一致，迟到响应不覆盖新状态（E3） | QAM-06 Home client state | QAM-05 首页组合 |
 | QAM-06-009 | P1 | `resolved` | 单一 Home spatial access predicate 约束 snapshot 与实际 element/connection 写；真实 PostgreSQL 负向对照复现 200/201/200 与持久副作用，修复后双 Room 1/1、真实载荷/HTTP 旅程通过，非成员统一 404 且数据库不变（E3） | QAM-06 Home snapshot/access | QAM-05 Post visibility；QAM-02 RoomParticipant |
 | QAM-06-001 | P1 | `resolved` | Atlas element PATCH/DELETE 与 connection DELETE 使用 board-scoped 条件写；真实 PostgreSQL Route Handler 回归证明 Home anchor/布局/连接/Post 保留，global mutation 正常（E3） | QAM-06 Atlas mutation boundary | QAM-05 Post 生命周期 |
@@ -226,6 +226,7 @@ Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追�
 - 修改 Atlas/Home board Route、`AtlasElement`/`AtlasConnection` schema 或迁移、global/home board service、Post/anchor 生命周期或上传/读取 key contract。
 - 修改 `getPostVisibilityWhere()`、`agent_log.roomId`/RoomParticipant 语义、Home spatial predicate、initial snapshot 或 Home element/connection Route 时，必须复跑 QAM-06-009 的双 Room 可见性与 mutation 授权回归；只证明 `props.posts` 已过滤不能维持 resolved 结论。
 - 修改 Atlas SSE、optimistic reconciliation、drag cache、Home mutation 状态、storage adapter 或 Web 多实例部署方式。
+- 修改 `validateAtlasImageFile`/`validateAtlasImageContent`/`detectAtlasImageFormat`、允许格式清单、`ATLAS_MAX_FILE_SIZE`、`homeUploadFieldsSchema`/`atlasUploadFieldsSchema` 或 caption 归一化语义时，必须复跑本条 resolved 结论的负向对照（伪造 MIME、截断图片、非有限坐标、非字符串与超长 caption、合法三格式 content type）。把校验从「magic bytes + 结构完整性」提升为「完整可解码」同样属于本触发条件，`JPEG_HEADER_ONLY_WITH_EOI` 用例是当前边界的锚点。
 - 完成 QAM-06-002 的并发建板或 QAM-06-004 的 DB/blob 故障验证；若修改 Home 拖动队列/元素 PATCH，复跑 QAM-06-003 的失败、串行与跨进程收敛回归；若修改 legacy Atlas mutation 条件，复跑 QAM-06-001 的真实 PostgreSQL 跨 board 回归。
 - 修改或修复 QAM-06-008 后，重新执行 Atlas stream 的 abort、慢查询重入、乱序和 controller close 验收；QAM-02-006 的 Room SSE 测试不能代替 Atlas 验证。
 
@@ -241,5 +242,6 @@ Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追�
 | 2026-09-12 | 65 | L1 | L1 | L1 | `-6（新增 QAM-06-009）` | 2026-09-08 建立的 Post 房间可见性只约束 `posts` 查询；复审确认 Home snapshot 仍序列化全部 board anchor/connection，Home element/connection mutation 也未复核关联 Post 成员资格，形成跨房间空间资源写入（E2）。根会话 `./init.sh` 通过 72 文件/472 项；本轮定向 Node 7 文件/40 项、组件 3 文件/5 项通过，MIME 伪造仍可复现；未运行 Docker/PostgreSQL/Playwright/`check:full`。 |
 | 2026-09-12 | 74 | L2 | L2 | L2 | `+9（QAM-06-009 resolved）` | 单一 Home spatial predicate 复用 Post/Room 可见性并约束 snapshot、connection 两端和实际 element/connection 写。未修复 PostgreSQL 负向对照 0/1：隐藏 ID 可见，PATCH/POST/DELETE 为 200/201/200，坐标与连接发生持久变化；修复后同场景 1/1、真实浏览器载荷/HTTP 旅程通过。`npm run check:full` 单次退出 0：72/472 Vitest、production build/coverage、20/61 PostgreSQL、30/30 Playwright。 |
 | 2026-09-12 | 79 | L2 | L2 | L2 | `+5（QAM-06-007 resolved）` | Home 编辑/删除队列与显式失败重试，结构 +1、复用 +1、状态一致性 +1、健壮性 +2；旧组件 12/12 failed→扩展后 14/14 passed，真实 PostgreSQL 故障/重试 4/4，Chromium 指针/键盘四操作重试与刷新记录一致。完整门禁 exit 0：73/496 Vitest、production build/coverage、24/75 PostgreSQL、32/32 Playwright；其余五个 P2 与 Gate L2 保持。 |
+| 2026-09-20 | 81 | L3 | L2 | L2 | `+2（QAM-06-005 resolved）` | 上传可信来源由请求元数据 `File.type` 改为文件内容（magic bytes + EOI/IEND/RIFF 长度自洽），落库扩展名与回读 content type 取判定结果；multipart 字段收敛到共享 Zod form-data 边界且前置于读字节与写存储，400 路径不落 blob、不建记录；`AtlasImageValidationError` 使拒绝稳定映射 400。接口与依赖关系 8→9、安全与隐私 7→8；可测试性与验证可信度保持 7/8（Atlas SSE、首次建板与 DB/blob 补偿仍缺风险匹配验证），Gate 因此仍为 L2，`Final = min(L3, L2) = L2`。定向回归旧实现 18 failed/29 passed（伪造 MIME 被接受并调用 save、`File` 型 caption 触发 `.trim is not a function` 的 500、`Infinity`/`NaN`/`1e999` 坐标与 201 字符 caption 落库）→ 修复后 48/48；fixture 由 `sharp` 生成并回读验证可解码。`npm run check:full` 单次 exit 0：85 文件 Vitest（750/751）、production build、覆盖率 53.06/46.97/57.64/53.78、32 文件/126 项真实 PostgreSQL、44/44 生产 Playwright；收尾 `./init.sh` exit 0、85/751。 |
 
 复审时保留上述稳定 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate 与 Final。

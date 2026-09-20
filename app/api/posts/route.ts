@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 
@@ -8,8 +7,8 @@ import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { postTimelineOrderBy, postTimelineSelect } from "@/lib/post-timeline";
 import { encodePostCursor, getPostCursorWhere, postPaginationSchema } from "@/lib/post-pagination";
 import { prisma } from "@/lib/prisma";
-import { ensureUniqueSlug, generateSlug, snapshotProfileLocation } from "@/lib/posts";
-import { parseBody } from "@/lib/validation";
+import { generateSlug, snapshotProfileLocation, writePostWithUniqueSlug } from "@/lib/posts";
+import { parseBody, postCreateSchema, readJsonBody } from "@/lib/validation";
 
 export async function GET(request: Request) {
   try {
@@ -56,30 +55,21 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const user = await requireCurrentUser();
-    const body = await request.json();
-    const { title, content } = body;
+    const { title, content } = await readJsonBody(request, postCreateSchema);
 
-    if (!title?.trim() || !content?.trim()) {
-      return NextResponse.json(
-        { error: "title and content are required" },
-        { status: 400 }
-      );
-    }
-
-    const baseSlug = generateSlug(title);
-    const slug = await ensureUniqueSlug(baseSlug);
-
-    const post = await prisma.post.create({
-      data: {
-        slug,
-        title: title.trim(),
-        content: content.trim(),
-        type: "user_post",
-        authorId: user.id,
-        ...snapshotProfileLocation(user.profile),
-        publishedAt: new Date(),
-      },
-    });
+    const post = await writePostWithUniqueSlug(generateSlug(title), (slug) =>
+      prisma.post.create({
+        data: {
+          slug,
+          title,
+          content,
+          type: "user_post",
+          authorId: user.id,
+          ...snapshotProfileLocation(user.profile),
+          publishedAt: new Date(),
+        },
+      })
+    );
 
     revalidatePath("/home");
 

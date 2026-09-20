@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  makeForgedImageFile,
+  makeImageFile,
+  MINIMAL_JPEG,
+  MINIMAL_WEBP,
+} from "@/tests/fixtures/image-bytes";
+
 const mockUser = { id: "user-1" };
 const mockBoard = { id: "board-1" };
 
@@ -78,7 +85,7 @@ describe("atlas upload storage routes", () => {
   it("saves uploaded images through storage and stores an internal image URL", async () => {
     const { POST } = await import("@/app/api/atlas/uploads/route");
     const formData = new FormData();
-    formData.set("file", new File(["image-body"], "photo.tmp", { type: "image/jpeg" }));
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.tmp", "image/jpeg"));
     formData.set("x", "12");
     formData.set("y", "34");
     formData.set("caption", "hello");
@@ -108,6 +115,143 @@ describe("atlas upload storage routes", () => {
       }),
     });
     expect(payload.element.imageUrl).toBe("/api/atlas/uploads/atlas%2Fsaved-photo.jpg");
+  });
+
+  it("rejects an upload whose declared image MIME does not match its bytes", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeForgedImageFile("payload.png", "image/png"));
+    formData.set("x", "0");
+    formData.set("y", "0");
+
+    const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Unsupported image content (expected JPEG, PNG or WebP)");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("stores the image format detected from the bytes rather than the declared MIME", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeImageFile(MINIMAL_WEBP, "renamed.jpg", "image/jpeg"));
+    formData.set("x", "0");
+    formData.set("y", "0");
+
+    const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+
+    expect(response.status).toBe(201);
+    expect(mockStorage.save).toHaveBeenCalledWith({
+      originalName: "renamed.jpg",
+      mimeType: "image/webp",
+      buffer: expect.any(Buffer),
+    });
+  });
+
+  it("returns 400 instead of crashing when the caption field is not text", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+    formData.set("caption", new File(["caption"], "caption.txt", { type: "text/plain" }));
+
+    const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Caption must be text");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-finite and non-numeric coordinates", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+
+    for (const [field, value] of [
+      ["x", "Infinity"],
+      ["y", "NaN"],
+      ["x", "-Infinity"],
+    ] as const) {
+      vi.clearAllMocks();
+      mockPrisma.atlasElement.count.mockResolvedValue(0);
+      const formData = new FormData();
+      formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+      formData.set(field, value);
+
+      const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+        method: "POST",
+        body: formData,
+      }));
+      const payload = await response.json();
+
+      expect(response.status, `${field}=${value}`).toBe(400);
+      expect(payload.error, `${field}=${value}`).toBe(`${field} must be a number`);
+      expect(mockStorage.save, `${field}=${value}`).not.toHaveBeenCalled();
+      expect(mockPrisma.atlasElement.create, `${field}=${value}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects captions longer than the upload contract allows", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+    formData.set("caption", "x".repeat(201));
+
+    const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Caption must be 200 characters or fewer");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("normalizes caption whitespace the same way the home board does", async () => {
+    const { POST } = await import("@/app/api/atlas/uploads/route");
+
+    for (const [caption, stored] of [
+      ["   ", null],
+      ["  linen  ", "linen"],
+      ["", null],
+    ] as const) {
+      vi.clearAllMocks();
+      mockPrisma.atlasElement.count.mockResolvedValue(0);
+      mockStorage.save.mockResolvedValue({
+        key: "atlas/saved-photo.jpg",
+        contentType: "image/jpeg",
+        size: 22,
+      });
+      mockPrisma.atlasElement.create.mockImplementation(async ({ data }) => ({
+        id: "element-1",
+        ...data,
+      }));
+      const formData = new FormData();
+      formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+      formData.set("caption", caption);
+
+      const response = await POST(new Request("http://localhost/api/atlas/uploads", {
+        method: "POST",
+        body: formData,
+      }));
+
+      expect(response.status, `caption=${JSON.stringify(caption)}`).toBe(201);
+      expect(mockPrisma.atlasElement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ caption: stored }),
+      });
+    }
   });
 
   it("reads uploaded image bytes from storage with private cache headers", async () => {

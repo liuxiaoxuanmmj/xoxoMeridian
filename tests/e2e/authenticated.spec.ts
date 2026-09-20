@@ -1460,3 +1460,60 @@ test("同毫秒文章在首页与搜索保持稳定顺序，真实 API 分页无
     }
   }
 });
+
+test("编辑器提交纯空白正文时显示错误横幅并停在编辑页，合法保存仍跳转", async ({ baseURL, page }) => {
+  test.setTimeout(60_000);
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required for the Post editor write contract");
+  }
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const requestHeaders = { origin: baseURL };
+  const suffix = Date.now().toString(36);
+  const title = `编辑器空白正文 ${suffix}`;
+  const originalContent = "提交前的原始正文";
+  const validContent = "合法保存的正文内容";
+  // PostEditor 的 #post-title 与 #post-content 都带原生 required：真正留空会被浏览器自身拦下、
+  // Server Action 根本不会被调用，测不到写入契约。必须提交「纯空白」（三个空格）才触达
+  // postUpdateSchema 的 .trim().min(1)；后来者若把这里改成清空后提交，本用例会静默失去覆盖。
+  const blankContent = "   ";
+
+  const created = await page.request.post("/api/posts", {
+    headers: requestHeaders,
+    data: { title, content: originalContent },
+  });
+  expect(created.ok(), await created.text()).toBe(true);
+  const { post } = await created.json() as { post: { slug: string } };
+
+  try {
+    const before = await db.post.findUniqueOrThrow({ where: { slug: post.slug } });
+    await page.goto(`/posts/edit/${post.slug}`);
+    await expect(page.getByLabel("Post content", { exact: true })).toHaveValue(originalContent);
+
+    await page.getByLabel("Post content", { exact: true }).fill(blankContent);
+    await page.getByRole("button", { name: "Update", exact: true }).click();
+
+    await expect(page.getByText("Content is required", { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/posts/edit/${post.slug}$`));
+    const afterBlank = await db.post.findUniqueOrThrow({ where: { slug: post.slug } });
+    expect(afterBlank.content).toBe(before.content);
+    expect(afterBlank.slug).toBe(before.slug);
+    expect(afterBlank.updatedAt.toISOString()).toBe(before.updatedAt.toISOString());
+
+    // 对照步骤：合法内容必须真正保存并跳转，证明上一条断言不是「提交永远不生效」的假阳性。
+    await page.getByLabel("Post content", { exact: true }).fill(`  ${validContent}  `);
+    await page.getByRole("button", { name: "Update", exact: true }).click();
+    await expect(page).toHaveURL(new RegExp(`/posts/${post.slug}$`), { timeout: 15_000 });
+    const saved = await db.post.findUniqueOrThrow({ where: { slug: post.slug } });
+    expect(saved.content).toBe(validContent);
+    expect(saved.slug).toBe(before.slug);
+  } finally {
+    await page.goto("about:blank").catch(() => undefined);
+    try {
+      expect((await page.request.delete(`/api/posts/${post.slug}`, { headers: requestHeaders })).ok()).toBe(true);
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});

@@ -1,6 +1,30 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 
+import {
+  ABOUT_PHOTOS,
+  aboutPhotoExists,
+  clearStagedAboutPhoto,
+  matchAboutPhotoRequest,
+  type AboutPhotoSpec,
+} from "./support/about-photos";
 import { E2E_PASSWORD, E2E_USERS } from "./support/credentials";
+
+async function expectLoadedPortrait(page: Page, photo: AboutPhotoSpec) {
+  const portrait = page.getByRole("img", { name: photo.alt });
+  await expect(portrait).toBeVisible();
+  // naturalWidth 只在浏览器真实解码出交付资源后才大于 0。
+  await expect
+    .poll(() => portrait.evaluate((element: HTMLImageElement) => element.naturalWidth))
+    .toBeGreaterThan(0);
+  await expect(page.locator(`img[src*="${photo.id}.jpg"]`)).toHaveCount(1);
+}
+
+async function expectFallbackPortrait(page: Page, photo: AboutPhotoSpec) {
+  const portrait = page.getByRole("img", { name: photo.alt });
+  await expect(portrait).toBeVisible();
+  await expect(portrait).toContainText("photo coming soon");
+  await expect(page.locator(`img[src*="${photo.id}.jpg"]`)).toHaveCount(0);
+}
 
 test("shows accessible login and registration forms", async ({ page }) => {
   await page.goto("/");
@@ -81,6 +105,60 @@ test("redirects anonymous visitors away from protected pages", async ({ page }) 
 
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole("heading", { name: "欢迎回来！" })).toBeVisible();
+});
+
+test("About 照片按交付状态加载或回退，且不产生损坏请求", async ({ page }) => {
+  const responses: { path: string; status: number }[] = [];
+  page.on("response", (response) => {
+    const path = matchAboutPhotoRequest(response.url());
+    if (path) responses.push({ path, status: response.status() });
+  });
+
+  const requestedPaths = () => [...new Set(responses.map((entry) => entry.path))].sort();
+  const failedRequests = () => responses.filter((entry) => entry.status >= 400);
+
+  // 交付状态由服务启动时 public 目录的内容决定：start-test-app.ts 会在启动前暂存第一张免费的照片，
+  // 干净工作树因此表现为“一张已交付 + 一张缺失”。
+  const delivered = new Set<string>();
+  for (const photo of ABOUT_PHOTOS) {
+    if (await aboutPhotoExists(photo.publicPath)) delivered.add(photo.publicPath);
+  }
+  if (!process.env.PLAYWRIGHT_BASE_URL) {
+    // 托管模式下 start-test-app.ts 保证启动前已交付一张照片；缺了这条保护，
+    // “两张都缺失”也会全回退通过，本用例会静默失去已交付分支的覆盖。
+    expect(delivered.size, "E2E 托管应用应至少交付一张 About 照片（start-test-app.ts 启动前暂存）").toBeGreaterThan(0);
+  }
+
+  try {
+    // 阶段一：已交付的照片必须真实加载，缺失的照片渲染回退，且只请求实际交付的路径。
+    await page.goto("/about");
+    for (const photo of ABOUT_PHOTOS) {
+      if (delivered.has(photo.publicPath)) await expectLoadedPortrait(page, photo);
+      else await expectFallbackPortrait(page, photo);
+    }
+    expect(failedRequests()).toEqual([]);
+    expect(requestedPaths()).toEqual([...delivered].sort());
+
+    // 阶段二：移除 E2E 暂存的照片；回退立即恢复且不再请求该路径。
+    const cleared: AboutPhotoSpec[] = [];
+    for (const photo of ABOUT_PHOTOS) {
+      if (await clearStagedAboutPhoto(photo.publicPath)) cleared.push(photo);
+    }
+    if (cleared.length === 0) {
+      test.info().annotations.push({
+        type: "about-photo-removal",
+        description: "交付目录里没有 E2E 暂存的照片（两张都是交付方真实资源），跳过移除后的回退验证。",
+      });
+      return;
+    }
+    responses.length = 0;
+    await page.reload();
+    for (const photo of cleared) await expectFallbackPortrait(page, photo);
+    expect(failedRequests()).toEqual([]);
+    expect(requestedPaths()).toEqual([]);
+  } finally {
+    for (const photo of ABOUT_PHOTOS) await clearStagedAboutPhoto(photo.publicPath);
+  }
 });
 
 test("logs an existing user in through the browser", async ({ page }) => {

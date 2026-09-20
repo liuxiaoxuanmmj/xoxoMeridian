@@ -145,6 +145,47 @@ export const studyGoalPatchSchema = z
     message: "At least one field is required",
   });
 
+// --------------- Post ---------------
+
+// 发布与更新共用的写入契约：HTTP Route 与 Server Action 在生成 slug 前解析同一 schema，
+// 畸形、无界与空 patch 输入在这里变成稳定的验证错误，不再带着 TypeScript 的假设进入 Prisma。
+// 字段级文案是客户端可见契约的一部分（Action 会把首条 issue 直接呈现给编辑器）。
+export const POST_TITLE_MAX_LENGTH = 200;
+export const POST_CONTENT_MAX_LENGTH = 20_000;
+
+const postTitleSchema = z
+  .string({ error: "Title must be text" })
+  .trim()
+  .min(1, "Title is required")
+  .max(POST_TITLE_MAX_LENGTH, `Title must be ${POST_TITLE_MAX_LENGTH} characters or fewer`);
+
+const postContentSchema = z
+  .string({ error: "Content must be text" })
+  .trim()
+  .min(1, "Content is required")
+  .max(POST_CONTENT_MAX_LENGTH, `Content must be ${POST_CONTENT_MAX_LENGTH} characters or fewer`);
+
+export const postCreateSchema = z.object({
+  title: postTitleSchema,
+  content: postContentSchema,
+});
+
+export const postUpdateSchema = z
+  .object({
+    title: postTitleSchema.optional(),
+    content: postContentSchema.optional(),
+  })
+  .refine((v) => v.title !== undefined || v.content !== undefined, {
+    message: "At least one field is required",
+  });
+
+// Server Action 的 slug 参数同样是客户端可构造的边界，不能只用 TypeScript 类型约束。
+export const postSlugSchema = z
+  .string({ error: "Post slug must be text" })
+  .trim()
+  .min(1, "Post slug is required")
+  .max(200, "Post slug is too long");
+
 export class ValidationError extends Error {
   readonly issues: ReadonlyArray<{ path: string; message: string }>;
   constructor(issues: z.ZodIssue[]) {
@@ -215,6 +256,74 @@ export const atlasDragSchema = z.object({
   x: z.number().finite(),
   y: z.number().finite(),
 });
+
+// --------------- 上传（multipart/form-data） ---------------
+
+/**
+ * 表单字段只可能是字符串或 File，而 File 不是文本。先拒绝非字符串/非数值字段，
+ * 再交给 `z.coerce.number`：否则 `Number(File)` 会得到 NaN 并被 `|| 0` 静默吃掉。
+ */
+function formNumberField(fallback: number, label: string, options: { positive?: boolean } = {}) {
+  const base = z.coerce.number({ error: `${label} must be a number` });
+
+  return z.preprocess((value) => {
+    if (value === null || value === undefined) {
+      return fallback;
+    }
+
+    if (typeof value === "number") {
+      return value;
+    }
+
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      return trimmed === "" ? fallback : trimmed;
+    }
+
+    return Number.NaN;
+  }, options.positive ? base.positive(`${label} must be a positive number`) : base);
+}
+
+function formCaptionField() {
+  return z.preprocess(
+    (value) => {
+      if (value === null || value === undefined) {
+        return "";
+      }
+
+      // 非文本字段原样交给 z.string 拒绝，不要在这里转成字符串。
+      return typeof value === "string" ? value.trim() : value;
+    },
+    z.string({ error: "Caption must be text" }).max(200, "Caption must be 200 characters or fewer")
+  );
+}
+
+const uploadSharedFields = {
+  x: formNumberField(0, "x"),
+  y: formNumberField(0, "y"),
+  caption: formCaptionField(),
+};
+
+/** 首页照片上传：与 Atlas 共用坐标与标题，另加展示尺寸。 */
+export const homeUploadFieldsSchema = z.object({
+  ...uploadSharedFields,
+  width: formNumberField(240, "width", { positive: true }),
+  height: formNumberField(180, "height", { positive: true }),
+});
+
+/** Atlas 照片上传：只消费坐标与标题，两处共用同一份字段语义。 */
+export const atlasUploadFieldsSchema = z.object(uploadSharedFields);
+
+/** 按名字取原始表单值；字段缺席时为 null，交由 schema 决定默认值。 */
+export function readFormFields(formData: FormData, names: readonly string[]) {
+  const fields: Record<string, FormDataEntryValue | null> = {};
+
+  for (const name of names) {
+    fields[name] = formData.get(name);
+  }
+
+  return fields;
+}
 
 export function parseBody<T extends z.ZodTypeAny>(schema: T, body: unknown): z.infer<T> {
   const result = schema.safeParse(body);

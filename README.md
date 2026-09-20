@@ -168,6 +168,15 @@ npm run dev
 
 访问 `http://localhost:3000`，分别以“我”和“她”登录。可以打开两个浏览器或一个普通窗口加一个隐身窗口。
 
+### About 页照片交付（可选）
+
+`/about` 的两张肖像由部署方自行提供，仓库不包含真实用户照片：
+
+- 交付路径：`public/images/about/oo.jpg`、`public/images/about/xx.jpg`（与 `components/about/right-now-content.ts` 的 `imageSrc` 一致）。
+- 该目录命中 `.gitignore` 的 `images/` 规则，照片只存在于部署环境，不进入版本库；缺失时 `/about` 渲染内置回退插画并保留同一可访问描述，不向不存在的路径发起请求，因此不会出现损坏图片。
+- `next start` 在启动时快照 `public/` 目录（Next 对静态资源的既有行为），照片必须在服务启动前就位；运行期新增或替换照片需要重启进程才生效（无需重新构建），删除照片则因页面按请求判断交付状态而立即回退。
+- Docker 部署的 `public/` 在构建阶段拷入 `web` 镜像：需在 `docker compose build web` 前放入照片，或把照片目录挂载到容器的 `/app/public/images/about`，随后重启 `web` 容器。
+
 ## 7. Docker Compose 部署
 
 ```bash

@@ -6,7 +6,7 @@ import type {
 
 import { withAgentTaskLease } from "@/agent/task-claim";
 import type { AgentTaskLeaseOwnership } from "@/agent/types";
-import { createAgentLogPost, buildAgentLogContent } from "@/lib/agent-posts";
+import { projectAgentTaskTimeline } from "@/lib/agent-posts";
 import { appendChatLog } from "@/lib/chat-log-file";
 
 export class ExecutionTracer {
@@ -99,30 +99,10 @@ export class ExecutionTracer {
       this.prisma
     );
 
-    // Auto-generate timeline entry for significant agent tasks
+    // Auto-generate timeline entry for significant agent tasks.
+    // 投影失败不能影响已经提交的完成事实：这里只记录，恢复扫描会从持久状态补做。
     try {
-      const task = await this.prisma.agentTask.findUnique({
-        where: { id: this.taskId },
-        include: { agent: true, toolCalls: true },
-      });
-      if (task && task.toolCalls.length > 0) {
-        const toolNames = task.toolCalls.map((tc) => tc.toolName).join(", ");
-        await createAgentLogPost({
-          title: `Agent: ${task.agent.displayName} — ${toolNames}`,
-          content: buildAgentLogContent(task, result),
-          roomId: this.roomId,
-          metadata: {
-            taskId: task.id,
-            agentName: task.agent.displayName,
-            status: "completed",
-            toolCalls: task.toolCalls.map((tc) => ({
-              name: tc.toolName,
-              status: tc.status,
-              durationMs: tc.durationMs,
-            })),
-          },
-        });
-      }
+      await projectAgentTaskTimeline(this.taskId);
     } catch (e) {
       console.error("[agent-posts] failed to create timeline entry:", e);
     }

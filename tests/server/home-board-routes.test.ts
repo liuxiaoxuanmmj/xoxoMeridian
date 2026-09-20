@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import {
+  makeForgedImageFile,
+  makeImageFile,
+  MINIMAL_JPEG,
+  MINIMAL_PNG,
+} from "@/tests/fixtures/image-bytes";
+
 const mockUser = { id: "user-1" };
 const mockBoard = { id: "home-board" };
 
@@ -76,7 +83,7 @@ describe("home-board routes", () => {
   it("uploads a home photo into the home board with size metadata", async () => {
     const { POST } = await import("@/app/api/home-board/uploads/route");
     const formData = new FormData();
-    formData.set("file", new File(["image-body"], "photo.jpg", { type: "image/jpeg" }));
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
     formData.set("x", "12");
     formData.set("y", "34");
     formData.set("width", "280");
@@ -109,7 +116,7 @@ describe("home-board routes", () => {
   it("preserves submitted portrait display dimensions for uploaded home photos", async () => {
     const { POST } = await import("@/app/api/home-board/uploads/route");
     const formData = new FormData();
-    formData.set("file", new File(["image-body"], "portrait.jpg", { type: "image/jpeg" }));
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "portrait.jpg", "image/jpeg"));
     formData.set("x", "40");
     formData.set("y", "80");
     formData.set("width", "180");
@@ -137,6 +144,171 @@ describe("home-board routes", () => {
     });
     expect(payload.element.width).toBe(180);
     expect(payload.element.height).toBe(240);
+  });
+
+  it("rejects an upload whose declared image MIME does not match its bytes", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeForgedImageFile());
+    formData.set("x", "12");
+    formData.set("y", "34");
+
+    const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Unsupported image content (expected JPEG, PNG or WebP)");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("stores the image format detected from the bytes rather than the declared MIME", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+    const formData = new FormData();
+    // 声明成 JPEG，字节其实是 PNG——旧实现会把 .jpg 后缀与 image/jpeg 一起写进存储。
+    formData.set("file", makeImageFile(MINIMAL_PNG, "renamed.jpg", "image/jpeg"));
+    formData.set("x", "10");
+    formData.set("y", "20");
+
+    const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+
+    expect(response.status).toBe(201);
+    expect(mockStorage.save).toHaveBeenCalledWith({
+      originalName: "renamed.jpg",
+      mimeType: "image/png",
+      buffer: expect.any(Buffer),
+    });
+  });
+
+  it("returns 400 instead of crashing when the caption field is not text", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+    formData.set("caption", new File(["caption"], "caption.txt", { type: "text/plain" }));
+
+    const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Caption must be text");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("rejects non-finite and non-numeric photo coordinates", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+
+    for (const [field, value] of [
+      ["x", "Infinity"],
+      ["y", "-Infinity"],
+      ["x", "NaN"],
+      ["x", "12abc"],
+      ["y", "1e999"],
+    ] as const) {
+      vi.clearAllMocks();
+      mockPrisma.atlasElement.count.mockResolvedValue(0);
+      const formData = new FormData();
+      formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+      formData.set(field, value);
+
+      const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+        method: "POST",
+        body: formData,
+      }));
+      const payload = await response.json();
+
+      expect(response.status, `${field}=${value}`).toBe(400);
+      expect(payload.error, `${field}=${value}`).toBe(`${field} must be a number`);
+      expect(mockStorage.save, `${field}=${value}`).not.toHaveBeenCalled();
+      expect(mockPrisma.atlasElement.create, `${field}=${value}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects non-positive photo display dimensions", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+
+    for (const [field, value] of [
+      ["width", "0"],
+      ["height", "-40"],
+    ] as const) {
+      vi.clearAllMocks();
+      mockPrisma.atlasElement.count.mockResolvedValue(0);
+      const formData = new FormData();
+      formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+      formData.set(field, value);
+
+      const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+        method: "POST",
+        body: formData,
+      }));
+      const payload = await response.json();
+
+      expect(response.status, `${field}=${value}`).toBe(400);
+      expect(payload.error, `${field}=${value}`).toBe(`${field} must be a positive number`);
+      expect(mockPrisma.atlasElement.create, `${field}=${value}`).not.toHaveBeenCalled();
+    }
+  });
+
+  it("rejects captions longer than the upload contract allows", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+    const formData = new FormData();
+    formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+    formData.set("caption", "x".repeat(201));
+
+    const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+      method: "POST",
+      body: formData,
+    }));
+    const payload = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(payload.error).toBe("Caption must be 200 characters or fewer");
+    expect(mockStorage.save).not.toHaveBeenCalled();
+    expect(mockPrisma.atlasElement.create).not.toHaveBeenCalled();
+  });
+
+  it("normalizes a whitespace-only caption to null and trims the stored value", async () => {
+    const { POST } = await import("@/app/api/home-board/uploads/route");
+
+    for (const [caption, stored] of [
+      ["   ", null],
+      ["  linen  ", "linen"],
+      ["", null],
+    ] as const) {
+      vi.clearAllMocks();
+      mockPrisma.atlasElement.count.mockResolvedValue(0);
+      mockStorage.save.mockResolvedValue({
+        key: "atlas/home-photo.jpg",
+        contentType: "image/jpeg",
+        size: 22,
+      });
+      mockPrisma.atlasElement.create.mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
+        id: "photo-1",
+        ...data,
+      }));
+      const formData = new FormData();
+      formData.set("file", makeImageFile(MINIMAL_JPEG, "photo.jpg", "image/jpeg"));
+      formData.set("caption", caption);
+
+      const response = await POST(new Request("http://localhost/api/home-board/uploads", {
+        method: "POST",
+        body: formData,
+      }));
+
+      expect(response.status, `caption=${JSON.stringify(caption)}`).toBe(201);
+      expect(mockPrisma.atlasElement.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ caption: stored }),
+      });
+    }
   });
 
   it("patches only elements that belong to home board", async () => {

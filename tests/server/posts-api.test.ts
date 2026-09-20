@@ -199,7 +199,6 @@ describe("POST /api/posts", () => {
 
   it("creates a post with generated slug", async () => {
     mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
-    mockPostFindUnique.mockResolvedValue(null);
     mockPostCreate.mockResolvedValue({
       id: "post-new",
       slug: "my-first-post",
@@ -220,12 +219,63 @@ describe("POST /api/posts", () => {
     expect(body.post.slug).toBe("my-first-post");
   });
 
+  it("slug 被并发占用时按后缀重试并返回顺延后的 slug", async () => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostCreate
+      .mockRejectedValueOnce(
+        Object.assign(new Error("Unique constraint failed on the fields: (`slug`)"), {
+          code: "P2002",
+          meta: { modelName: "Post", target: ["slug"] },
+        })
+      )
+      .mockResolvedValueOnce({
+        id: "post-new",
+        slug: "my-first-post-2",
+        title: "My First Post",
+        content: "Hello world",
+        type: "user_post",
+        authorId: "user-1",
+      });
+
+    const response = await POST(
+      new Request("http://localhost/api/posts", {
+        method: "POST",
+        body: JSON.stringify({ title: "My First Post", content: "Hello world" }),
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.post.slug).toBe("my-first-post-2");
+    expect(mockPostCreate).toHaveBeenCalledTimes(2);
+    expect(mockPostCreate.mock.calls.map(([args]) => args.data.slug)).toEqual([
+      "my-first-post",
+      "my-first-post-2",
+    ]);
+  });
+
+  it("非冲突数据库错误不重试并保持失败响应", async () => {
+    mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
+    mockPostCreate.mockRejectedValue(
+      Object.assign(new Error("Can't reach database server"), { code: "P1001" })
+    );
+
+    const response = await POST(
+      new Request("http://localhost/api/posts", {
+        method: "POST",
+        body: JSON.stringify({ title: "My First Post", content: "Hello world" }),
+      })
+    );
+
+    expect(response.status).toBeGreaterThanOrEqual(500);
+    expect(mockPostCreate).toHaveBeenCalledTimes(1);
+  });
+
   it("writes authorCity, authorCountry, authorTimezone from user profile on create", async () => {
     mockRequireCurrentUser.mockResolvedValue({
       id: "user-1",
       profile: { city: "Tokyo", country: "Japan", timezone: "Asia/Tokyo" },
     });
-    mockPostFindUnique.mockResolvedValue(null);
     mockPostCreate.mockResolvedValue({
       id: "post-new",
       slug: "hello",
@@ -258,7 +308,6 @@ describe("POST /api/posts", () => {
 
   it("writes null location fields when user has no profile", async () => {
     mockRequireCurrentUser.mockResolvedValue({ id: "user-1" });
-    mockPostFindUnique.mockResolvedValue(null);
     mockPostCreate.mockResolvedValue({
       id: "post-new",
       slug: "hello",

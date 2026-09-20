@@ -134,7 +134,9 @@ const mockPrisma = {
 
 vi.mock("@/lib/prisma", () => ({ prisma: mockPrisma }));
 
-const { schedulerTick, clearAllTimers, TRIGGER_MARKER } = await import("@/agent/scheduler-tick");
+const { schedulerTick, clearAllTimers, drainSchedulerTasks, TRIGGER_MARKER } = await import(
+  "@/agent/scheduler-tick"
+);
 
 function makeJob(overrides: Partial<ScheduledJobRow> = {}): ScheduledJobRow {
   return {
@@ -455,5 +457,128 @@ describe("schedulerTick - empty-skip", () => {
     expect(result).toEqual({
       jobs: { fired: 0, skipped: 0, failed: 0 },
     });
+  });
+});
+
+describe("schedulerTick - timer 任务所有权", () => {
+  const base = new Date("2026-05-08T12:00:00Z");
+
+  async function armNearTermTimer(delayMs = 30_000) {
+    vi.useFakeTimers();
+    vi.setSystemTime(base);
+    jobs.push(makeJob({ nextRunAt: new Date(base.getTime() + delayMs) }));
+    await schedulerTick(base);
+  }
+
+  // 让 timer 任务卡在 deferred 的 job 读取上，本用例负责释放。
+  function holdNextJobRead() {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mockPrisma.scheduledJob.findUnique.mockImplementationOnce(async () => {
+      await gate;
+      return null;
+    });
+    return () => release();
+  }
+
+  it("收敛 timer 任务读取 job 失败时的 rejection 并记录日志", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    try {
+      await armNearTermTimer();
+      mockPrisma.scheduledJob.findUnique.mockRejectedValueOnce(new Error("connection lost"));
+
+      await vi.advanceTimersByTimeAsync(30_500);
+      vi.useRealTimers();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      // 旧实现是 `void fireJobNow(...)`：该 rejection 无人收敛，进程会直接退出。
+      expect(unhandled).toEqual([]);
+      expect(errorSpy).toHaveBeenCalledWith("[scheduler] timer task failed:", expect.any(Error));
+    } finally {
+      process.off("unhandledRejection", onUnhandled);
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("收敛 claim 失败后失败回写再次拒绝的 rejection", async () => {
+    const unhandled: unknown[] = [];
+    const onUnhandled = (reason: unknown) => {
+      unhandled.push(reason);
+    };
+    process.on("unhandledRejection", onUnhandled);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const updateMany = mockPrisma.scheduledJob.updateMany;
+    const originalUpdateMany = updateMany.getMockImplementation();
+    let updateManyCalls = 0;
+
+    try {
+      await armNearTermTimer();
+      dispatchHook = async () => {
+        throw new Error("dispatch failed");
+      };
+      updateMany.mockImplementation(async (args: { where: any; data: any }) => {
+        updateManyCalls += 1;
+        // 第 1 次是 claim 事务内推进 job；第 2 次是失败回写，让它也拒绝。
+        if (updateManyCalls === 2) throw new Error("failure write failed");
+        return originalUpdateMany!(args);
+      });
+
+      await vi.advanceTimersByTimeAsync(30_500);
+      vi.useRealTimers();
+      await new Promise((resolve) => setImmediate(resolve));
+
+      expect(updateManyCalls).toBe(2);
+      expect(unhandled).toEqual([]);
+      expect(errorSpy).toHaveBeenCalledWith("[scheduler] timer task failed:", expect.any(Error));
+    } finally {
+      if (originalUpdateMany) updateMany.mockImplementation(originalUpdateMany);
+      process.off("unhandledRejection", onUnhandled);
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("drainSchedulerTasks 等待已开始的 timer 任务完成", async () => {
+    await armNearTermTimer();
+    const release = holdNextJobRead();
+    await vi.advanceTimersByTimeAsync(30_500);
+
+    const drain = drainSchedulerTasks(10_000);
+    let settled = false;
+    void drain.then(() => {
+      settled = true;
+    });
+
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(settled).toBe(false);
+
+    release();
+    await expect(drain).resolves.toBe(true);
+  });
+
+  it("drainSchedulerTasks 超时有界返回 false 而不是无限等待", async () => {
+    await armNearTermTimer();
+    const release = holdNextJobRead();
+    await vi.advanceTimersByTimeAsync(30_500);
+
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const drain = drainSchedulerTasks(1_000);
+      await vi.advanceTimersByTimeAsync(1_500);
+
+      await expect(drain).resolves.toBe(false);
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("shutdown drain timed out"));
+    } finally {
+      release();
+      await vi.advanceTimersByTimeAsync(10);
+      errorSpy.mockRestore();
+    }
   });
 });

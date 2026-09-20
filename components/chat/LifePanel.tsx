@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import type { ChatUser, LifeMemo, LifeScheduledJob } from "@/components/chat/types";
 import { MemoModal, ScheduledJobModal } from "@/components/chat/LifePanelModals";
 import { ItemActions } from "@/components/chat/ItemActions";
+import { useWorldClock } from "@/components/chat/useWorldClock";
 import { resolveParticipantPair } from "@/lib/participant-resolution";
 import { showError } from "@/lib/ui-utils";
 
@@ -45,7 +46,9 @@ export function LifePanel({
   scheduledJobs: LifeScheduledJob[];
 }) {
   const router = useRouter();
-  const [now, setNow] = useState(() => new Date());
+  // 两地时间取自组件之外的挂钟 store：SSR 与 hydration 都拿到 0（占位），
+  // 挂载后才补上浏览器读数，两端渲染期都不读 Date，因此不会 hydration mismatch。
+  const nowMs = useWorldClock();
   const [weatherState, setWeatherState] = useState<{
     roomId: string;
     result: WeatherResult | null;
@@ -59,11 +62,6 @@ export function LifePanel({
     | { type: null };
 
   const [modal, setModal] = useState<ModalState>({ type: null });
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(new Date()), 30000);
-    return () => clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,7 +136,7 @@ export function LifePanel({
                     <p className="font-medium text-black">{user.displayName}</p>
                     <p className="text-xs text-black/50">{user.profile?.city ?? "未设置城市"}</p>
                   </div>
-                  <p className="text-right font-semibold text-[#3a5b22]">{formatTime(now, user.profile?.timezone)}</p>
+                  <p className="text-right font-semibold text-[#3a5b22]">{formatTime(nowMs, user.profile?.timezone)}</p>
                 </div>
               ))}
           </div>
@@ -252,8 +250,9 @@ function PanelSection({ title, empty, children, onAdd }: { title: string; empty:
   );
 }
 
-function formatTime(now: Date, timezone?: string) {
-  if (!timezone) {
+function formatTime(nowMs: number, timezone?: string) {
+  // nowMs 为 0 表示还没拿到浏览器时刻（SSR/hydration 首帧），沿用无时区时的占位符。
+  if (!timezone || nowMs === 0) {
     return "--:--";
   }
 
@@ -261,7 +260,7 @@ function formatTime(now: Date, timezone?: string) {
     timeZone: timezone,
     hour: "2-digit",
     minute: "2-digit"
-  }).format(now);
+  }).format(new Date(nowMs));
 }
 
 function formatDateTime(value: string, timezone?: string | null) {

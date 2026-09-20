@@ -8,6 +8,16 @@ const ATLAS_UPLOAD_ROUTE = "/api/atlas/uploads/";
 export const ATLAS_ALLOWED_MIMES = new Set(["image/jpeg", "image/png", "image/webp"]);
 export const ATLAS_MAX_FILE_SIZE = 5 * 1024 * 1024;
 
+export type AtlasImageFormat = "image/jpeg" | "image/png" | "image/webp";
+
+/** 上传被拒时抛出的类型，路由据此稳定映射成 400，不再靠匹配错误文案。 */
+export class AtlasImageValidationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "AtlasImageValidationError";
+  }
+}
+
 export type AtlasStorageSaveInput = {
   key: string;
   body: Buffer;
@@ -337,10 +347,80 @@ export function getAtlasStorage(): AtlasStorage {
 
 export function validateAtlasImageFile(file: File): void {
   if (!ATLAS_ALLOWED_MIMES.has(file.type)) {
-    throw new Error(`Unsupported file type: ${file.type}`);
+    throw new AtlasImageValidationError(`Unsupported file type: ${file.type}`);
   }
 
   if (file.size > ATLAS_MAX_FILE_SIZE) {
-    throw new Error(`File too large: ${file.size} bytes (max ${ATLAS_MAX_FILE_SIZE})`);
+    throw new AtlasImageValidationError(
+      `File too large: ${file.size} bytes (max ${ATLAS_MAX_FILE_SIZE})`
+    );
   }
+}
+
+function isJpeg(buffer: Buffer) {
+  // SOI + 段起始标记，且必须能找到 EOI 才算完整。
+  return (
+    buffer.length > 4 &&
+    buffer[0] === 0xff &&
+    buffer[1] === 0xd8 &&
+    buffer[2] === 0xff &&
+    buffer.indexOf(Buffer.from([0xff, 0xd9]), 2) !== -1
+  );
+}
+
+function isPng(buffer: Buffer) {
+  const signature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  // 签名之后必须还有 IEND 数据块，避免「改了扩展名的文本」蒙混过关。
+  return buffer.length > 8 && buffer.subarray(0, 8).equals(signature) && buffer.includes("IEND", 8, "latin1");
+}
+
+function isWebp(buffer: Buffer) {
+  if (buffer.length < 16) {
+    return false;
+  }
+
+  const isRiff = buffer.subarray(0, 4).toString("latin1") === "RIFF";
+  const isWebpTag = buffer.subarray(8, 12).toString("latin1") === "WEBP";
+  const chunkTag = buffer.subarray(12, 16).toString("latin1");
+  const declaredSize = buffer.readUInt32LE(4);
+
+  return (
+    isRiff &&
+    isWebpTag &&
+    (chunkTag === "VP8 " || chunkTag === "VP8L" || chunkTag === "VP8X") &&
+    // RIFF 头声明的长度覆盖不到实际字节数，说明文件被截断。
+    declaredSize >= 12 &&
+    declaredSize + 8 <= buffer.length
+  );
+}
+
+/**
+ * 按文件内容判定图片格式——客户端声明的 MIME 只是元数据，不可信。
+ * 返回 null 表示字节不属于三种允许格式中的任何一种。
+ */
+export function detectAtlasImageFormat(buffer: Buffer): AtlasImageFormat | null {
+  if (isJpeg(buffer)) {
+    return "image/jpeg";
+  }
+
+  if (isPng(buffer)) {
+    return "image/png";
+  }
+
+  if (isWebp(buffer)) {
+    return "image/webp";
+  }
+
+  return null;
+}
+
+/** 校验字节确实是允许的三种图片之一，返回按内容判定的格式。 */
+export function validateAtlasImageContent(buffer: Buffer): AtlasImageFormat {
+  const format = detectAtlasImageFormat(buffer);
+
+  if (!format) {
+    throw new AtlasImageValidationError("Unsupported image content (expected JPEG, PNG or WebP)");
+  }
+
+  return format;
 }

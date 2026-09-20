@@ -5,27 +5,27 @@
 | 项目 | 内容 |
 | --- | --- |
 | QAM | QAM-03 双人生活信息与计划管理 |
-| 快照日期 | 2026-09-13 |
+| 快照日期 | 2026-09-19 |
 | 审查 Skill | [`xoxo-qam-03-life-plan-review`](../../.agents/skills/xoxo-qam-03-life-plan-review/SKILL.md) |
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-03、Cross-cutting Concerns、共享映射、BU-03/BU-04 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
-| 本轮 Delta | `+3`（QAM-03-005 resolved；90→93；共享字段 contract 消除 HTTP/Agent/UI 漂移并明确旧记录兼容） |
-| 当前基线命令 | `./init.sh` exit 0（75/544）；最终 `E2E_APP_MODE=production ./scripts/run-node22.sh npm run check:full` exit 0：77 文件/576 项 Vitest、production build、覆盖率 49.32/43.91/54.03/50.00、26 文件/96 项 PostgreSQL、35/35 Playwright（无跳过）。两次默认开发门禁的 Study 失败独立登记 feat-063；首次生产 CSP 回归已修正，完整迭代见进度 |
-| 风险匹配命令 | Node 契约 26/26；组件 11/11；PostgreSQL 定向 3 文件/23 项（新增字段 9 + one-shot 11 + active cap 3）；Chromium Agent 创建长记录后 UI 编辑/刷新 2/2（含 setup），均 exit 0。原始命令、负向对照与完整门禁进展见 [progress.md](../../progress.md) |
+| 本轮 Delta | `+1`（QAM-03-007 resolved；93→94；两地时间不再于渲染期读取两端各自挂钟，SSR 与 hydration 取自同一服务端时刻） |
+| 当前基线命令 | `VITEST_MAX_WORKERS=1 ./scripts/run-node22.sh npm run check` exit 0：80 文件/687 项 Vitest、production build（4.4s）、覆盖率 51.58/45.39/56.06/52.25。完整开发序列 `VITEST_MAX_WORKERS=1 E2E_APP_MODE=development ... npm run check:full` 的 PostgreSQL 29 文件/110 项通过，Playwright 41/42，最后一项搜索用例在宿主机 available 490MB、2GB swap 用满、`next-server` RSS 2.7GB 时 90000ms 超时；单独运行同一用例 9.5s 通过，属宿主机容量边界，详见 [progress.md](../../progress.md) 的 feat-068 |
+| 风险匹配命令 | 组件 [`life-panel-world-clock`](../../tests/component/life-panel-world-clock.test.tsx) 2/2（负向对照下 2 项均失败）；两地时间身份旅程 `--grep 'resolves life panel identity for the second room participant'` 2/2（含 setup）；集成 `room-snapshot-privacy` 1/1（夹具改为 `joinedAt` 全序）。原始命令、负向对照与完整门禁进展见 [progress.md](../../progress.md) |
 | 证据纪律 | E3 为本轮实际执行的测试/可复现实验；E2 为源码、schema、迁移与测试交叉证据；未把 mock 结果写成真实 PostgreSQL 或浏览器验证 |
 
 ## Overall
 
 | 指标 | 结果 |
 | --- | --- |
-| Score | **93 / 100** |
+| Score | **94 / 100** |
 | Score Level | **L4** |
 | Gate Level | **L4** |
 | Final Level | **L4** |
-| Trend | `+3`（QAM-03-005 resolved，90→93） |
-| Evidence Confidence | 高（本轮 E3 覆盖两入口 create/update 的边界、trim、空值、省略与 JSON schema；真实 PostgreSQL 证明无损往返、拒绝超限及保留旧值，Chromium 证明 Agent 创建后 UI 编辑/刷新一致；最终生产模式完整门禁 35/35，默认开发序列的独立失败仍按 feat-063 跟踪） |
+| Trend | `+1`（QAM-03-007 resolved，93→94） |
+| Evidence Confidence | 高（本轮 E3 由真实 Chromium 固定浏览器时钟复现两地时间 hydration mismatch，并以组件级 SSR/hydration 双向断言证明修复；真实 PostgreSQL 与既有边界证据保持） |
 
-QAM-03-005 已关闭：Memo 的 title/content 与 Schedule description 由同一领域 contract 定义，HTTP、Agent 与表单共同消费。保留原 Agent 的 500/20000/500 字符上限，空值与省略语义一致；编辑未改字段不会截断、trim 或重写旧内容，超过现行上限的旧字段也有明确保留说明。Node、组件、真实 PostgreSQL 与 Chromium 已验证这些行为；QAM-03 当前无开放 P0/P1/P2。
+QAM-03-007 已关闭：两地时间不再在渲染期读取两端各自的挂钟。首帧沿用服务端渲染时刻，挂载后才切换为浏览器时钟，SSR 文字与 hydration 文字必然一致。修复前组件级回归以固定时钟复现 `+21:05 / -18:05` mismatch 并失败，修复后通过；真实 Chromium 下原 `LifePanel` 世界时钟 hydration mismatch 消失。此前的 QAM-03-005 结论（Memo/Schedule 共享字段 contract）保持不变；QAM-03 当前无开放 P0/P1/P2。
 
 ## Score Breakdown
 
@@ -36,12 +36,12 @@ QAM-03-005 已关闭：Memo 的 title/content 与 Schedule description 由同一
 | 抽象与复用 | 8 | 8 | 字段上限、trim、默认标题、Memo 必填/可选与 nullable 描述统一为共享 schema；Registry 从同一 contract 导出 JSON schema，表单引用相同 schema/常量；26 项入口行为与导出回归通过（E3）。 |
 | 数据流与状态一致性 | 12 | 12 | Room scope、active count/write transaction、显式参与者身份与 one-shot 绝对时刻一致；跨进程 TZ 和 PostgreSQL parity 证明合法 offset 不漂移，非法 trigger 不进入持久化（E3）。 |
 | 接口与依赖关系 | 10 | 10 | Memo/Schedule 字段的 create/update 契约已统一；Agent 边界长度记录可被 HTTP 原样保存，nullable 描述新建/清空/省略有相同持久化结果。沿用较大上限与部分 PATCH 保护旧记录，不需要迁移（E3）。 |
-| 健壮性、并发与生命周期 | 12 | 14 | Room 行锁、29→30 竞争、非法 cron/时区/过期或无 offset `fireAt`、`fireAt+cron`、参与者缺失和天气 timeout/fallback 均有失败控制；run-once 触发终态由 QAM-04 独立保护（E3）。 |
+| 健壮性、并发与生命周期 | 13 | 14 | Room 行锁、29→30 竞争、非法 cron/时区/过期或无 offset `fireAt`、`fireAt+cron`、参与者缺失和天气 timeout/fallback 均有失败控制；run-once 触发终态由 QAM-04 独立保护。新增：两地时间的 SSR/hydration 生命周期不再依赖渲染期挂钟读数，固定时钟下由服务端时刻驱动首帧、挂载后交给浏览器时钟（E3）。 |
 | 性能与资源使用 | 7 | 8 | Memo/Job 的 snapshot/Tool 查询有 room/index 与 take 边界，天气 cache 有 `MAX_CACHE_SIZE=500` 淘汰阈值；`who=both` 顺序请求天气是局部延迟成本（E2）。 |
 | 安全与隐私 | 9 | 10 | 生活 Route 统一认证、成员校验和 roomId 归属检查；Memo/Job Tool 也检查资源所属房间，天气只读取房间参与者档案（E2）。 |
-| 可测试性与验证可信度 | 8 | 8 | 本轮新增契约、组件、真实 PostgreSQL 与 Chromium 字段往返 E3，并有旧 contract 25/26 failed、旧 Modal 5/6 failed 的负向对照；原 one-shot/cap 定向回归 14/14 保持。原满分维度不再额外加分。 |
+| 可测试性与验证可信度 | 8 | 8 | 本轮新增契约、组件、真实 PostgreSQL 与 Chromium 字段往返 E3，并有旧 contract 25/26 failed、旧 Modal 5/6 failed 的负向对照；原 one-shot/cap 定向回归 14/14 保持。QAM-03-007 的固定时钟 SSR/hydration 回归同样计入本维度，但本维度已满分，不再额外加分。 |
 | 可维护性、演进与技术债 | 5 | 6 | 字段 contract 与旧值兼容策略已有单一修改入口；ScheduledJob 更新矩阵及非本轮字段的平行入口仍需在相关变更时一起复核（E2）。本轮不扩大为其他输入或调度治理。 |
-| **合计** | **93** | **100** | 算术精确合计。 |
+| **合计** | **94** | **100** | 算术精确合计（14+8+8+12+10+13+7+9+8+5=94）。 |
 
 ## Level Gate
 
@@ -66,6 +66,15 @@ QAM-03-005 已关闭：Memo 的 title/content 与 Schedule description 由同一
 ### P2
 
 当前无开放项。
+
+### Resolved — QAM-03-007：两地时间在渲染期读取挂钟，SSR 与 hydration 文字不一致
+
+- **状态**：`resolved`（首次发现 2026-09-19；由 feat-068 在真实浏览器下复核高开销开发门禁时定位）。
+- **现象**：Chat 冷启动的 `observed.errors` 收到 `Hydration failed because the server rendered text didn't match the client.`，组件栈终止于 `LifePanel (components/chat/LifePanel.tsx:135)` / `formatTime`（`LifePanel.tsx:141`），差异文字为 `+13:05 / -10:05`。React 随即在客户端重建整棵树。
+- **根因**：`LifePanel` 是会被服务端渲染的客户端组件，其 `now` 状态在渲染期以 `new Date()` 初始化。服务端与浏览器各自读取本机挂钟，只要两次读数跨过分钟边界，`formatTime` 输出的 `HH:MM` 就不同。常规时机下该窗口只有毫秒级，通常不跨分钟；开发模式叠加高负载时 hydration 窗口被拉长到秒级，跨分钟概率随之上升，因此在完整开发门禁中才稳定暴露。
+- **修正**：首帧改由服务端时刻驱动 —— [`app/chat/[roomId]/page.tsx`](../../app/chat/[roomId]/page.tsx) 传入 `serverNow={Date.now()}`，经 [`ChatApp`](../../components/chat/ChatApp.tsx) 透传到 [`LifePanel`](../../components/chat/LifePanel.tsx)，`useState(() => new Date(serverNow))` 使 SSR 与 hydration 取自同一份读数；挂载后的 `useEffect` 仍切回浏览器时钟并保持 30 秒刷新。未改动 `formatTime` 的时区语义、天气加载或任何既有断言。
+- **负向对照与回归**：[`tests/component/life-panel-world-clock.test.tsx`](../../tests/component/life-panel-world-clock.test.tsx) 用 `toFake: ["Date"]` 固定挂钟、保留真实定时器；服务端 10:05Z 与浏览器 13:05Z 相差 3 小时。回退被修正的初始化式后两项均失败，hydration 症状为 `+21:05 / -18:05`（与线上 `+13:05 / -10:05` 同形）；修复后 SSR 取自 `serverNow`、`hydrateRoot` 的 `onRecoverableError` 为空、挂载后仍更新为浏览器时钟。
+- **边界说明**：本次未以 skip、mock、关闭错误断言或不设依据地放大全局超时来消除失败；修正落在产品边界的时序来源上。
 
 ### Resolved — QAM-03-005：Memo/Schedule 的 Route 与 Agent 字段约束漂移
 
@@ -163,10 +172,12 @@ Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥
 | QAM-03-004 | P1 | `resolved` | 2026-09-12 | QAM-03 Schedule input/time semantics | QAM-08 Tool contract；QAM-04 触发输入 |
 | QAM-03-005 | P2 | `resolved` | 2026-09-12 | QAM-03 Memo/Schedule field contracts | QAM-08 Tool contract |
 | QAM-03-006 | P2 | `resolved` | 2026-09-12 | QAM-03 LifePanel form accessibility | Cross-cutting accessibility |
+| QAM-03-007 | P2 | `resolved` | 2026-09-19 | QAM-03 LifePanel world clock SSR/hydration | feat-068 高开销开发门禁复核 |
 
 ### 复审触发条件
 
 - 修改 Memo/ScheduledJob/Weather Route、LifePanel/Cron/Timezone UI、`schedule-tool`/`weather-tool`/`timezone-tool`、`tool-contracts.ts` 或相关 validation/schema。
+- 修改 LifePanel 的渲染期数据来源、`serverNow` 透传链路或 `formatTime`/`formatDateTime` 的时区语义（QAM-03-007 回归入口为固定时钟的 SSR/hydration 断言）。
 - QAM-04 修改 ScheduledJob trigger fields、timer/CAS，或 QAM-08 修改生活 Tool contract/执行边界。
 - 新增真实 PostgreSQL 并发 cap、one-shot fireAt 和双人第二参与者浏览器旅程证据，或 Playwright 环境恢复后重跑生活旅程。
 
@@ -185,4 +196,4 @@ Tool registration/deadline/retry/approval (QAM-08) 包裹生活 Tool，但不拥
 
 | 2026-09-13 | 93 | L4 | L4 | L4 | +3（QAM-03-005 resolved） | feat-055：HTTP/Agent/UI 共享 Memo 500/20000 与 description 500、trim/default/nullable/省略规则，部分 PATCH 无损保留旧值。旧 contract 25/26 failed→26/26 passed，旧 Modal 5/6 failed→组件 11/11；PostgreSQL 定向 23/23、Agent 创建后 UI 编辑/刷新 E3。初版客户端 Zod 对象构造触发 CSP，改为客户端仅用基础字段 schema 后生产入口/编辑 3/3 无违规；最终生产 check:full exit 0：77/576、build、覆盖率 49.32/43.91/54.03/50.00、26/96 PostgreSQL、35/35 Playwright。默认开发完整门禁两次 Study 超时为独立 feat-063，未将生产通过写成开发通过；原失败与清理见 progress.md。 |
 
-复审时保留上述 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate 与 Final。
+| 2026-09-19 | 94 | L4 | L4 | L4 | +1（QAM-03-007 resolved） | feat-068：真实 Chromium 固定浏览器时钟（`page.clock.setFixedTime` +3 小时）在未修复的 `LifePanel` 上复现 `+13:05 / -10:05` 的 `Hydration failed because the server rendered text didn't match the client.`，组件栈终止于 `LifePanel.tsx:141`/`formatTime`。根因为渲染期 `new Date()` 让服务端与浏览器各读本机挂钟；修正后首帧由外部挂钟 store 的常量服务端快照驱动，挂载后才切换为浏览器时钟。负向对照：把服务端快照改回读挂钟，组件回归两项均失败（SSR 渲染出宿主挂钟 `21:05`），修复后 2/2；真实浏览器同一诊断 `[diag:clock:errors] []` 且 `afterHydration=["13:14","13:14"]`，两地时间旅程 E2E 通过。`npm run check` exit 0：80 文件/687 项、production build、覆盖率 51.58/45.39/56.06/52.25。完整开发序列另见 progress.md#feat-068。 |

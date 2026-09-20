@@ -1,12 +1,14 @@
 import { NextResponse } from "next/server";
 import { revalidatePath } from "next/cache";
+import type { Prisma } from "@prisma/client";
 
 import { assertPostOwnership } from "@/lib/api-posts";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { prisma } from "@/lib/prisma";
-import { ensureUniqueSlug, generateSlug } from "@/lib/posts";
+import { generateSlug, writePostWithUniqueSlug } from "@/lib/posts";
+import { postUpdateSchema, readJsonBody } from "@/lib/validation";
 
 export async function GET(
   _request: Request,
@@ -51,22 +53,25 @@ export async function PUT(
   try {
     const { slug } = await params;
     const { post } = await assertPostOwnership(slug);
-    const body = await request.json();
-    const { title, content } = body;
+    const { title, content } = await readJsonBody(request, postUpdateSchema);
 
-    const updateData: Record<string, unknown> = {};
-    if (title?.trim()) {
-      updateData.title = title.trim();
-      updateData.slug = await ensureUniqueSlug(generateSlug(title), post.id);
-    }
-    if (content?.trim()) {
-      updateData.content = content.trim();
-    }
+    const updateData: Prisma.PostUpdateInput = {
+      ...(title !== undefined ? { title } : {}),
+      ...(content !== undefined ? { content } : {}),
+    };
 
-    const updated = await prisma.post.update({
-      where: { id: post.id },
-      data: updateData,
-    });
+    // 未提供标题即不重新分配 slug，与发布契约的字段语义保持一致。
+    const updated = await (title !== undefined
+      ? writePostWithUniqueSlug(generateSlug(title), (nextSlug) =>
+          prisma.post.update({
+            where: { id: post.id },
+            data: { ...updateData, slug: nextSlug },
+          })
+        )
+      : prisma.post.update({
+          where: { id: post.id },
+          data: updateData,
+        }));
 
     revalidatePath("/home");
 

@@ -11,6 +11,10 @@ const DEFAULT_AGENT_SLUG = "life-assistant";
 
 const JOB_PRECISE_THRESHOLD_MS = 2 * 60 * 1000;
 
+// shutdown 时等待已开始的 timer 任务完成的上界。Compose 未声明 stop grace，
+// 因此该值必须明显小于容器默认的 10 秒宽限期。
+export const SCHEDULER_DRAIN_TIMEOUT_MS = 5_000;
+
 export const TRIGGER_SCHEDULED_JOB = "scheduled.job";
 
 // Tools the agent must NOT call when running on behalf of a fired
@@ -34,6 +38,11 @@ type ActiveJobTimer = {
 
 const activeJobTimers = new Map<string, ActiveJobTimer>();
 
+// timer 回调创建的任务由模块持有：`void fireJobNow(...)` 只丢弃返回值，不收敛 rejection，
+// 任何瞬时数据库错误都会变成未处理拒绝并终止 Worker 进程。这里统一在最外层 catch，
+// 同时让 shutdown 有一个可等待的 in-flight 集合。
+const inFlightTasks = new Set<Promise<void>>();
+
 export type SchedulerTickResult = {
   jobs: { fired: number; skipped: number; failed: number };
 };
@@ -41,6 +50,49 @@ export type SchedulerTickResult = {
 export function clearAllTimers() {
   for (const { timer } of activeJobTimers.values()) clearTimeout(timer);
   activeJobTimers.clear();
+}
+
+function trackTimerTask(task: Promise<void>): Promise<void> {
+  const tracked = task
+    .catch((error) => {
+      console.error("[scheduler] timer task failed:", error);
+    })
+    .finally(() => {
+      inFlightTasks.delete(tracked);
+    });
+  inFlightTasks.add(tracked);
+  return tracked;
+}
+
+/**
+ * 等待已开始的 timer 任务结束，最多等待 `timeoutMs`。返回是否在超时前排空；
+ * 超时不会取消任务，只是让调用方（Worker 的 shutdown）有界退出。
+ */
+export async function drainSchedulerTasks(
+  timeoutMs = SCHEDULER_DRAIN_TIMEOUT_MS
+): Promise<boolean> {
+  const pending = [...inFlightTasks];
+  if (pending.length === 0) return true;
+
+  let timer: NodeJS.Timeout | undefined;
+  try {
+    const outcome = await Promise.race([
+      Promise.allSettled(pending).then(() => "drained" as const),
+      new Promise<"timeout">((resolve) => {
+        timer = setTimeout(() => resolve("timeout"), timeoutMs);
+      }),
+    ]);
+
+    if (outcome === "timeout") {
+      console.error(
+        `[scheduler] shutdown drain timed out after ${timeoutMs}ms: ${inFlightTasks.size} task(s) still in flight`
+      );
+      return false;
+    }
+    return true;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export async function schedulerTick(now = new Date()): Promise<SchedulerTickResult> {
@@ -228,7 +280,7 @@ async function scheduleNearTermJobs(now: Date) {
       const currentTimer = activeJobTimers.get(job.id);
       if (currentTimer?.expectedNextRunAtMs !== expectedNextRunAtMs) return;
       activeJobTimers.delete(job.id);
-      void fireJobNow(job.id, expectedNextRunAtMs);
+      trackTimerTask(fireJobNow(job.id, expectedNextRunAtMs));
     }, delay);
     activeJobTimers.set(job.id, { timer, expectedNextRunAtMs });
   }

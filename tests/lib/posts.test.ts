@@ -1,5 +1,11 @@
-import { describe, expect, it } from "vitest";
-import { formatPostTime, generateSlug, resolveAuthorLocation } from "@/lib/posts";
+import { describe, expect, it, vi } from "vitest";
+import {
+  POST_SLUG_ATTEMPT_LIMIT,
+  formatPostTime,
+  generateSlug,
+  resolveAuthorLocation,
+  writePostWithUniqueSlug,
+} from "@/lib/posts";
 
 describe("generateSlug", () => {
   it("converts title to lowercase kebab-case", () => {
@@ -41,6 +47,83 @@ describe("generateSlug", () => {
 
   it("falls back when every title character is removed", () => {
     expect(generateSlug("!!! 😄 ???")).toBe("post");
+  });
+});
+
+// Prisma P2002 的真实形状由真实 PostgreSQL 探针确认：{ code, meta: { modelName, target: ["slug"] } }。
+function slugConflictError() {
+  return Object.assign(new Error("Unique constraint failed on the fields: (`slug`)"), {
+    code: "P2002",
+    meta: { modelName: "Post", target: ["slug"] },
+  });
+}
+
+describe("writePostWithUniqueSlug", () => {
+  it("首次尝试直接用基础 slug 写入并返回结果", async () => {
+    const write = vi.fn(async (slug: string) => ({ slug }));
+
+    await expect(writePostWithUniqueSlug("hello-world", write)).resolves.toEqual({
+      slug: "hello-world",
+    });
+    expect(write).toHaveBeenCalledTimes(1);
+    expect(write).toHaveBeenCalledWith("hello-world");
+  });
+
+  it("遇到 slug 唯一冲突时按 -2、-3 顺延后缀重试并返回成功结果", async () => {
+    const attempted: string[] = [];
+    const write = vi.fn(async (slug: string) => {
+      attempted.push(slug);
+      if (attempted.length < 3) throw slugConflictError();
+      return { slug };
+    });
+
+    await expect(writePostWithUniqueSlug("hello-world", write)).resolves.toEqual({
+      slug: "hello-world-3",
+    });
+    expect(attempted).toEqual(["hello-world", "hello-world-2", "hello-world-3"]);
+  });
+
+  it("非冲突数据库错误不重试并原样上抛", async () => {
+    const failure = Object.assign(new Error("Can't reach database server"), { code: "P1001" });
+    const write = vi.fn(async () => {
+      throw failure;
+    });
+
+    await expect(writePostWithUniqueSlug("hello-world", write)).rejects.toBe(failure);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("无法归因到 slug 的唯一冲突不重试并原样上抛", async () => {
+    const otherTarget = Object.assign(new Error("Unique constraint failed on the fields: (`email`)"), {
+      code: "P2002",
+      meta: { modelName: "User", target: ["email"] },
+    });
+    const write = vi.fn(async () => {
+      throw otherTarget;
+    });
+
+    await expect(writePostWithUniqueSlug("hello-world", write)).rejects.toBe(otherTarget);
+    expect(write).toHaveBeenCalledTimes(1);
+  });
+
+  it("连续冲突到尝试上限后上抛最后一次冲突", async () => {
+    const attempted: string[] = [];
+    const write = vi.fn(async (slug: string) => {
+      attempted.push(slug);
+      throw slugConflictError();
+    });
+
+    await expect(writePostWithUniqueSlug("hello-world", write)).rejects.toMatchObject({
+      code: "P2002",
+    });
+    expect(write).toHaveBeenCalledTimes(POST_SLUG_ATTEMPT_LIMIT);
+    expect(attempted).toEqual([
+      "hello-world",
+      "hello-world-2",
+      "hello-world-3",
+      "hello-world-4",
+      "hello-world-5",
+    ]);
   });
 });
 

@@ -440,6 +440,7 @@ flowchart LR
 **In Scope**
 
 - Post 创建、读取、编辑、删除、所有权校验和 cache revalidation。
+- 发布/更新写入边界契约：HTTP Route 与 Server Action 在生成 slug 前解析同一 Zod schema，统一字段类型、trim、长度上限与空 patch 拒绝。
 - 中文标题 transliteration、唯一 slug 和作者位置快照。
 - 按类型、作者、时间 cursor 和全文条件检索文章。
 - Markdown detail/preview 呈现、Post editor/card/detail、Agent log card/trace panel。
@@ -457,7 +458,8 @@ flowchart LR
 - HTTP：`GET/POST /api/posts`、`GET/PUT/DELETE /api/posts/:slug`。
 - Server Actions：`createPost()`、`updatePost()`、`deletePost()`。
 - 页面/UI：`/home`、`/posts/new`、`/posts/edit/:slug`、`/posts/:slug`、`components/blog/*`。
-- 服务接口：`generateSlug()`、`ensureUniqueSlug()`、`assertPostOwnership()`、`createAgentLogPost()`。
+- 服务接口：`generateSlug()`、`writePostWithUniqueSlug()`、`assertPostOwnership()`、`createAgentLogPost()`。
+- 写入契约：`lib/validation.ts` 的 `postCreateSchema`、`postUpdateSchema`、`postSlugSchema` 与 `POST_TITLE_MAX_LENGTH`/`POST_CONTENT_MAX_LENGTH`，经 `parseBody()`/`readJsonBody()` 由四个写入点共用。
 
 **Owned Data / State**
 

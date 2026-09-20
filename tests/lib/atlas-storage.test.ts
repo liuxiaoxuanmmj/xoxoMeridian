@@ -4,16 +4,29 @@ import { basename, join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ATLAS_MAX_FILE_SIZE,
+  AtlasImageValidationError,
   contentTypeForKey,
   createLocalAtlasStorage,
+  detectAtlasImageFormat,
   extractAtlasStorageKey,
   makeAtlasImageUrl,
   makeAtlasObjectKey,
   normalizeAtlasStorageKey,
   sanitizeAtlasBaseName,
+  validateAtlasImageContent,
   validateAtlasImageFile,
 } from "@/lib/storage/atlas-storage";
 import { env } from "@/lib/env";
+import {
+  JPEG_HEADER_ONLY_WITH_EOI,
+  JPEG_WITHOUT_EOI,
+  MINIMAL_JPEG,
+  MINIMAL_PNG,
+  MINIMAL_WEBP,
+  PNG_WITHOUT_IEND,
+  VALID_IMAGE_FIXTURES,
+  WEBP_TRUNCATED_RIFF,
+} from "@/tests/fixtures/image-bytes";
 
 const tempDirs: string[] = [];
 
@@ -182,5 +195,73 @@ describe("validateAtlasImageFile", () => {
     expect(() => validateAtlasImageFile(file)).toThrow(
       `File too large: ${ATLAS_MAX_FILE_SIZE + 1} bytes (max ${ATLAS_MAX_FILE_SIZE})`
     );
+  });
+
+  it("throws a typed error so upload routes can map it to a 400", () => {
+    const file = new File(["not an image"], "note.txt", { type: "text/plain" });
+    let caught: unknown;
+
+    try {
+      validateAtlasImageFile(file);
+    } catch (error) {
+      caught = error;
+    }
+
+    // 断言错误类型本身：路由的 catch 分支按 instanceof 判断，文案匹配会随措辞漂移。
+    expect(caught).toBeInstanceOf(AtlasImageValidationError);
+    expect((caught as Error).name).toBe("AtlasImageValidationError");
+  });
+});
+
+describe("validateAtlasImageContent", () => {
+  it("detects the three allowed formats from their bytes alone", () => {
+    expect(detectAtlasImageFormat(MINIMAL_JPEG)).toBe("image/jpeg");
+    expect(detectAtlasImageFormat(MINIMAL_PNG)).toBe("image/png");
+    expect(detectAtlasImageFormat(MINIMAL_WEBP)).toBe("image/webp");
+
+    for (const { mimeType, bytes } of VALID_IMAGE_FIXTURES) {
+      expect(validateAtlasImageContent(bytes)).toBe(mimeType);
+    }
+  });
+
+  it("rejects content that is not an image at all", () => {
+    const forged = Buffer.from("this is definitely not an image");
+
+    expect(detectAtlasImageFormat(forged)).toBeNull();
+    expect(() => validateAtlasImageContent(forged)).toThrow(AtlasImageValidationError);
+    expect(() => validateAtlasImageContent(forged)).toThrow(
+      "Unsupported image content (expected JPEG, PNG or WebP)"
+    );
+  });
+
+  it("rejects truncated images that still carry a valid header", () => {
+    expect(detectAtlasImageFormat(JPEG_WITHOUT_EOI)).toBeNull();
+    expect(detectAtlasImageFormat(PNG_WITHOUT_IEND)).toBeNull();
+    expect(detectAtlasImageFormat(WEBP_TRUNCATED_RIFF)).toBeNull();
+  });
+
+  it("accepts a well-formed header even without decodable pixel data", () => {
+    // 已知边界：契约是 magic bytes + 结构完整性，不是完整解码。
+    // 这里固定现状，避免后来者把「通过校验」误读成「一定能渲染」；
+    // 若要提升为可解码性校验，必须同时更新本用例与 QAM-06 报告。
+    expect(validateAtlasImageContent(JPEG_HEADER_ONLY_WITH_EOI)).toBe("image/jpeg");
+  });
+
+  it("rejects payloads that only mimic the leading magic bytes", () => {
+    expect(detectAtlasImageFormat(Buffer.from([0xff, 0xd8, 0xff, 0x00]))).toBeNull();
+    expect(
+      detectAtlasImageFormat(Buffer.concat([MINIMAL_PNG.subarray(0, 8), Buffer.from("garbage")]))
+    ).toBeNull();
+    expect(
+      detectAtlasImageFormat(
+        Buffer.concat([Buffer.from("RIFF"), Buffer.from([0x0c, 0, 0, 0]), Buffer.from("WEBPGIF89a")])
+      )
+    ).toBeNull();
+  });
+
+  it("rejects empty and single-byte uploads", () => {
+    expect(detectAtlasImageFormat(Buffer.alloc(0))).toBeNull();
+    expect(detectAtlasImageFormat(Buffer.from([0xff]))).toBeNull();
+    expect(detectAtlasImageFormat(Buffer.from([0x89]))).toBeNull();
   });
 });

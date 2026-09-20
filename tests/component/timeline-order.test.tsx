@@ -1,5 +1,5 @@
 import { render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { Timeline, type TimelinePost } from "@/components/blog/Timeline";
 
@@ -19,7 +19,6 @@ beforeEach(() => {
     disconnect() {}
   });
 });
-afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("Timeline 稳定时间顺序", () => {
   it("同时间用户文章与 Agent 日志按 ID 升序显示，输入顺序变化及重新渲染不改变结果", () => {

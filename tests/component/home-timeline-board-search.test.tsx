@@ -60,8 +60,8 @@ describe("HomeTimelineBoard search", () => {
   });
 
   afterEach(() => {
+    // 全局替身由共享收尾在卸载之后恢复（tests/setup/component.ts），此处只回收本文件的 spy。
     vi.restoreAllMocks();
-    vi.unstubAllGlobals();
   });
 
   it("shows initial posts while loading and then renders the matching response", async () => {

@@ -1,6 +1,13 @@
 import { dispatchPendingAgentTasks } from "@/agent/task-dispatcher";
 import { getRuntimeWorkerId } from "@/agent/task-claim";
-import { schedulerTick, clearAllTimers } from "@/agent/scheduler-tick";
+import {
+  schedulerTick,
+  clearAllTimers,
+  drainSchedulerTasks,
+  SCHEDULER_DRAIN_TIMEOUT_MS,
+} from "@/agent/scheduler-tick";
+import { createStopController, interruptibleSleep } from "@/agent/worker-lifecycle";
+import { recoverPendingTimelineProjections } from "@/lib/agent-posts";
 import { cleanupExpiredSessions } from "@/lib/auth";
 import { cleanupExpiredResetTokens } from "@/lib/password-reset";
 import { env } from "@/lib/env";
@@ -10,19 +17,24 @@ const SCHEDULER_JITTER_MS = 1_000;
 const DISPATCH_MAX_BACKOFF_MS = 60_000;
 const SESSION_CLEANUP_INTERVAL_MS = 10 * 60 * 1000; // 10 minutes
 
-let stopped = false;
 const workerId = getRuntimeWorkerId();
+const shutdown = createStopController();
 
-process.on("SIGINT", () => { stopped = true; clearAllTimers(); });
-process.on("SIGTERM", () => { stopped = true; clearAllTimers(); });
+function requestShutdown() {
+  shutdown.stop();
+  clearAllTimers();
+}
 
-const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+process.on("SIGINT", requestShutdown);
+process.on("SIGTERM", requestShutdown);
+
+const sleep = (ms: number) => interruptibleSleep(ms, shutdown);
 
 async function dispatchLoop() {
   let consecutiveErrors = 0;
   console.log(`[worker] dispatch loop started, base poll ${env.AGENT_WORKER_POLL_MS}ms`);
 
-  while (!stopped) {
+  while (!shutdown.stopped) {
     try {
       const results = await dispatchPendingAgentTasks(3, { workerId });
       if (results.length > 0) console.log(`[worker] processed ${results.length} task(s)`);
@@ -30,6 +42,15 @@ async function dispatchLoop() {
     } catch (error) {
       consecutiveErrors += 1;
       console.error("[worker] dispatch failed:", error);
+    }
+    // 投影补做与任务分发互相隔离：任一侧失败都不拖住另一侧，也不影响退避计数。
+    try {
+      const recovered = await recoverPendingTimelineProjections();
+      if (recovered > 0) {
+        console.log(`[worker] recovered ${recovered} timeline projection(s)`);
+      }
+    } catch (error) {
+      console.error("[worker] timeline projection recovery failed:", error);
     }
     const wait = consecutiveErrors === 0
       ? env.AGENT_WORKER_POLL_MS
@@ -42,7 +63,7 @@ async function schedulerLoop() {
   console.log(`[worker] scheduler loop started, tick ~${SCHEDULER_TICK_MS}ms`);
   let lastCleanup = Date.now();
 
-  while (!stopped) {
+  while (!shutdown.stopped) {
     try {
       const result = await schedulerTick();
       const moved =
@@ -71,7 +92,8 @@ async function schedulerLoop() {
 
 async function main() {
   await Promise.all([dispatchLoop(), schedulerLoop()]);
-  console.log("[worker] stopped");
+  const drained = await drainSchedulerTasks(SCHEDULER_DRAIN_TIMEOUT_MS);
+  console.log(`[worker] stopped${drained ? "" : " (scheduler drain timed out)"}`);
 }
 
 main().catch((error) => {

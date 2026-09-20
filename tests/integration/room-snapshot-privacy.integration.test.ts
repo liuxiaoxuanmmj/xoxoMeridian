@@ -59,10 +59,13 @@ describe("Room snapshot participant privacy", () => {
           profileNote: "partner-private-profile-note",
         },
       }),
+      // joinedAt 默认取 now()，同一事务里两行会得到完全相同的时间戳；快照按
+      // joinedAt asc 排序，同值行的返回顺序由数据库决定，断言会随机失败。
+      // 这里显式给出可区分的加入时刻，让 orderBy 成为全序。
       prisma.roomParticipant.createMany({
         data: [
-          { roomId: room.id, userId: viewer.id, role: "owner" },
-          { roomId: room.id, userId: partner.id, role: "member" },
+          { roomId: room.id, userId: viewer.id, role: "owner", joinedAt: new Date("2026-01-01T00:00:00.000Z") },
+          { roomId: room.id, userId: partner.id, role: "member", joinedAt: new Date("2026-01-01T00:00:01.000Z") },
         ],
       }),
     ]);

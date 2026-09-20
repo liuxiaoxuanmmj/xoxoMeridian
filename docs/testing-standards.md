@@ -40,13 +40,18 @@ sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:integration
 - `npm run test:integration`：启动 PostgreSQL 16 Testcontainer、执行迁移并运行 Prisma 集成测试。
 - `npm run test:e2e`：启动 PostgreSQL Testcontainer、迁移和 seed、Next.js 测试服务，再运行全部 Playwright 项目。
 - `npm run test:e2e:public`：只选择 public 项目；它仍依赖认证 setup。
+- `npm run test:e2e:production`：同上，但以 `E2E_APP_MODE=production` 先 `next build`、再 `next start` 提供测试服务；这是 `check:full` 使用的发布门禁形态。
 - `npm run check:compose-config`：用临时非敏感环境变量渲染 production + smoke Compose 配置，并校验 project、端口、卷、runner target 与 `AGENT_TASK_INLINE_RUN=false` 的隔离约束；不访问 Docker daemon。
 - `npm run test:compose-smoke`：构建 production Web/Worker 镜像，在随机 Compose project 中启动 PostgreSQL、init、Web 与独立 Worker，通过真实 Web API 验证 Worker 完成 AgentTask；要求 Docker Compose 2.24.4+，失败日志保留在 `test-results/compose-smoke/`，结束后清理隔离资源。
 - `npm run check:quick`：类型检查、ESLint、Vitest。
 - `npm run check`：快速门禁、生产构建和覆盖率。
-- `npm run check:full`：标准门禁、集成测试和 E2E。
+- `npm run check:full`：标准门禁、集成测试和发布形态 E2E（即 `npm run test:e2e:production`）。
 
 集成测试和本地 E2E 要求 Docker daemon 可用；缺少运行时必须失败并明确提示，不得自动 skip。若验证已在外部环境运行，可通过 `PLAYWRIGHT_BASE_URL` 让 Playwright 连接指定服务，此时服务的数据准备与隔离由该环境负责。
+
+Vitest 的受支持并发配置由 `vitest.config.ts` 的 `maxWorkers` 声明：最多 8 个 worker，且不超过 `os.availableParallelism() - 1`。全量峰值内存近似线性于 worker 数（每 worker 约 160MB），默认的 `cpus - 1` 会让测试进程集占用宿主大部分内存，使首个"在测试体内动态导入 Route"的用例在默认 5000ms 单项超时下失败（见 `progress.md#feat-066`）。不得靠放宽单项超时或跳过用例掩盖该边界；需要更宽并发时改配置并重新测量内存预算，不要在环境里长期导出 `VITEST_MAX_WORKERS`——该变量会覆盖包括集成配置 `maxWorkers: 1` 在内的所有项目设置，破坏集成测试的串行隔离。
+
+浏览器层的应用模式同样由配置声明，而不是交给宿主余量决定。`tests/e2e/support/app-mode.ts` 的默认值是 `development`，`npm run test:e2e` 保留它，便于本地迭代免构建地拿到开发期诊断；`npm run check:full` 走 `test:e2e:production`。原因是开发模式的服务端占用既无上界又由宿主推导：`next dev` 在未显式给出 `--max-old-space-size` 时按 `os.totalmem() * 0.5` 推导堆上限，并按需编译每个访问到的路由且不卸载（Next 自身 memory-usage 文档说明：全部页面最终被请求后，占用与是否预加载无关）。实测一次完整开发浏览器序列把测试服务推到 RSS 约 2.8GB（堆 366MB→2039MB，上限 3939MB），叠加 Chromium 与 runner 后浏览器层需要约 3.5–4GB；在 7.8GB 宿主上与既有工作负载相加后换页被大量占用（已记录的轮次里 2GB swap 用满、available 低至 366MB），任何延迟有界的断言都可能失败，且每轮失败的用例不同、单独运行又通过（见 `progress.md#feat-068`、`progress.md#feat-069`）。开发模式另有两个只属于它的失败源：Next 的内存看门狗（`server/lib/utils.js` 的 `getMemoryRestartStats` 仅在 `isDev` 时安装，堆超过上限 80% 会以 `RESTART_EXIT_CODE` 原地重启服务）和 `react-dom-client.development.js` 的 User Timing 插桩——它对未记录起始时间的组件发出负时间戳的 `Performance.measure`，作为未捕获异常被 `observeEntry` 的 `pageerror` 断言捕获，而该代码只存在于开发包。生产形态下占用有界、错误面不含开发期插桩噪声，并且校验的是生产构建产物（由 E2E harness 自行构建，构建主题与启动主题故意不同，用于覆盖运行时主题切换）。不得用放宽断言、跳过用例或放大超时来掩盖开发模式的这道边界；需要开发期覆盖时显式运行 `npm run test:e2e` 或定向 `--grep`，并将其记为诊断结论而不是门禁结论。
 
 本地 E2E harness 会把临时 Testcontainer 连接串以 `0600` 权限写入 `test-results/.e2e-database-url`，仅供浏览器生命周期用例推进隔离测试数据，并在测试服务关闭时删除。使用 `PLAYWRIGHT_BASE_URL` 连接外部隔离环境时，需同时通过 `E2E_DATABASE_URL` 提供该服务对应的测试数据库；不得指向开发、预发布或生产数据库。
 
@@ -86,6 +91,7 @@ node --input-type=module -e 'import { chromium } from "@playwright/test"; const 
 - `user-event` 模拟真实交互；仅在底层事件本身是被测对象时使用 `fireEvent`。
 - MSW 负责 HTTP 边界；`vi.mock` 只用于时间、随机性、第三方 SDK、Prisma 入口等明确边界。
 - 每个测试自行设置所需环境变量、时间和 mock，并在结束后恢复；禁止依赖文件执行顺序。
+- 组件测试的全局替身（`vi.stubGlobal`）由共享收尾 `tests/setup/component.ts` 在 `cleanup()` 之后统一恢复；测试文件不要在自己的 `afterEach` 里调用 `vi.unstubAllGlobals()`。文件级 hook 先于共享 `cleanup()` 执行，卸载会同步冲刷待执行的被动效果，提前恢复会让卸载阶段（如 `useScrollReveal` 构造 `IntersectionObserver`）抛 `ReferenceError`。
 - 集成测试在每项测试前清空业务表；E2E 使用临时数据库、临时上传目录和非敏感固定账号。
 - 可选供应商 SDK 不得因模块导入而访问系统或网络；本地 provider 的导入必须能在 SDK 不可用时工作。
 - 异步交互使用 `findBy*` 或 `waitFor`，不得用固定 sleep 掩盖竞态。

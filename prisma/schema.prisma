@@ -260,6 +260,8 @@ model AgentTask {
   startedAt       DateTime?
   completedAt     DateTime?
   finalMessageId  String?             @unique
+  // 时间线投影的终态决策时间：非空表示该任务的时间线条目已创建或按节流规则判定为不创建。
+  timelineProjectedAt DateTime?
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   room            Room                @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -267,6 +269,7 @@ model AgentTask {
   sourceMessage   Message?            @relation("SourceMessage", fields: [sourceMessageId], references: [id], onDelete: SetNull)
   requestedBy     User?               @relation("RequestedTasks", fields: [requestedById], references: [id], onDelete: SetNull)
   finalMessage    Message?            @relation("FinalMessage", fields: [finalMessageId], references: [id], onDelete: SetNull)
+  timelinePost    Post?
   toolCalls       ToolCall[]
   llmCalls        LLMCall[]
   eventLogs       EventLog[]
@@ -276,6 +279,7 @@ model AgentTask {
 
   @@index([status, createdAt])
   @@index([status, leaseExpiresAt, createdAt])
+  @@index([status, timelineProjectedAt])
   @@index([roomId])
   @@index([agentId])
 }
@@ -528,10 +532,13 @@ model Post {
   authorTimezone String?
   publishedAt    DateTime
   metadata       Json?
+  // Agent 时间线投影的幂等键：一个 AgentTask 至多一条派生 Post。
+  agentTaskId    String?       @unique
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   author         User?         @relation(fields: [authorId], references: [id], onDelete: SetNull)
   room           Room?         @relation(fields: [roomId], references: [id], onDelete: SetNull)
+  agentTask      AgentTask?    @relation(fields: [agentTaskId], references: [id], onDelete: SetNull)
   atlasElement   AtlasElement?
 
   @@index([type, publishedAt(sort: Desc)])
