@@ -210,6 +210,17 @@ body:has(.home-linen-page) {
     linear-gradient(135deg, rgba(255, 255, 255, 0.34), rgba(223, 234, 216, 0.26));
 }
 
+/* /home 的页面容器必须继续裁掉越界的空间元素：照片的 x/y 没有夹取，拖拽可以把它们移出
+   容器右边界，不裁切时整个文档会出现横向滚动条。但容器不能是滚动容器——父级一旦是滚动
+   容器，sticky 的 SiteNav 就改为相对这个不可滚动的容器解析，导航随文档滚走（这正是
+   overflow: hidden 造成 /home 导航不吸顶的原因）。overflow: clip 保留同样的裁切语义却
+   不创建滚动容器，导航因此重新相对视口吸顶；不支持 clip 的浏览器保留上一行的 hidden，
+   只退回「导航不吸顶」的旧行为，横向裁切始终不丢失。 */
+.home-linen-page {
+  overflow: hidden;
+  overflow: clip;
+}
+
 .home-spatial-board {
   min-height: calc(100vh - 57px);
 }

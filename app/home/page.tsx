@@ -31,8 +31,10 @@ export default async function HomePage() {
     userId: user.id,
   });
 
+  // 越界空间元素的裁切语义由 globals.css 的 .home-linen-page 承担（overflow: hidden 会让
+  // sticky 的 SiteNav 相对这个不可滚动的容器解析、随文档滚走，故改用 overflow: clip）。
   return (
-    <div className="home-linen-page min-h-screen relative overflow-hidden">
+    <div className="home-linen-page min-h-screen relative">
       <div
         className="fixed top-[-20%] left-[-10%] w-[40vw] h-[40vw] rounded-full bg-sage-100/40 blur-3xl pointer-events-none"
         aria-hidden="true"

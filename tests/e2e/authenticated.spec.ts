@@ -1578,3 +1578,101 @@ test("编辑器提交纯空白正文时显示错误横幅并停在编辑页，�
     }
   }
 });
+
+test("keeps the Home navigation sticky above the scrollable felt board", async ({ page }) => {
+  test.setTimeout(120_000);
+  // 回归对象：SiteNav 在 /home 上必须吸顶。页面容器 .home-linen-page 一旦是粘性元素的
+  // 滚动容器（overflow: hidden），sticky 就相对该容器解析，导航随文档滚走。
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const suffix = Date.now().toString(36);
+  const postIds: string[] = [];
+  const photoId = `e2e-home-nav-${suffix}-photo`;
+  const photoCaption = `导航吸顶越界照片 ${suffix}`;
+  const navLinkNames = ["Blog", "Chat", "Study", "New Post"] as const;
+
+  const navTop = () => page.locator("nav").evaluate((nav) => nav.getBoundingClientRect().top);
+  const scrollTo = (target: number) =>
+    page.evaluate(async (y) => {
+      window.scrollTo(0, y);
+      await new Promise((resolve) => requestAnimationFrame(() => resolve(null)));
+      return window.scrollY;
+    }, target);
+  // elementFromPoint 是「用户此刻真的点得到它吗」的判据：遮挡或滚出视口都会命中别的元素。
+  const hitTestNavLink = (name: string) =>
+    page.evaluate((linkName) => {
+      const link = Array.from(document.querySelectorAll("nav a"))
+        .find((candidate) => candidate.textContent?.trim() === linkName);
+      if (!link) return { found: false, hits: false };
+      const rect = link.getBoundingClientRect();
+      const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+      return { found: true, hits: Boolean(hit && (hit === link || link.contains(hit))) };
+    }, name);
+
+  try {
+    const user = await db.user.findUniqueOrThrow({ where: { email: E2E_USERS[0].email } });
+    // 时间线随文章增长：用真实 Post 把文档撑到足以滚动 1200px 的长度。
+    for (let index = 0; index < 12; index += 1) {
+      const post = await db.post.create({
+        data: {
+          slug: `e2e-home-nav-${suffix}-${index}`,
+          title: `导航吸顶文章 ${index} ${suffix}`,
+          content: `导航吸顶内容 ${index}`,
+          authorId: user.id,
+          publishedAt: new Date(Date.now() - index * 60_000),
+        },
+      });
+      postIds.push(post.id);
+    }
+    // 照片的 x/y 没有夹取（拖拽时按位移累加），用户可以把照片拖出容器右边界；这条记录
+    // 守住「越界元素仍被容器裁掉」——容器不再裁切时文档会出现横向滚动条。
+    await db.atlasBoard.upsert({ where: { id: "home-board" }, update: {}, create: { id: "home-board" } });
+    await db.atlasElement.create({
+      data: {
+        id: photoId, boardId: "home-board", type: "photo",
+        x: 1250, y: 120, width: 240, height: 180,
+        caption: photoCaption, imageUrl: "/brand/logo_white.svg", createdById: user.id,
+      },
+    });
+
+    await page.goto("/home");
+    await expect(page.locator(".home-linen-page")).toBeVisible();
+    await expect(page.getByRole("img", { name: photoCaption, exact: true })).toBeVisible();
+
+    const enoughContent = await page.evaluate(() => ({
+      scrollable: document.documentElement.scrollHeight - window.innerHeight,
+      clientWidth: document.documentElement.clientWidth,
+      scrollWidth: document.documentElement.scrollWidth,
+    }));
+    // 内容不足会让「滚动 1200px」变成空断言，这里先失败而不是静默弱化。
+    expect(enoughContent.scrollable).toBeGreaterThanOrEqual(1200);
+
+    // 滚动前：导航吸顶、四个入口可见且可点击。
+    expect(await navTop()).toBe(0);
+    for (const name of navLinkNames) {
+      await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+      expect(await hitTestNavLink(name)).toEqual({ found: true, hits: true });
+    }
+
+    // 滚动 1200px 后：导航仍吸顶在视口顶部，入口依旧可见、可点击。
+    expect(await scrollTo(1200)).toBeGreaterThanOrEqual(1200);
+    expect(await navTop()).toBe(0);
+    for (const name of navLinkNames) {
+      await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+      expect(await hitTestNavLink(name)).toEqual({ found: true, hits: true });
+    }
+
+    // 越界照片不得把容器之外的内容带进文档：横向不出现滚动条（裁切语义未被删除）。
+    expect(await page.evaluate(() => document.documentElement.scrollWidth))
+      .toBe(enoughContent.clientWidth);
+
+    // 吸顶状态下真实点击仍能完成导航，而不是只通过位置断言。
+    await page.getByRole("link", { name: "Chat", exact: true }).click();
+    await expect(page).toHaveURL(/\/chat(\/|$)/);
+  } finally {
+    await db.atlasElement.deleteMany({ where: { id: photoId } });
+    await db.post.deleteMany({ where: { id: { in: postIds } } });
+    await db.$disconnect();
+  }
+});
