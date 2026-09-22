@@ -181,6 +181,9 @@ describe("聊天消息读取窗口与摘要", () => {
     const traceParams = { params: Promise.resolve({ taskId: task.id }) };
     const trace = await getTrace(traceRequest, traceParams);
     expect(trace.status).toBe(200);
+    expect(trace.headers.get("Cache-Control")).toContain("private, no-store");
+    expect(trace.headers.get("CDN-Cache-Control")).toBe("no-store");
+    expect(trace.headers.get("Vary")).toContain("Cookie");
     const serializedTrace = await trace.text();
     for (const value of ["private-task-prompt", "private-tool-input", "private-tool-output", "private-llm-request", "private-llm-response"]) {
       expect(serializedTrace).toContain(value);
@@ -188,10 +191,14 @@ describe("聊天消息读取窗口与摘要", () => {
 
     const outsider = await createTestUser();
     authState.userId = outsider.id;
-    expect((await getTrace(traceRequest, traceParams)).status).toBe(403);
+    const forbiddenTrace = await getTrace(traceRequest, traceParams);
+    expect(forbiddenTrace.status).toBe(403);
+    expect(forbiddenTrace.headers.get("Cache-Control")).toContain("private, no-store");
+    expect(forbiddenTrace.headers.get("CDN-Cache-Control")).toBe("no-store");
+    expect(forbiddenTrace.headers.get("Vary")).toContain("Cookie");
     const params = Promise.resolve({ roomId: room.id });
     expect((await getMessages(new Request("http://localhost/messages"), { params })).status).toBe(403);
-    await expect(getStream(new Request("http://localhost/stream"), { params })).rejects.toMatchObject({ status: 403 });
+    expect((await getStream(new Request("http://localhost/stream"), { params })).status).toBe(403);
     await expect(ChatRoomPage({ params })).rejects.toMatchObject({ digest: expect.stringContaining("NEXT_REDIRECT;replace;/chat;") });
   });
 

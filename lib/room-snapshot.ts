@@ -54,6 +54,7 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
       select: {
         id: true,
         name: true,
+        kind: true,
         participants: {
           select: {
             user: {
@@ -79,6 +80,10 @@ export async function getRoomSnapshot(roomId: string, userIdForRoomList?: string
     // lockstep with the active room (~2s tick). Skipped when no userId.
     userIdForRoomList ? listRoomsForUser(userIdForRoomList) : Promise.resolve(undefined)
   ]);
+
+  if (room?.kind === "agent_private") {
+    throw new Response("Forbidden", { status: 403 });
+  }
 
   const focusStates = room
     ? await prisma.focusState.findMany({

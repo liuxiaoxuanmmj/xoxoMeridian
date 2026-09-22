@@ -1,4 +1,5 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
+import { errorToResponse } from "@/lib/api";
 import { requireCurrentUser, USER_COOKIE, verifySession } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { getRoomSnapshot } from "@/lib/room-snapshot";
@@ -9,9 +10,15 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 export async function GET(request: Request, { params }: { params: Promise<{ roomId: string }> }) {
-  const user = await requireCurrentUser();
-  const { roomId } = await params;
-  await assertRoomAccess(roomId, user.id);
+  let user: Awaited<ReturnType<typeof requireCurrentUser>>;
+  let roomId: string;
+  try {
+    user = await requireCurrentUser();
+    ({ roomId } = await params);
+    await assertSharedRoomAccess(roomId, user.id);
+  } catch (error) {
+    return errorToResponse(error);
+  }
 
   // Get the session ID from the cookie to track this specific session
   const jar = await cookies();

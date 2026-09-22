@@ -16,6 +16,11 @@ export function applyNoStoreHeaders(headers: Headers) {
   headers.append("Vary", "Cookie");
 }
 
+export function noStoreResponse<T extends Response>(response: T): T {
+  applyNoStoreHeaders(response.headers);
+  return response;
+}
+
 export function jsonError(message: string, status = 500, details?: unknown) {
   return NextResponse.json({ error: message, details }, { status });
 }

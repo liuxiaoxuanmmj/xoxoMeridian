@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
 async function findSharedUserIds(callerId: string): Promise<string[]> {
   const rooms = await prisma.roomParticipant.findMany({
-    where: { userId: callerId },
+    where: { userId: callerId, room: { kind: "shared" } },
     select: { roomId: true },
   });
   if (rooms.length === 0) return [];

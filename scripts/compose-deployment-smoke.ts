@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile, spawn, type ChildProcess } from "node:child_process";
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
@@ -604,6 +604,45 @@ async function exerciseWorkerThroughWeb(context: SmokeContext) {
   console.log(
     `[compose-smoke] task=${taskId} 由 worker=${runningWorkerId} 完成，durable plan/final 与可见消息均已验证。`
   );
+
+  const identityResponse = await jsonRequest(`${context.baseUrl}/api/auth/me`, { headers: { cookie } }, 200);
+  const viewerId = asString(asRecord(identityResponse.payload, "身份响应无效。").id, "身份响应缺少 id。");
+  const privateHeaders = { ...requestHeaders, cookie, "X-Agent-Viewer-Id": viewerId };
+  const privateSend = await jsonRequest(`${context.baseUrl}/api/agent/conversation/messages`, {
+    method: "POST", headers: privateHeaders,
+    body: JSON.stringify({ content: "这是我的专属对话，请介绍一下你自己", clientMessageId: randomUUID() }),
+  }, 201);
+  assert.match(privateSend.response.headers.get("cache-control") ?? "", /private.*no-store/u);
+  const accepted = asRecord(privateSend.payload, "私聊发送响应无效。");
+  const privateTaskId = asString(asRecord(accepted.task, "私聊缺少 task。").id, "私聊缺少 taskId。");
+  const privateRoomId = asString(accepted.roomId, "私聊缺少 roomId。");
+  assert.notEqual(privateRoomId, roomId, "私聊不能复用共享房间。");
+  const privateTask = await waitFor("独立 Worker 完成私聊任务", 60_000, async () => {
+    const response = await jsonRequest(`${context.baseUrl}/api/agent/tasks/${privateTaskId}`, { headers: privateHeaders }, 200);
+    const task = asRecord(asRecord(response.payload, "私聊任务响应无效。").task, "私聊 task 缺失。");
+    const status = asString(task.status, "私聊任务状态缺失。");
+    assert(!["failed", "cancelled", "limit_exceeded", "waiting_approval"].includes(status), `私聊任务进入意外状态 ${status}`);
+    return status === "completed" ? task : undefined;
+  });
+  const privateFinal = asRecord(privateTask.finalMessage, "私聊缺少最终消息。");
+  assert(Array.isArray(privateTask.eventLogs), "私聊缺少持久运行事件。");
+  const privateRunning = privateTask.eventLogs.map((event) => asRecord(event, "私聊事件无效。"))
+    .find((event) => event.type === "agent.task.running");
+  assert(privateRunning, "私聊缺少 running 事件。");
+  const privateWorkerId = asString(asRecord(privateRunning.payload, "私聊事件payload无效。").workerId, "私聊事件缺少workerId。");
+  assert(privateWorkerId.startsWith(`${workerHostname}:`), "私聊必须由独立 Worker 容器消费。");
+  const privateSnapshot = await jsonRequest(`${context.baseUrl}/api/agent/conversation`, { headers: privateHeaders }, 200);
+  const snapshot = asRecord(privateSnapshot.payload, "私聊快照无效。");
+  assert.equal(snapshot.roomId, privateRoomId);
+  assert(Array.isArray(snapshot.messages), "私聊快照缺少 messages。");
+  const privateMessages = snapshot.messages.map((message) => asRecord(message, "私聊消息无效。"));
+  assert(privateMessages.some((message) => message.id === privateFinal.id && message.content === privateFinal.content), "Worker 回复未出现在专属快照。");
+  assert(privateMessages.every((message) => message.role === "user" || message.role === "agent"), "私聊出现第三种角色。");
+  const sharedOnly = await jsonRequest(`${context.baseUrl}/api/rooms/${roomId}/messages`, { headers: { cookie } }, 200);
+  const sharedMessages = asRecord(sharedOnly.payload, "共享消息响应无效。").messages;
+  assert(Array.isArray(sharedMessages), "共享 messages 缺失。");
+  assert(!sharedMessages.some((message) => asRecord(message, "共享消息无效。").id === privateFinal.id), "私聊回复混入共享 Chat。");
+  console.log(`[compose-smoke] private task=${privateTaskId} 由 worker=${privateWorkerId} 完成，专属快照、双角色、禁缓存与共享隔离均已验证。`);
 }
 
 async function readTemporaryInviteCode(envFile: string) {

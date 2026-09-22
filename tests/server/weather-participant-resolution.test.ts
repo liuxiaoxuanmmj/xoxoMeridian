@@ -7,7 +7,10 @@ const mocks = vi.hoisted(() => ({
   requireCurrentUser: vi.fn(),
 }));
 
-vi.mock("@/lib/access", () => ({ assertRoomAccess: mocks.assertRoomAccess }));
+vi.mock("@/lib/access", () => ({
+  assertRoomAccess: mocks.assertRoomAccess,
+  assertSharedRoomAccess: mocks.assertRoomAccess
+}));
 vi.mock("@/lib/auth", () => ({ requireCurrentUser: mocks.requireCurrentUser }));
 vi.mock("@/lib/prisma", () => ({
   prisma: { roomParticipant: { findMany: mocks.findMany } },

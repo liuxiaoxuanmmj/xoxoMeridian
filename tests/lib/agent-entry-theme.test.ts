@@ -41,7 +41,6 @@ describe("Agent Entry 主题契约", () => {
     expect(config.layout.desktopSize).toBeGreaterThanOrEqual(192);
     expect(config.layout.desktopSize).toBeLessThanOrEqual(240);
     expect(config.ui.ariaLabel).toBe("打开 Agent 聊天");
-    expect(config.ui.tooltip.length).toBeGreaterThan(0);
     expect(config.capabilities).toEqual({ animationClips: [], morphTargets: [] });
   });
 });

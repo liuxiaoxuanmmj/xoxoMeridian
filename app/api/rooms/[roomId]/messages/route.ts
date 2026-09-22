@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { getChatMessages } from "@/lib/chat-messages";
@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ roo
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const messages = await getChatMessages(roomId);
 
@@ -31,7 +31,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ roo
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `msg:${user.id}`, 30, 60_000);
     if (limited) return limited;
@@ -68,7 +68,7 @@ export async function DELETE(
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `room-wipe:${user.id}`, 10, 60_000);
     if (limited) return limited;

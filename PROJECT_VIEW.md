@@ -64,7 +64,7 @@
 | QAM-07 | 专注学习与伙伴状态 | 管理专注计时状态、完成记录、每日目标、统计和伙伴在线/专注可见性 | `app/study/`、`app/api/study/`、`components/study/`、`lib/study.ts` |
 | QAM-08 | Agent 任务执行与工具治理 | 将持久化 AgentTask 转换为受租约、checkpoint、预算、契约、重试和审批保护的可追踪结果 | `agent/`（调度触发除外）、`app/api/agent/` |
 | QAM-09 | 应用交付与进程拓扑 | 构建、初始化并编排 Web、PostgreSQL 和 Agent Worker 的可部署运行单元 | `Dockerfile`、`docker-compose*.yml`、`package.json` scripts、`init.sh`、部署 smoke harness |
-| QAM-10 | 全局 3D Agent 入口与模型资产生命周期 | 在登录态非 Chat 页面安全、按需且可访问地呈现 Chat 入口，并治理源模型到正式 GLB 的可重复资产生命周期 | `components/agent-entry/`、`scripts/*agent-entry*`、`3d-source/agent-entry/`、`public/models/agent-entry/` |
+| QAM-10 | 全局 3D Agent 入口与模型资产生命周期 | 在登录态非 Chat 页面安全、按需且可访问地呈现专属 Agent 私聊入口，并治理源模型到正式 GLB 的可重复资产生命周期 | `components/agent-entry/`、`scripts/*agent-entry*`、`3d-source/agent-entry/`、`public/models/agent-entry/` |
 
 `app/about/`、通用应用布局和 UI 原语没有独立状态、资产生命周期或服务接口，当前不提升为单独 QAM；其代码在 Cross-cutting Concerns 中作为公共呈现与应用壳追踪。QAM-10 虽共享 Root Layout，但另有版本化源/正式资产、可执行晋升接口、WebGL 生命周期和独立变化驱动，因此不属于该排除项。
 
@@ -103,7 +103,7 @@ flowchart LR
   Q9 -->|启动 Worker| Q4
   Q9 -->|启动 Worker| Q8
   Q10 -->|消费认证状态| Q1
-  Q10 -->|导航到 Chat| Q2
+  Q10 -->|专属私聊快照与发送| Q2
   Q10 -->|构建主题与正式资产打包| Q9
   Q9 -->|构建和交付入口| Q10
 ```
@@ -241,7 +241,8 @@ flowchart LR
 
 **Internal Components**
 
-- Room lifecycle 与成员访问控制。
+- Room lifecycle 与成员访问控制；`shared`/`agent_private` 用途和唯一 private owner。
+- `lib/agent-conversation.ts` 专属快照、原文发送与幂等；`app/api/agent/conversation/` 认证、身份前置条件和禁缓存；共享 Chat/Study 只选 shared。
 - Message command/detection 与任务派生。
 - Room snapshot query aggregator。
 - SSE server connection lifecycle。
@@ -849,14 +850,16 @@ flowchart LR
 
 **Core Responsibility**
 
-为登录态非 Chat 页面提供按需加载、可访问、故障隔离的全局 3D Chat 导航入口，并维护主题配置、源模型到正式运行模型的可重复、受预算约束的资产生命周期。
+为登录态非 Chat 页面提供按需加载、可访问、故障隔离的全局 3D Agent 私聊入口，并维护主题配置、源模型到正式运行模型的可重复、受预算约束的资产生命周期。
 
 **In Scope**
 
 - Theme ID、server-only resolver、非法值回退、可序列化 Registry，以及相机、transform、布局、UI 和 capability 契约。
 - Root Layout 的 Gate 装配、Chat 路径排除、认证状态探测、请求取消/代次竞态和入口挂载状态；这里只消费身份事实。
 - 动态 chunk/GLB 按需加载，匿名与 Chat 冷启动零入口专属请求。
-- DOM button 到 `/chat` 的去重导航、tooltip、focus、键盘/触摸、reduced-motion、响应式、安全区和页面末尾 clearance。
+- 固定 Portal 中的 DOM 私聊入口、同页弹窗、tooltip、焦点循环、键盘/触摸、inert、visualViewport、安全区与页面末尾 clearance。
+- 默认模型的欢迎、关注、点击及拖拽/放下程序化动作、本地台词/情绪标记；demand 帧控制、低动态偏好与页面隐藏时停止动作，生日主题保持静态。
+- 默认入口的指针/键盘自由放置、浏览器位置记忆、可见边界、取消回滚，以及移动端私聊临时布局与持久位置的隔离。
 - Three/R3F/Drei/GLTF 的真实首帧、demand frame、DPR、WebGL context、缓存/clone、renderer/PMREM/observer/listener 释放和失败隔离。
 - 源 GLB、正式 GLB、selection、optimization recipes/candidate reports，以及 inspect/candidates/check/promote 的 hash、validator、扩展白名单、纹理/面数/字节预算和人工选择契约。
 - 入口专属 Node、组件、真实浏览器、生产主题和镜像资产验证。
@@ -864,18 +867,18 @@ flowchart LR
 **Out of Scope**
 
 - Session/Cookie、`/api/auth/me` 的认证语义和身份数据；由 QAM-01 负责。
-- `/chat` 默认房间解析、Room/Message/SSE、聊天 UI；由 QAM-02 负责。AgentTask/Tool/Runtime 由 QAM-08 负责。
+- `/chat` 共享默认房间、私聊 Room/Message/owner 与幂等 API、会话数据生命周期由 QAM-02 负责；私聊面板在入口目录中作为共享映射。AgentTask/Tool/Runtime 由 QAM-08 负责。
 - Atlas/Home 用户上传媒体和数据库/blob 生命周期；由 QAM-06 负责。版本化仓库 GLB 不属于用户媒体。
 - 通用 Root Layout、公共导航、品牌/About 内容，以及全站通用 accessibility/CSP/error helper；属于 Cross-cutting。
 - Node/Next/Docker/Compose/init/Worker/volume 和镜像总体治理；由 QAM-09 负责，QAM-10 只拥有入口主题与正式资产的领域契约。
-- Avatar/Chat 状态联动、VRM、TTS、动画状态机、远程配置、运行时主题切换、通用 3D 平台和 DCC 原画制作。
+- 骨骼/形态键、VRM、TTS、复杂行为框架、远程配置、运行时主题切换、通用 3D 平台和 DCC 原画制作。
 
 **Interfaces**
 
 - Composition：`app/layout.tsx` → `AgentEntryGate(config)`。
 - Configuration：`NEXT_PUBLIC_AGENT_ENTRY_THEME` → `resolveAgentEntryTheme()` → Registry；生产构建冻结主题。
-- HTTP/static：消费 `GET /api/auth/me` 的成功状态；浏览器读取当前主题 `/models/agent-entry/.../scene.glb`。
-- Navigation：可访问 DOM button → `/chat`。
+- HTTP/static：消费 `GET /api/auth/me` 的用户 ID；专属会话 API 使用 `X-Agent-Viewer-Id` 身份前置条件；浏览器读取当前主题 `/models/agent-entry/.../scene.glb`。
+- Interaction：DOM button 区分单击开窗与拖拽/方向键移动，URL/Canvas 保持；普通站点导航进入 `/chat` 后卸载入口，返回恢复保存位置。
 - Internal contracts：`AgentEntryThemeConfig`、`onReady(model)`、`onError()`。
 - CLI/gate：`agent-entry:assets inspect|candidates|check|promote`、`check:agent-entry-assets`。
 
@@ -883,13 +886,14 @@ flowchart LR
 
 - 版本化资产事实：两个 source GLB、两个正式 `scene.glb`、selection、optimization recipes 和候选指标报告。
 - Theme ID 与 Registry 中的模型、相机、transform、布局、UI 和 capability 配置。
-- 客户端：认证探测结果、request generation/AbortController、ready/failed、tooltip、pending 和 navigation lock。
+- 客户端：认证用户 ID、request generation/AbortController、ready/failed、tooltip、开窗与动作 controller；私聊草稿/待发送记录按身份隔离。
+- 入口布局偏好：`xoxo:agent-entry:position:default:v1` 保存同浏览器的归一化放置点，不带身份数据；临时展示坐标和未提交手势仅在内存中存在。
 - WebGL：Canvas/root/renderer、scene environment/PMREM、ResizeObserver/context listener、模型 clone 与共享 `useGLTF` cache 使用契约。
 - 不拥有 User、Session、Room、Message 或 Cookie；公开 GLB 的静态 URL 不是授权边界。
 
 **Dependencies**
 
-- QAM-01：认证状态接口；QAM-02：`/chat` 导航目标和默认房间解析。
+- QAM-01：认证身份接口；QAM-02：专属会话 API 与共享 Chat 隔离；QAM-08：任务状态和工具审批。
 - QAM-09：Next/Web 构建、Docker build arg、正式资产镜像打包和 Compose smoke。
 - Cross-cutting：Root Layout、CSP、共享 CSS/accessibility 与测试 harness。
 - 外部 packages：Three、React Three Fiber、Drei、glTF Transform、validator、Meshoptimizer 和 Sharp。
@@ -904,7 +908,7 @@ flowchart LR
 
 - 主题 resolver 与 Registry。
 - 路由/认证 Gate 与动态加载。
-- 可访问导航和响应式 overlay。
+- 可访问私聊弹窗、持续 DOM shell 与响应式 overlay。
 - WebGL Scene、真实首帧与资源生命周期。
 - GLB loader/cache/clone。
 - source→candidate→selection→promote 资产流水线与预算检查。
@@ -920,7 +924,7 @@ flowchart LR
 
 **Main Change Drivers**
 
-- 主题、模型、构图、相机和入口显示/导航规则变化。
+- 主题、模型、构图、相机和入口显示/私聊规则变化。
 - Three/R3F/Drei/decoder/CSP 兼容与 WebGL 生命周期变化。
 - 移动端、安全区、可访问交互和宿主页面布局变化。
 - GLB 预算、优化、来源、人工选型和静态资产打包变化。
@@ -991,7 +995,7 @@ flowchart LR
 | `next.config.mjs`、`.env.example`、`Dockerfile`、`docker-compose.yml`、`scripts/compose-deployment-smoke.ts` | QAM-09、QAM-10 | QAM-10 拥有合法主题与正式资产语义；QAM-09 拥有构建参数传播、镜像包含物与部署验证 |
 | `proxy.ts` | QAM-10 + Cross-cutting | 入口 decoder/blob 所需权限与全站 CSP 最小化共用同一策略边界 |
 | `package.json`、`package-lock.json` | QAM-09、QAM-10 | QAM-10 使用 3D/资产工具依赖与命令；QAM-09 维护工具链、锁文件和构建表面 |
-| `app/api/auth/me/route.ts`、`/chat` | QAM-01/QAM-02、QAM-10 | 身份和 Chat 目标分别由 QAM-01/QAM-02 拥有；QAM-10 只消费状态与执行导航 |
+| `app/api/auth/me/route.ts`、`app/api/agent/conversation/`、`components/agent-entry/AgentConversationDialog.tsx`、`use-agent-conversation.ts` | QAM-01/QAM-02/QAM-08、QAM-10 | 身份、专属 Room/消息和任务治理分别归对应领域；入口只承载表现与私聊 UI/请求生命周期 |
 
 共享映射表示一个文件或状态当前承担多个模块职责；它是后续边界审查的索引信号，不在本文中被直接判定为代码缺陷。
 
@@ -1054,9 +1058,9 @@ flowchart LR
 
 ### BU-11 全局 Agent Entry Gate 与身份事实边界
 
-- QAM-10 持有认证探测成功后的客户端布尔状态，但身份事实、Session/Cookie 和 `/api/auth/me` contract 归 QAM-01。
-- 当前退出依赖页面导航刷新；跨标签退出或 Session 自然过期后入口可能暂时仍显示，但点击 `/chat` 仍由服务端认证保护。
-- 因此入口显示不是授权边界；探测缓存/竞态归 QAM-10，认证正确性归 QAM-01，同一根因不得重复登记。
+- QAM-10 持有当前用户 ID，并在聚焦、恢复可见和 logout 通知时重验；身份事实、Session/Cookie 和 `/api/auth/me` contract 归 QAM-01。
+- 私聊请求带预期身份，服务端先比较认证用户再操作 owner 会话；Cookie 换号不会将旧草稿写入新账号。入口显示本身仍不是授权边界。
+- 探测/显示竞态归 QAM-10；私聊 owner 与消息幂等归 QAM-02，认证正确性归 QAM-01，同一根因不得重复登记。
 
 ### BU-12 构建期主题与正式资产存在 QAM-09/QAM-10 双 owner 接缝
 
@@ -1087,4 +1091,4 @@ flowchart LR
 | QAM-07 | Focus 状态机、Session 一致性、时区统计、presence、客户端 timer 与 Chat 集成 | Study page/API/components/service、Focus/Goal schema/migrations、Study tests/E2E |
 | QAM-08 | Task lease/recovery、durable step、幂等副作用、Tool 治理、审批、预算、LLM/Trace 隐私 | Agent Runtime/APIs/tools/context/memory/tracing、Agent models/migrations、unit/integration/route/component/smoke tests |
 | QAM-09 | 构建可重复性、镜像/运行 parity、配置传播、init 顺序、容器安全、volumes/health/smoke | Docker/Compose/package scripts/env/seed/health/init/deployment scripts 和 Compose smoke |
-| QAM-10 | 路由/认证 Gate 与零下载、构建主题/Registry、GLB 首帧与 WebGL/缓存/释放、导航/可访问/响应式 overlay、资产 provenance/预算、decoder/CSP 与 production image 集成 | Agent Entry components/registry/resolver、源与正式 GLB、资产 scripts、专属 lib/component/production E2E，以及共享 layout/config/CSP/Docker 接缝 |
+| QAM-10 | 路由/认证 Gate 与零下载、构建主题/Registry、GLB 首帧与 WebGL/缓存/释放、私聊入口/可访问/响应式 overlay、资产 provenance/预算、decoder/CSP 与 production image 集成 | Agent Entry components/registry/resolver、源与正式 GLB、资产 scripts、专属 lib/component/production E2E，以及共享 layout/config/CSP/Docker 接缝 |

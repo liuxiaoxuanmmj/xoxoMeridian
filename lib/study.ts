@@ -8,7 +8,7 @@ export { buildStudyStats, getLocalDateKey } from "@/lib/study-calendar";
 
 export async function getStudyRoomForUser(userId: string) {
   const participant = await prisma.roomParticipant.findFirst({
-    where: { userId },
+    where: { userId, room: { kind: "shared" } },
     include: { room: true },
     orderBy: { joinedAt: "asc" },
   });

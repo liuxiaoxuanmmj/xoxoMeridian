@@ -12,10 +12,24 @@ extend({ Group, AmbientLight, DirectionalLight });
 
 type LoadedSceneProps = AgentEntrySceneProps & { instance: Group };
 
-function SceneContents({ config, onReady, onError, instance }: LoadedSceneProps) {
+function SceneContents({ config, onReady, onError, instance, motion }: LoadedSceneProps) {
   const { gl, scene, camera, invalidate } = useThree();
   const submitted = useRef(false);
   const alive = useRef(false);
+  const animated = useRef<Group>(null);
+
+  useLayoutEffect(() => motion.connect(invalidate), [invalidate, motion]);
+  // priority=0 先更新角色变换，再交给下方 priority=1 提交同一画布。
+  useFrame(() => {
+    const pose = motion.frame(performance.now());
+    if (animated.current) {
+      animated.current.position.y = pose.y;
+      animated.current.rotation.x = pose.tilt;
+      animated.current.rotation.z = pose.roll ?? 0;
+      animated.current.scale.set(1 / Math.sqrt(pose.scale), pose.scale, 1 / Math.sqrt(pose.scale));
+    }
+    if (pose.active) invalidate();
+  });
 
   useLayoutEffect(() => {
     alive.current = true;
@@ -50,14 +64,16 @@ function SceneContents({ config, onReady, onError, instance }: LoadedSceneProps)
     <>
       <ambientLight intensity={0.7} />
       <directionalLight position={[2, 3, 4]} intensity={2} />
-      <group scale={config.scale} position={[...config.position]} rotation={[...config.rotation]} dispose={null}>
-        <primitive object={instance} dispose={null} />
+      <group ref={animated}>
+        <group scale={config.scale} position={[...config.position]} rotation={[...config.rotation]} dispose={null}>
+          <primitive object={instance} dispose={null} />
+        </group>
       </group>
     </>
   );
 }
 
-function SceneCanvas({ config, onReady, onError, instance }: LoadedSceneProps) {
+function SceneCanvas({ config, onReady, onError, instance, motion }: LoadedSceneProps) {
   const container = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -92,7 +108,7 @@ function SceneCanvas({ config, onReady, onError, instance }: LoadedSceneProps) {
         if (!active) return;
         const store = root.render(
           <AgentEntryErrorBoundary onError={fail}>
-            <SceneContents instance={instance} config={config} onReady={(model) => { if (active) onReady(model); }} onError={fail} />
+            <SceneContents motion={motion} instance={instance} config={config} onReady={(model) => { if (active) onReady(model); }} onError={fail} />
           </AgentEntryErrorBoundary>,
         );
         observer = new ResizeObserver(() => {
@@ -113,7 +129,7 @@ function SceneCanvas({ config, onReady, onError, instance }: LoadedSceneProps) {
       renderer?.dispose();
       canvas.remove();
     };
-  }, [config, instance, onError, onReady]);
+  }, [config, instance, motion, onError, onReady]);
 
   return <span ref={container} data-agent-entry-scene="" aria-hidden="true" style={{ display: "block", width: "100%", height: "100%", pointerEvents: "none" }} />;
 }

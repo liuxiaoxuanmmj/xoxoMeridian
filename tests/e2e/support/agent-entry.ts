@@ -10,7 +10,7 @@ export const modelPath = `/models/agent-entry/${e2eAgentEntryTheme()}/scene.glb`
 export async function entryChunks() {
   const buildDirectory = e2eAppMode() === "production" ? ".next" : ".next/dev";
   const manifest: Record<string, { files: string[] }> = JSON.parse(await readFile(join(buildDirectory, "react-loadable-manifest.json"), "utf8"));
-  const entry = Object.entries(manifest).find(([key]) => key.includes("AgentEntryGate") && key.endsWith("./AgentEntry"));
+  const entry = Object.entries(manifest).find(([key]) => key.includes("AgentEntry") && key.endsWith("./AgentEntryScene"));
   expect(entry, "构建必须提供入口动态资源映射").toBeDefined();
   const dedicated: string[] = [];
   for (const file of entry![1].files.filter((file) => file.endsWith(".js"))) {

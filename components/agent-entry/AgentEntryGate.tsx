@@ -1,14 +1,11 @@
 "use client";
 
-import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import AgentEntryErrorBoundary from "@/components/agent-entry/AgentEntryErrorBoundary";
+import AgentEntry from "@/components/agent-entry/AgentEntry";
 import type { AgentEntryProps } from "@/components/agent-entry/agent-entry.types";
 import { subscribeToSessionLogout } from "@/lib/session-logout";
-
-const AgentEntry = dynamic(() => import("./AgentEntry"), { ssr: false, loading: () => null });
 
 export default function AgentEntryGate({ config }: AgentEntryProps) {
   const pathname = usePathname();
@@ -18,8 +15,13 @@ export default function AgentEntryGate({ config }: AgentEntryProps) {
 }
 
 function AuthenticatedEntry({ config }: AgentEntryProps) {
-  const [authenticated, setAuthenticated] = useState(false);
+  const [principalId, setPrincipalId] = useState<string | null>(null);
   const requestGeneration = useRef(0);
+  const recheck = useRef<() => void>(() => {});
+  const onIdentityInvalid = useCallback(() => {
+    setPrincipalId(null);
+    recheck.current();
+  }, []);
 
   useEffect(() => {
     let controller: AbortController | undefined;
@@ -41,10 +43,13 @@ function AuthenticatedEntry({ config }: AgentEntryProps) {
           credentials: "same-origin",
           signal: current.signal,
         });
-        if (isCurrent()) setAuthenticated(response.status === 200);
+        const user: unknown = response.status === 200 ? await response.json() : null;
+        const id = user && typeof user === "object" && "id" in user && typeof user.id === "string" && user.id.length > 0
+          ? user.id : null;
+        if (isCurrent()) setPrincipalId(id);
       } catch {
         // 不打扰宿主页面；后续可见/聚焦事件或离开 Chat 时可重试。
-        if (isCurrent()) setAuthenticated(false);
+        if (isCurrent()) setPrincipalId(null);
       } finally {
         if (isCurrent()) controller = undefined;
       }
@@ -58,11 +63,12 @@ function AuthenticatedEntry({ config }: AgentEntryProps) {
     const onVisible = () => {
       if (document.visibilityState === "visible") scheduleProbe();
     };
+    recheck.current = scheduleProbe;
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) onVisible();
     };
     const unsubscribe = subscribeToSessionLogout(() => {
-      setAuthenticated(false);
+      setPrincipalId(null);
       scheduleProbe();
     });
     window.addEventListener("focus", onVisible);
@@ -72,6 +78,7 @@ function AuthenticatedEntry({ config }: AgentEntryProps) {
 
     return () => {
       invalidate();
+      recheck.current = () => {};
       clearTimeout(timer);
       unsubscribe();
       window.removeEventListener("focus", onVisible);
@@ -80,11 +87,7 @@ function AuthenticatedEntry({ config }: AgentEntryProps) {
     };
   }, []);
 
-  if (!authenticated) return null;
+  if (!principalId) return null;
 
-  return (
-    <AgentEntryErrorBoundary key={config.model}>
-      <AgentEntry config={config} />
-    </AgentEntryErrorBoundary>
-  );
+  return <AgentEntry key={`${principalId}:${config.model}`} config={config} principalId={principalId} onIdentityInvalid={onIdentityInvalid} />;
 }

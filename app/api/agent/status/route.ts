@@ -8,7 +8,7 @@ export async function GET() {
   try {
     const user = await requireCurrentUser();
     const rooms = await prisma.roomParticipant.findMany({
-      where: { userId: user.id },
+      where: { userId: user.id, room: { kind: "shared" } },
       select: { roomId: true }
     });
     const roomIds = rooms.map((room) => room.roomId);

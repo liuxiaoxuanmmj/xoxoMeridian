@@ -1,5 +1,5 @@
 import { assertRoomAccess } from "@/lib/access";
-import { errorToResponse, jsonOk } from "@/lib/api";
+import { errorToResponse, jsonOk, noStoreResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
@@ -21,12 +21,12 @@ export async function GET(_request: Request, { params }: { params: Promise<{ tas
     });
 
     if (!task) {
-      return Response.json({ error: "Agent task not found." }, { status: 404 });
+      return noStoreResponse(Response.json({ error: "Agent task not found." }, { status: 404 }));
     }
 
     await assertRoomAccess(task.roomId, user.id);
-    return jsonOk({ trace: task });
+    return noStoreResponse(jsonOk({ trace: task }));
   } catch (error) {
-    return errorToResponse(error);
+    return noStoreResponse(errorToResponse(error));
   }
 }

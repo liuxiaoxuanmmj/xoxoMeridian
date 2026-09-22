@@ -194,6 +194,9 @@ function createOpenAICompatibleProvider(config: {
                 content:
                   personaSegment +
                   profileBlock +
+                  (request.roomContext.room.kind === "agent_private"
+                    ? "当前是请求者与助手的专属私聊，只有一位人类参与者；不要假设伙伴在场。消息、记忆、备忘录和计划仅属于当前私聊，不代表双人共享房间。"
+                    : "") +
                   "只返回 JSON，不要 Markdown，不要代码块包裹。" +
                   "必须从 available_tools 中选择工具，不能发明工具；如果用户的请求不需要任何工具（例如自我介绍、闲聊、能力问答），required_tools 留空数组。" +
                   "room_context.requestedById、self 和 partner 是本人/伙伴身份的唯一事实来源；绝不能从 participants 的数组顺序猜测。" +

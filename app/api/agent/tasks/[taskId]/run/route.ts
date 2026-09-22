@@ -1,5 +1,5 @@
 import { assertRoomAccess } from "@/lib/access";
-import { errorToResponse, jsonOk } from "@/lib/api";
+import { errorToResponse, jsonOk, noStoreResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -12,27 +12,27 @@ export async function POST(request: Request, { params }: { params: Promise<{ tas
     const task = await prisma.agentTask.findUnique({ where: { id: taskId } });
 
     if (!task) {
-      return Response.json({ error: "Agent task not found." }, { status: 404 });
+      return noStoreResponse(Response.json({ error: "Agent task not found." }, { status: 404 }));
     }
 
     await assertRoomAccess(task.roomId, user.id);
 
     if (!env.AGENT_TASK_INLINE_RUN) {
-      return jsonOk({
+      return noStoreResponse(jsonOk({
         task,
         execution: "queued",
         message: "任务已入队，将由 Agent Worker 异步处理。"
-      }, { status: 202 });
+      }, { status: 202 }));
     }
 
     const limited = enforceRateLimit(request, `agent-task-run:${user.id}`, 10, 60_000);
-    if (limited) return limited;
+    if (limited) return noStoreResponse(limited);
 
     const { runAgentTask } = await import("@/agent/agent-runtime");
     const result = await runAgentTask(task.id);
 
-    return jsonOk({ task: result });
+    return noStoreResponse(jsonOk({ task: result }));
   } catch (error) {
-    return errorToResponse(error);
+    return noStoreResponse(errorToResponse(error));
   }
 }

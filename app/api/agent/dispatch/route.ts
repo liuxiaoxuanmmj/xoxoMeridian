@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { dispatchAgentTaskForSourceMessage } from "@/lib/agent-task-dispatch";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
@@ -15,7 +15,7 @@ export async function POST(request: Request) {
     if (limited) return limited;
 
     const { roomId, content, sourceMessageId } = await readJsonBody(request, agentDispatchSchema);
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     if (content) {
       const result = await createHumanMessage({

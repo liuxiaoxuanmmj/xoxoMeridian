@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -12,7 +12,7 @@ export async function GET(
   try {
     const user = await requireCurrentUser();
     const { memoId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const memo = await prisma.memo.findUnique({
       where: { id: memoId },
@@ -35,7 +35,7 @@ export async function PATCH(
   try {
     const user = await requireCurrentUser();
     const { memoId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `memos-patch:${user.id}`, 20, 60_000);
     if (limited) return limited;
@@ -74,7 +74,7 @@ export async function DELETE(
   try {
     const user = await requireCurrentUser();
     const { memoId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `memos-delete:${user.id}`, 20, 60_000);
     if (limited) return limited;

@@ -1,20 +1,34 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AgentToolApprovalSummary } from "@/components/chat/types";
 
-export function ToolApprovalPanel({
-  approvals
-}: {
+interface ToolApprovalPanelProps {
   approvals: AgentToolApprovalSummary[];
-}) {
+  expectedViewerId?: string;
+  onComplete?: () => void;
+  onIdentityInvalid?: () => void;
+}
+
+export function ToolApprovalPanel(props: ToolApprovalPanelProps) {
+  return <ApprovalDecisions key={props.expectedViewerId ?? "shared"} {...props} />;
+}
+
+function ApprovalDecisions({ approvals, expectedViewerId, onComplete, onIdentityInvalid }: ToolApprovalPanelProps) {
   const router = useRouter();
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [dismissedIds, setDismissedIds] = useState<Set<string>>(() => new Set());
   const [error, setError] = useState<string | null>(null);
+  const pending = useRef<AbortController | null>(null);
+  const generation = useRef(0);
   const visibleApprovals = approvals.filter((approval) => !dismissedIds.has(approval.id));
+
+  useEffect(() => () => {
+    generation.current += 1;
+    pending.current?.abort();
+  }, []);
 
   if (visibleApprovals.length === 0) return null;
 
@@ -22,25 +36,39 @@ export function ToolApprovalPanel({
     approval: AgentToolApprovalSummary,
     decision: "approve" | "reject"
   ) => {
-    if (decidingId) return;
+    if (pending.current) return;
+    const controller = new AbortController();
+    const currentGeneration = generation.current;
+    const current = () => !controller.signal.aborted && currentGeneration === generation.current;
+    pending.current = controller;
     setDecidingId(approval.id);
     setError(null);
     try {
       const response = await fetch(`/api/agent/tasks/${approval.taskId}/approvals`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        cache: "no-store",
+        credentials: "same-origin",
+        signal: controller.signal,
+        headers: { "Content-Type": "application/json", ...(expectedViewerId ? { "X-Agent-Viewer-Id": expectedViewerId } : {}) },
         body: JSON.stringify({ approvalId: approval.id, decision })
       });
+      if (!current()) return;
+      if (expectedViewerId && (response.status === 401 || response.status === 403)) {
+        onIdentityInvalid?.();
+        return;
+      }
       if (!response.ok) {
         const payload = await response.json().catch(() => null) as { error?: string } | null;
+        if (!current()) return;
         throw new Error(payload?.error ?? `审批失败: ${response.status}`);
       }
       setDismissedIds((current) => new Set(current).add(approval.id));
-      router.refresh();
+      if (onComplete) onComplete();
+      else router.refresh();
     } catch (decisionError) {
-      setError(decisionError instanceof Error ? decisionError.message : "审批失败");
+      if (current()) setError(decisionError instanceof Error ? decisionError.message : "审批失败");
     } finally {
-      setDecidingId(null);
+      if (current()) { pending.current = null; setDecidingId(null); }
     }
   };
 

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-09-21",
-  "featuresNumber": 26,
+  "updatedAt": "2026-09-22",
+  "featuresNumber": 29,
   "priorityPolicy": "P2 以用户体验为首要指标：综合核心操作受阻或结果失真程度、当前产品入口的影响范围、触发频率与恢复成本排序；同等影响时优先已有直接行为证据的问题。priorityRank 表示本批 P2 的执行建议顺序，数字越小越优先，不改变 QAM 严重级别；频率是基于代码路径与触发条件的定性判断，不是线上统计。dependencies 只表达实现前置条件，不用依赖链代替排名。本批登记前 10 项，按 priorityRank 逐项实施；当前状态与验收证据以各 feature 为准。",
   "archivedFeatureFiles": [
     "docs/harness/archive/features-001-053.json"
@@ -501,6 +501,63 @@
       "evidence": "登记轮（2026-09-21，用户确认改做本项）：来源 QAM-05-006。lib/api.ts:23-46 的 errorToResponse 只在 production 返回 Internal server error，非 production 直接返回 error.message；app/actions/posts.ts 的 serverError 把 Error.message 拼入返回值，因此编辑器在生产也会显示内部异常文案。feat-071 的负向对照已直接观察到 Server error: title?.trim is not a function 被逐字返回，feat-072 的红跑快照显示该文案作为横幅呈现给用户。尚未实现。\n\n完成轮（2026-09-22）证据，验收标准 1-4 全部满足。改动：新增 lib/internal-error.ts 作为非预期异常的单点收口——INTERNAL_ERROR_MESSAGE 固定为 Internal server error，logInternalError(scope, error) 写一条 console.error（既有 [api]/[createPost] 等前缀语义 + 12 位关联 id + 异常自身 message/stack，不写请求体、表单字段、查询参数或凭据）并返回关联 id；有意不按 NODE_ENV 分支。lib/api.ts 的 errorToResponse 删除 NODE_ENV 分支与原始 console.error，未被识别的异常一律 logInternalError(\"api\", error) + jsonError(INTERNAL_ERROR_MESSAGE, 500)；app/actions/posts.ts 的 serverError 改为 logInternalError(ctx, err) + { error: INTERNAL_ERROR_MESSAGE }（createPost/updatePost/deletePost 前缀保留），invalidInput 的 ValidationError 首条 issue 文案不变；app/api/health/route.ts 原先同样按 env.NODE_ENV 分支，现改为 dbError 恒为 database unavailable、数据库原因只进 logInternalError(\"health\", error)，并移除 env 导入。\n\n有意不改（边界，不是遗漏）：ScheduledJobError/ToolApprovalError/StudyTransitionConflictError/AtlasImageValidationError 与 ValidationError 携带的是刻意面向调用方或用户的中文文案，本项不动；weather 的每参与者 error、refine-note 的 reason 与房间 SSE 的 error 负载经核查为有意诊断信息、UI 从不展示，同样保持。\n\n验收证据（三层，E3）：(1) Node 层 tests/server/error-response-contract.test.ts 9 项——真实形状的唯一约束错误（code P2002 + meta.target:[title] + Prisma 的多行 invocation 文案）经 API 返回 500 {error:\"Internal server error\"}，数据库异常（connect ECONNREFUSED 127.0.0.1:5432）同样只返回稳定文案，畸形 JSON 仍是 400 稳定响应；日志侧断言 [api] 前缀与数据库原因同时出现，而请求体里的用户内容（SECRET-TITLE-9f2c/SECRET-BODY-9f2c）不出现在日志里；Action 侧同样覆盖唯一约束与数据库异常、校验文案 Title is required 保持不变、日志前缀为 [createPost]；最后一组用 vi.stubEnv + vi.resetModules 分别在 development 与 production 下加载 lib/api.ts，断言两种 NODE_ENV 的响应体逐字相等。(2) 真实 PostgreSQL 层 tests/integration/error-response-redaction.integration.test.ts 4 项——临时唯一索引 Post_title_probe_key 让第二次写入触发数据库裁定的真实 P2002，响应为 500 稳定文案、日志含 [api] 与 Prisma 从约束回推出的 Unique constraint failed on the fields: (title)、Post 行数不变；触发器 fail_post_insert() 抛带约束名的 PG 异常（duplicate key value violates unique constraint \"Post_redaction_probe\"）时响应不含表名与触发器消息、日志仍含原因；同一触发器下 Server Action 也返回稳定文案；畸形 JSON 保持 400。临时索引/触发器均在 finally 中清理。(3) production Chromium tests/e2e/authenticated.spec.ts:1583「编辑器遇到数据库异常时只显示通用文案且不跳转」——安装只在标题等于哨兵值时才抛错的 BEFORE INSERT 触发器（WHEN 条件式，绝不影响同库其它 Post 写入），在 /posts/new 提交后断言横幅恰为 Internal server error、URL 仍停在 /posts/new、横幅与整个 body 均不含 Post_probe_key/Unique constraint/duplicate key value/PrismaClient/stack 片段、库中该标题 0 行；对照步骤换成不触发注入的标题必须真正发布、跳转 /posts/:slug 且恰好 1 行（排除提交永远不生效的假阳性）。服务端日志同轮给出 [createPost] unhandled error (id=b667754aa17e): 与原始 provider 文本，证明客户端脱敏与服务端可定位两侧同时成立。\n\n先红后绿（未放宽断言、未加 skip、未改断言超时）：Node 层旧实现 5 failed | 4 passed (9)——失败项为 API 唯一约束、API 数据库异常、Action 唯一约束、Action 数据库异常与 NODE_ENV 一致性，通过的四项（畸形 JSON、请求体不入日志、Action 校验文案、Action 日志前缀）是防回归守卫而非红灯证据，修复后 9/9；真实 PostgreSQL 层用临时还原 lib/api.ts 与 app/actions/posts.ts 旧行为的对照取得 3 failed | 1 passed (4)（通过项同样是畸形 JSON 守卫），恢复后 4/4，两个文件按 sha256 868c099a4eb9dcdd98a4bbd1aa662bea5aa1192c3ed663545b13f4847b457880 与 d470a86dc0574f12cb75abd5c7c000106676a37663c6be94e9a5a80f31f40ebf 比对还原一致，TEMP-RED-PROBE 标记零残留。\n\n门禁：npm run check:full 单次 exit 0——check:quick 与覆盖率阶段各报 88 文件 780 项（两阶段计数一致，较上轮 771 项 +9 即新增的 Node 契约文件）、生产构建 ✓ Compiled successfully in 19.3s、覆盖率 55.05/48.40/59.91/55.67（门槛 40/35/45/40）、真实 PostgreSQL 36 文件 144 项（127.11s，+1 文件/+4 项即新增的脱敏集成文件）、生产 Playwright 50/50（3.7 分钟，0 skipped、0 flaky，+1 即新增的编辑器错误契约用例）；npm run typecheck、npm run lint exit 0。Docker 可用性：WSL 侧原先只有 root:root 的 Desktop 代理 socket（非 root 无法连接），用户启动 Docker Desktop 后 /var/run/docker.sock（root:docker 660）出现，docker info 返回 29.7.2|Docker Desktop，集成与生产 E2E 阶段得以运行。未跑 npm run test:compose-smoke、Compose 构建与实体设备。",
       "sourceIssue": "QAM-05-006",
       "sourceReport": "docs/optimization/qam-05-content-timeline-quality-review.md"
+    },
+    {
+      "id": "feat-080",
+      "name": "全局 Agent 私聊弹窗与点击反馈",
+      "description": "点击全局小人就地打开当前用户与 Agent 的专属对话弹窗，复用既有 Worker/Agent Runtime；对话、上下文与双人 Chat 隔离，弹窗期间保留同一小人及点击动作、情绪标记和台词反馈。",
+      "priority": "P1",
+      "priorityReason": "用户于 2026-09-22 指定独立私聊弹窗与持续点击反馈，要求先生成计划并由 gpt-6-astra ultra 子 agent 复核；本项仅承载该完整用户旅程。",
+      "status": "done",
+      "dependencies": [
+        "feat-058",
+        "feat-075"
+      ],
+      "acceptanceCriteria": [
+        "点击与键盘激活就地打开可访问弹窗，URL 不变、同一 Canvas 与小人保持显示；关闭、Escape、焦点恢复及窄屏输入可用，原 /chat 双人房间流程独立保留",
+        "专属对话仅含当前用户与 Agent，持久化与权限在服务端隔离；另一用户不能读写消息、任务或上下文，Cookie 换号不能误发旧草稿；私聊不进入共享 Chat/Study 房间选择或自动派生首页 Agent 时间线条目",
+        "发送保留私聊正文并幂等派生受既有工具治理与预算约束的 AgentTask；生产由 Worker 消费，本地仅按显式 inline 配置执行；历史、回复、错误和必要工具审批可在弹窗中完成，定时任务上下文保持 owner 身份",
+        "默认模型以程序化动作与本地台词/情绪提示响应欢迎、关注和点击；长时间静止后动作仍完整，开窗不重建 Canvas；加载或 3D 故障不阻断 DOM 私聊；不引入骨骼或形态键，birthday 不新增动作，低动态偏好和页面隐藏时停止无必要渲染",
+        "补充组件、真实 PostgreSQL 权限/隔离/并发与真实浏览器用户旅程；./init.sh、npm run check:full 及风险匹配验证通过，更新状态与交接"
+      ],
+      "evidence": "2026-09-22：已执行经三位 gpt-6-astra/ultra 复核的计划。实现 owner 专属 Room/消息幂等/身份头/共享筛选/单用户 Runtime 上下文/审批及私聊时间线隔离；同页私聊弹窗保留 Canvas，默认模型欢迎/关注/点击动作＋符号＋台词，birthday 保持静态，支持键盘/窄屏/低动态/3D故障降级。最终 sudo -n -g docker -u dadalv env E2E_SOFTWARE_WEBGL=true NEXT_PUBLIC_AGENT_ENTRY_THEME=default ./scripts/run-node22.sh npm run check:full exit0：91文件829项×2、生产构建、覆盖率54.52/47.34/59.42/55.20、真实PostgreSQL38文件157项、production Playwright53/53（4.9分钟）。birthday production入口E2E21/21（2.5分钟）；npm run test:compose-smoke exit0，真实Web→独立Worker私聊/共享任务通过并清理隔离资源；原生CDP隐藏探针exit0，trusted隐藏1213.8ms停绘、同Canvas/context恢复与再次点击通过。收尾 ./scripts/run-node22.sh ./init.sh exit0（829项）；JSON/依赖/链接/计数及git diff --check通过。未改GLB或依赖，生产npm audit 0漏洞；实现验收阶段尚未向开发库迁移或部署；未提交/推送。早期环境和测试夹具失败及修正、实体设备验证边界、完整命令见 progress.md#feat-080；计划与可复现原生探针见 docs/plan/2026-09-22-agent-private-chat-dialog.md。 后续开发验收启动（2026-09-22，用户授权）：npm run db:deploy 成功应用 20260922120000_agent_private_conversation，29项迁移全部已应用；prisma migrate status 与 migrate diff 均 exit0、schema无差异。默认主题 Web 在 0.0.0.0:3000、独立Worker均后台运行；/api/health 200且ok/db=true、/ 200、GLB 200、未登录私聊API401/no-store。运行进程与恢复命令见 session-handoff.md；没有更改应用代码、依赖或.env，未重复运行本轮前已通过的完整门禁。 提交交付（2026-09-22）：用户要求将当前工作区修改纳入同一个commit，包含080/081/082与既有旧文档删除；本记录随该提交交付，定位以git log -1为准，未推送。"
+    },
+    {
+      "id": "feat-081",
+      "name": "移除全局小助手旧静态提示气泡",
+      "description": "删除悬停或键盘聚焦时的旧“和 Agent 聊聊”提示状态与主题配置，保留行为反馈台词和私聊入口。",
+      "priority": "P1",
+      "priorityReason": "用户于2026-09-22在开发验收时明确要求删除旧气泡逻辑。",
+      "status": "done",
+      "dependencies": [
+        "feat-080"
+      ],
+      "acceptanceCriteria": [
+        "入口不再通过悬停/聚焦显示旧静态“和 Agent 聊聊”提示，删除对应状态和废弃主题字段",
+        "保留默认主题欢迎/关注/点击反馈、键盘名称、私聊弹窗及加载失败备用入口；生日不新增反馈",
+        "通过启动基线和标准门禁，更新状态与记录，保留3000开发服务供验收"
+      ],
+      "evidence": "2026-09-22：删除AgentEntry的tooltipOpen及mouseLeave/blur旧状态、静态文案回退，气泡只由行为feedback驱动；同步移除两主题ui.tooltip及类型/旧字段测试断言，保留关注/欢迎/点击/回复台词、可访问名称、私聊和备用入口。./scripts/run-node22.sh ./init.sh exit0（91文件829项）；./scripts/run-node22.sh npm run check exit0（快速829项、生产构建、覆盖率阶段829项，54.47/47.30/59.42/55.20达标）；恢复构建生成的next-env.d.ts原dev引用后npm run typecheck exit0。3000开发健康检查200、ok/db=true，Web/Worker继续运行。仅低风险UI删除，未重复PG/E2E/Compose；清理coverage，状态/ID/计数和git diff --check通过，详情见progress.md#feat-081。 提交交付（2026-09-22）：用户要求将当前工作区修改纳入同一个commit，包含080/081/082与既有旧文档删除；本记录随该提交交付，定位以git log -1为准，未推送。"
+    },
+    {
+      "id": "feat-082",
+      "name": "默认3D小人自由拖拽、位置停留与拖拽动作反馈",
+      "description": "允许用户拖拽默认3D小人，松手停留并在当前浏览器记住位置；沿用现有GLB程序化动作、HTML符号与本地台词表达被拖动和放下。",
+      "priority": "P1",
+      "priorityReason": "用户于2026-09-22明确指定为下一个feature，要求先讨论拖拽动作方案。",
+      "status": "done",
+      "dependencies": [
+        "feat-080",
+        "feat-081"
+      ],
+      "acceptanceCriteria": [
+        "默认3D小人支持拖拽，松手保留所放位置；当前位置在当前浏览器跨刷新记忆，不提供恢复默认位置入口；可移动边界在方案中明确，不默认吸边或返回原位置",
+        "拖拽开始、拖动中和释放后具有现有GLB程序化拎起、倾摆和450ms原地回稳，配合HTML符号与本地台词；停住后收敛停绘，加载完成接续当前仍在进行的拖动",
+        "区分点击与拖拽，松手不误开私聊；保留原单击/键盘开窗及可访问操作，协调拖动位置、气泡和聊天弹窗布局；移动端打开私聊时可临时移到顶部，关闭后恢复此前放置点，临时展示位置不得覆盖保存的拖拽位置",
+        "复用同一Canvas和GLB，处理指针取消、失焦/隐藏、视口变化和减少动态偏好；生日主题沿用此前范围暂不扩展",
+        "执行启动基线、标准门禁、真实PostgreSQL及默认/生日生产浏览器风险匹配验证，记录证据并更新状态与交接；不修改服务端、GLB或依赖"
+      ],
+      "evidence": "2026-09-22：默认小人已支持6px阈值的鼠标/触屏自由拖放、12px视口边距、方向键10px/Shift40px移动及取消回滚；只在明确放下时保存浏览器归一化位置，无恢复默认入口。移动端私聊临时顶部布局关闭后恢复，临时坐标不写存储；桌面面板/气泡自适应，拖拽不误开窗。复用同Canvas/GLB，轻拎起/双轴倾摆/停住停绘/450ms原地回稳及台词，加载中持续拖动接续，低动态/隐藏清理；生日保持静态固定。init exit0（829项）；最终npm run check exit0（93文件860项×2、生产构建、覆盖率54.47/47.30/59.42/55.20）；真实PG38文件157项通过；最终默认production E2E57/57（6.4m）、birthday入口22/22（2.5m），0 skip/flaky。首轮check:full在E2E54/57后exit1：两项CSP由Zod object构造eval探测引起，浏览器构造前jitless修复；一项GLB降级context清理超时在原样复跑通过。未放宽CSP、测试断言/超时或重试；完整命令与失败原文摘要见progress.md#feat-082。恢复next-env原dev引用后typecheck通过，3000健康200且Web/Worker存活；本轮临时工件/隔离资源已清理，状态/计数/链接/diff核验通过。不改资产、依赖或服务端，未重复Compose/原生hidden探针，非实体设备性能证据；未提交/推送。计划见docs/plan/2026-09-22-agent-entry-drag.md。 提交交付（2026-09-22）：用户要求将当前工作区修改纳入同一个commit，包含080/081/082与既有旧文档删除；本记录随该提交交付，定位以git log -1为准，未推送。"
     }
   ]
 }

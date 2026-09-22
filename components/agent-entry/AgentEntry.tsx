@@ -1,49 +1,66 @@
 "use client";
 
-import { motion, useReducedMotion } from "framer-motion";
-import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useId, useRef, useState, useTransition, type CSSProperties } from "react";
+import dynamic from "next/dynamic";
+import { usePathname } from "next/navigation";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
 
-import AgentEntryScene from "@/components/agent-entry/AgentEntryScene";
+import AgentConversationDialog from "@/components/agent-entry/AgentConversationDialog";
+import AgentEntryErrorBoundary from "@/components/agent-entry/AgentEntryErrorBoundary";
 import type { AgentEntryProps } from "@/components/agent-entry/agent-entry.types";
+import { useAgentConversation } from "@/components/agent-entry/use-agent-conversation";
+import { useAgentDialogModal } from "@/components/agent-entry/use-agent-dialog-modal";
+import { useEntryFeedback } from "@/components/agent-entry/use-entry-feedback";
+import { useEntryReducedMotion } from "@/components/agent-entry/use-entry-reduced-motion";
+import { useEntryDrag } from "@/components/agent-entry/use-entry-drag";
 import styles from "@/components/agent-entry/agent-entry.module.css";
 
-export default function AgentEntry({ config }: AgentEntryProps) {
-  const router = useRouter();
-  const reducedMotion = useReducedMotion();
+// 私聊 DOM 不依赖 Three 下载或 WebGL 成功，错误边界仅包住这个视觉子树。
+const AgentEntryScene = dynamic(() => import("./AgentEntryScene"), { ssr: false, loading: () => null });
+
+export default function AgentEntry({ config, principalId, onIdentityInvalid }: AgentEntryProps & {
+  principalId: string;
+  onIdentityInvalid: () => void;
+}) {
+  const pathname = usePathname();
+  const reducedMotion = useEntryReducedMotion();
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [tooltipOpen, setTooltipOpen] = useState(false);
-  const [pending, startTransition] = useTransition();
-  const navigationLock = useRef(false);
-  const tooltipClose = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [open, setOpen] = useState(false);
+  const [portal] = useState(() => {
+    const host = document.createElement("div");
+    host.dataset.agentEntryPortal = "";
+    return host;
+  });
+  const root = useRef<HTMLDivElement>(null);
+  const entry = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const titleId = useId();
   const tooltipId = useId();
+  const movementHintId = useId();
+  const movable = config.feedback === "light";
+  const { motion, feedback, show, onReady, beginDrag, endDrag, cancelDrag } = useEntryFeedback(movable, reducedMotion);
+  const close = useCallback(() => setOpen(false), []);
+  const conversation = useAgentConversation({ principalId, open, onIdentityInvalid, onFeedback: show });
+  const viewport = useAgentDialogModal({ open, portal, root, trigger, onClose: close });
 
-  useEffect(() => () => clearTimeout(tooltipClose.current), []);
-
+  useLayoutEffect(() => {
+    document.body.appendChild(portal);
+    return () => portal.remove();
+  }, [portal]);
+  useEntryDrag({ enabled: movable, open, config, root, entry, trigger, motion, beginDrag, endDrag, cancelDrag });
   useEffect(() => {
-    if (!pending) navigationLock.current = false;
-  }, [pending]);
+    // 路由是宿主系统的外部状态；程序性导航也必须撤销模态锁。
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setOpen(false);
+  }, [pathname]);
 
   const handleReady = useCallback((model: string) => {
-    if (model === config.model) setReady(true);
-  }, [config.model]);
+    if (model !== config.model) return;
+    setReady(true);
+    onReady();
+  }, [config.model, onReady]);
   const handleError = useCallback(() => setFailed(true), []);
-
-  function navigate() {
-    if (!ready || failed || navigationLock.current) return;
-    navigationLock.current = true;
-    setTooltipOpen(false);
-    startTransition(() => {
-      try {
-        router.push("/chat");
-      } catch {
-        navigationLock.current = false;
-      }
-    });
-  }
-
-  if (failed) return null;
 
   const variables = {
     "--entry-mobile-size": `${config.layout.mobileSize}px`,
@@ -53,49 +70,39 @@ export default function AgentEntry({ config }: AgentEntryProps) {
     "--entry-mobile-right": `${config.layout.mobileRight}px`,
     "--entry-desktop-right": `${config.layout.desktopRight}px`,
     "--entry-accent": config.ui.accent,
-    opacity: ready ? 1 : 0,
-    pointerEvents: ready ? "auto" : "none",
+    ...viewport,
   } as CSSProperties;
+  const text = feedback?.text;
 
   return (
     <>
-      {/* 为文档末尾的表单控件保留可滚动空间，避免固定入口令其永远不可点击。 */}
-      {ready && <div aria-hidden="true" className={styles.clearance} style={{ ...variables, pointerEvents: "none" }} />}
-      <div
-        className={`${styles.entry} fixed z-30`}
-        style={variables}
-        data-agent-entry=""
-        data-ready={ready}
-        aria-hidden={!ready}
-        onMouseEnter={() => { clearTimeout(tooltipClose.current); if (ready) setTooltipOpen(true); }}
-        onMouseLeave={() => { tooltipClose.current = setTimeout(() => setTooltipOpen(false), 80); }}
-      >
-        <motion.button
-          type="button"
-          aria-label={config.ui.ariaLabel}
-          aria-describedby={tooltipOpen ? tooltipId : undefined}
-          disabled={!ready || pending}
-          tabIndex={ready ? 0 : -1}
-          className={`${styles.button} relative block h-full w-full rounded-3xl border-0 bg-transparent p-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2`}
-          initial={false}
-          style={reducedMotion ? { opacity: ready ? 1 : 0 } : undefined}
-          animate={reducedMotion ? undefined : { opacity: ready ? 1 : 0 }}
-          transition={{ duration: reducedMotion ? 0 : 0.25 }}
-          whileHover={reducedMotion ? undefined : { scale: 1.025 }}
-          whileTap={reducedMotion ? undefined : { scale: 0.975 }}
-          onFocus={() => setTooltipOpen(true)}
-          onBlur={() => setTooltipOpen(false)}
-          onKeyDown={(event) => { if (event.key === "Escape") setTooltipOpen(false); }}
-          onClick={navigate}
-        >
-          <AgentEntryScene config={config} onReady={handleReady} onError={handleError} />
-        </motion.button>
-        {ready && tooltipOpen && (
-          <span id={tooltipId} role="tooltip" className={styles.tooltip} onMouseEnter={() => clearTimeout(tooltipClose.current)}>
-            {config.ui.tooltip}
-          </span>
-        )}
-      </div>
+      <div aria-hidden="true" className={styles.clearance} style={variables} />
+      {createPortal(
+        <div ref={root} className={styles.portal} data-open={open} style={variables}
+          role={open ? "dialog" : undefined} aria-modal={open ? true : undefined}
+          aria-labelledby={open ? titleId : undefined} tabIndex={-1}>
+          {open && <button type="button" className={styles.backdrop} onClick={close} tabIndex={-1} aria-label="关闭对话遮罩" />}
+          <div ref={entry} className={styles.entry} data-agent-entry="" data-ready={ready && !failed}
+            onMouseEnter={() => show("attention")}>
+            <button ref={trigger} type="button" aria-label={config.ui.ariaLabel} aria-haspopup="dialog" aria-expanded={open}
+              aria-describedby={[text ? tooltipId : "", movable ? movementHintId : ""].filter(Boolean).join(" ") || undefined} className={styles.button}
+              aria-keyshortcuts={movable ? "ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" : undefined}
+              onFocus={() => show("attention")}
+              onClick={() => { show("click"); setOpen(true); }}>
+              {(!ready || failed) && <span className={styles.fallback} aria-hidden="true">✦<span>与小助手聊天</span></span>}
+              {!failed && <AgentEntryErrorBoundary onError={handleError}>
+                <AgentEntryScene config={config} motion={motion} onReady={handleReady} onError={handleError} />
+              </AgentEntryErrorBoundary>}
+            </button>
+            {movable && <span id={movementHintId} className="sr-only">可拖动小助手；聚焦后用方向键移动，按住 Shift 加快，松键放下，Escape 取消本次移动。Enter 或空格打开聊天。手机聊天时请先关闭对话再移动。</span>}
+            {text && <span id={tooltipId} role="tooltip" className={styles.tooltip}>
+              {feedback && <span className={styles.emotion} aria-hidden="true">{feedback.symbol}</span>}{text}
+            </span>}
+          </div>
+          {open && <AgentConversationDialog conversation={conversation} principalId={principalId} titleId={titleId}
+            reducedMotion={reducedMotion} onClose={close} onIdentityInvalid={onIdentityInvalid} />}
+        </div>, portal,
+      )}
     </>
   );
 }

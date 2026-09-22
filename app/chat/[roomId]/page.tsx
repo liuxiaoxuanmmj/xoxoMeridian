@@ -13,10 +13,11 @@ export default async function ChatRoomPage({ params }: { params: Promise<{ roomI
 
   const participant = await prisma.roomParticipant.findUnique({
     where: { roomId_userId: { roomId, userId: user.id } },
+    include: { room: { select: { kind: true } } },
   });
   // Room was deleted (cascade dropped the participant row) or the user was
   // ejected. Bounce to /chat, which redirects to the user's default room.
-  if (!participant) redirect("/chat");
+  if (!participant || participant.room.kind !== "shared") redirect("/chat");
 
   const snapshot = await getRoomSnapshot(roomId, user.id);
   const currentUser = {

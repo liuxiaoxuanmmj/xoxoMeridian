@@ -14,7 +14,7 @@ export type RoomListItem = {
 // with the active room view.
 export async function listRoomsForUser(userId: string): Promise<RoomListItem[]> {
   const participants = await prisma.roomParticipant.findMany({
-    where: { userId },
+    where: { userId, room: { kind: "shared" } },
     include: {
       room: { include: { _count: { select: { messages: true } } } }
     },

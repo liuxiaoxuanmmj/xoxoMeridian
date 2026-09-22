@@ -4,7 +4,8 @@ import {
   ToolApprovalNotFoundError
 } from "@/agent/tool-approval";
 import { assertRoomAccess } from "@/lib/access";
-import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
+import { assertAgentViewer } from "@/lib/agent-conversation";
+import { errorToResponse, jsonError, jsonOk, noStoreResponse } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { env } from "@/lib/env";
 import { prisma } from "@/lib/prisma";
@@ -16,7 +17,7 @@ type RouteContext = {
 
 export const dynamic = "force-dynamic";
 
-export async function GET(_request: Request, { params }: RouteContext) {
+export async function GET(request: Request, { params }: RouteContext) {
   try {
     const user = await requireCurrentUser();
     const { taskId } = await params;
@@ -25,17 +26,18 @@ export async function GET(_request: Request, { params }: RouteContext) {
       select: { id: true, roomId: true }
     });
     if (!task) {
-      return jsonError("Agent task not found.", 404);
+      return noStoreResponse(jsonError("Agent task not found.", 404));
     }
 
-    await assertRoomAccess(task.roomId, user.id);
+    const membership = await assertRoomAccess(task.roomId, user.id);
+    if (membership.room.kind === "agent_private") assertAgentViewer(request, user.id);
     const approvals = await prisma.agentToolApproval.findMany({
       where: { taskId },
       orderBy: { requestedAt: "asc" }
     });
-    return jsonOk({ approvals });
+    return noStoreResponse(jsonOk({ approvals }));
   } catch (error) {
-    return errorToResponse(error);
+    return noStoreResponse(errorToResponse(error));
   }
 }
 
@@ -49,10 +51,12 @@ export async function POST(request: Request, { params }: RouteContext) {
       select: { id: true, roomId: true }
     });
     if (!task) {
-      return jsonError("Agent task not found.", 404);
+      return noStoreResponse(jsonError("Agent task not found.", 404));
     }
 
-    await assertRoomAccess(task.roomId, user.id);
+    const membership = await assertRoomAccess(task.roomId, user.id);
+    const isPrivate = membership.room.kind === "agent_private";
+    if (isPrivate) assertAgentViewer(request, user.id);
     const result = await decideToolApproval({
       taskId,
       approvalId: decision.approvalId,
@@ -63,17 +67,21 @@ export async function POST(request: Request, { params }: RouteContext) {
     if (decision.decision === "approve" && env.AGENT_TASK_INLINE_RUN) {
       const { runAgentTask } = await import("@/agent/agent-runtime");
       const resumedTask = await runAgentTask(taskId);
-      return jsonOk({ approval: result.approval, task: resumedTask });
+      return noStoreResponse(jsonOk(isPrivate
+        ? { approval: { id: result.approval.id, status: result.approval.status }, task: { id: resumedTask.id, status: resumedTask.status } }
+        : { approval: result.approval, task: resumedTask }));
     }
 
-    return jsonOk(result);
+    return noStoreResponse(jsonOk(isPrivate
+      ? { approval: { id: result.approval.id, status: result.approval.status }, task: { id: result.task.id, status: result.task.status } }
+      : result));
   } catch (error) {
     if (error instanceof ToolApprovalNotFoundError) {
-      return jsonError(error.message, 404);
+      return noStoreResponse(jsonError(error.message, 404));
     }
     if (error instanceof ToolApprovalConflictError) {
-      return jsonError(error.message, 409);
+      return noStoreResponse(jsonError(error.message, 409));
     }
-    return errorToResponse(error);
+    return noStoreResponse(errorToResponse(error));
   }
 }

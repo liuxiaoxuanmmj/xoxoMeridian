@@ -32,14 +32,14 @@ export async function deleteRoomPreservingUserMembership(
       where: {
         roomId_userId: { roomId, userId },
       },
-      select: { id: true },
+      select: { id: true, room: { select: { kind: true } } },
     });
-    if (!membership) {
+    if (!membership || membership.room.kind !== "shared") {
       throw new Response("Forbidden", { status: 403 });
     }
 
     const membershipCount = await tx.roomParticipant.count({
-      where: { userId },
+      where: { userId, room: { kind: "shared" } },
     });
     if (membershipCount <= 1) {
       return { status: "last-room" };

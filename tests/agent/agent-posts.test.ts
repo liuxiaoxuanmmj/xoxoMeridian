@@ -44,6 +44,7 @@ function completedTask(overrides: Record<string, unknown> = {}) {
   return {
     id: "task-1",
     roomId: "room-1",
+    room: { kind: "shared" },
     status: "completed",
     result: { summary: "done" },
     completedAt: COMPLETED_AT,

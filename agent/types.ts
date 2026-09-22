@@ -28,7 +28,7 @@ export type StructuredRoomParticipant = {
 };
 
 export type StructuredRoomContext = {
-  room: { name: string; slug: string };
+  room: { name: string; slug: string; kind?: "shared" | "agent_private" };
   requestedById: string | null;
   self: StructuredRoomParticipant | null;
   partner: StructuredRoomParticipant | null;

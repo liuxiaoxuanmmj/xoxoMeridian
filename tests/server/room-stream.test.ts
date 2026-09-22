@@ -24,6 +24,7 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/lib/access", () => ({
   assertRoomAccess: mockAssertRoomAccess,
+  assertSharedRoomAccess: mockAssertRoomAccess,
 }));
 
 vi.mock("@/lib/auth", () => ({

@@ -1,9 +1,12 @@
+import type { EntryMotionController } from "@/components/agent-entry/agent-entry-behavior";
+
 export const agentEntryThemes = ["default", "birthday-2026"] as const;
 
 export type AgentEntryTheme = (typeof agentEntryThemes)[number];
 export type Vector3Tuple = readonly [number, number, number];
 
 export interface AgentEntryThemeConfig {
+  feedback: "light" | "static";
   model: string;
   camera: {
     position: Vector3Tuple;
@@ -24,7 +27,6 @@ export interface AgentEntryThemeConfig {
     desktopRight: number;
   };
   ui: {
-    tooltip: string;
     ariaLabel: string;
     accent: string;
   };
@@ -39,6 +41,7 @@ export interface AgentEntryProps {
 }
 
 export interface AgentEntrySceneProps extends AgentEntryProps {
+  motion: EntryMotionController;
   onReady: (model: string) => void;
   onError: () => void;
 }

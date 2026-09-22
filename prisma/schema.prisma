@@ -13,6 +13,11 @@ enum SenderType {
   system
 }
 
+enum RoomKind {
+  shared
+  agent_private
+}
+
 enum TargetType {
   all
   user
@@ -92,6 +97,7 @@ model User {
   updatedAt      DateTime          @updatedAt
   profile        UserProfile?
   participants   RoomParticipant[]
+  agentConversation Room?          @relation("AgentConversationOwner")
   messages       Message[]
   requestedTasks AgentTask[]       @relation("RequestedTasks")
   memos          Memo[]
@@ -156,6 +162,9 @@ model Room {
   slug             String            @unique
   name             String
   description      String?
+  kind             RoomKind          @default(shared)
+  privateOwnerId   String?           @unique
+  privateOwner     User?             @relation("AgentConversationOwner", fields: [privateOwnerId], references: [id], onDelete: Cascade)
   maxHumanUsers    Int               @default(2)
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
@@ -193,6 +202,7 @@ model Message {
   senderAgentId String?
   senderType    SenderType
   content       String
+  clientMessageId String?
   targetType    TargetType    @default(all)
   targetId      String?
   status        MessageStatus @default(sent)
@@ -206,6 +216,7 @@ model Message {
   finalTask     AgentTask?    @relation("FinalMessage")
 
   @@index([roomId, createdAt])
+  @@unique([roomId, senderId, clientMessageId])
   @@index([senderId])
   @@index([senderAgentId])
 }

@@ -41,6 +41,13 @@ export const messagePostSchema = z.object({
   forceAgent: z.boolean().optional().default(false),
 });
 
+export const agentConversationMessageSchema = z.object({
+  content: z.string().trim().min(1).max(4000),
+  clientMessageId: z.string().uuid(),
+}).strict();
+
+export const agentViewerIdSchema = z.string().min(1).max(128).regex(/^[a-zA-Z0-9_-]+$/);
+
 
 const safeMetadataSchema = z
   .record(z.string(), z.unknown())

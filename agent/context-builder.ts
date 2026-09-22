@@ -7,6 +7,7 @@ import type {
   StructuredRoomParticipant
 } from "@/agent/types";
 import { resolveParticipantPair } from "@/lib/participant-resolution";
+import { assertPrivateRoomMembers } from "@/lib/access";
 import { prisma } from "@/lib/prisma";
 
 export async function buildAgentContext(
@@ -26,10 +27,15 @@ export async function buildAgentContext(
       }
     }
   });
+  assertPrivateRoomMembers(room);
+  if (room.kind === "agent_private" && requestedById !== null && requestedById !== room.privateOwnerId) {
+    throw new Response("Forbidden", { status: 403 });
+  }
+  const contextRequesterId = room.kind === "agent_private" ? room.privateOwnerId : requestedById;
   const participantViews = room.participants.map(toParticipantView);
   const { self, partner } = resolveParticipantPair(
     participantViews,
-    requestedById,
+    contextRequesterId,
     (participant) => participant.userId
   );
   const effectiveRequestedById = self?.userId ?? null;
@@ -85,7 +91,7 @@ export async function buildAgentContext(
   );
 
   const roomContext: StructuredRoomContext = {
-    room: { name: room.name, slug: room.slug },
+    room: { name: room.name, slug: room.slug, kind: room.kind },
     requestedById: effectiveRequestedById,
     self,
     partner,

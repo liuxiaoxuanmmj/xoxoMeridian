@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -55,7 +55,7 @@ export async function GET(
   try {
     const user = await requireCurrentUser();
     const { jobId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const job = await prisma.scheduledJob.findUnique({
       where: { id: jobId },
@@ -78,7 +78,7 @@ export async function PATCH(
   try {
     const user = await requireCurrentUser();
     const { jobId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs-patch:${user.id}`, 10, 60_000);
     if (limited) return limited;
@@ -184,7 +184,7 @@ export async function DELETE(
   try {
     const user = await requireCurrentUser();
     const { jobId, roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs-delete:${user.id}`, 10, 60_000);
     if (limited) return limited;

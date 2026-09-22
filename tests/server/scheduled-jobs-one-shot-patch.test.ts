@@ -42,6 +42,7 @@ vi.mock("@/lib/auth", () => ({
 
 vi.mock("@/lib/access", () => ({
   assertRoomAccess: mockAssertRoomAccess,
+  assertSharedRoomAccess: mockAssertRoomAccess,
 }));
 
 vi.mock("@/lib/rate-limit", () => ({

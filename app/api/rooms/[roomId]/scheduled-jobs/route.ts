@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonError, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -26,7 +26,7 @@ export async function GET(
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const url = new URL(request.url);
     const enabledFilter = url.searchParams.get("enabled");
@@ -70,7 +70,7 @@ export async function POST(
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `scheduled-jobs:${user.id}`, 10, 60_000);
     if (limited) return limited;

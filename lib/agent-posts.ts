@@ -102,12 +102,18 @@ export async function projectAgentTaskTimeline(taskId: string) {
     where: { id: taskId },
     include: {
       agent: { select: { displayName: true } },
+      room: { select: { kind: true } },
       toolCalls: { select: { toolName: true, status: true, durationMs: true } },
     },
   });
   if (!task) return null;
   if (task.status !== "completed") return null;
   if (task.timelineProjectedAt) return null;
+
+  if (task.room.kind === "agent_private") {
+    await markTimelineProjected(taskId);
+    return null;
+  }
 
   if (task.toolCalls.length === 0) {
     // 既有规则：没有 ToolCall 的任务不产生时间线条目。

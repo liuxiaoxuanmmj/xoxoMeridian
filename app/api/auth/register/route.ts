@@ -40,7 +40,7 @@ export async function POST(request: Request) {
         const [room] = await tx.$queryRaw<RegistrationRoom[]>`
           SELECT "id", "slug", "name", "maxHumanUsers"
           FROM "Room"
-          WHERE "slug" = ${env.DEMO_ROOM_SLUG}
+          WHERE "slug" = ${env.DEMO_ROOM_SLUG} AND "kind" = 'shared'
           FOR UPDATE
         `;
         if (!room) {

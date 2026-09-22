@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { enforceRateLimit } from "@/lib/rate-limit";
@@ -16,7 +16,7 @@ export async function DELETE(
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `room-delete:${user.id}`, 10, 60_000);
     if (limited) return limited;

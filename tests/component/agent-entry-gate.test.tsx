@@ -18,9 +18,9 @@ vi.mock("next/dynamic", () => ({
   },
 }));
 vi.mock("@/components/agent-entry/AgentEntry", () => ({
-  default: function Entry() {
+  default: function Entry({ principalId }: { principalId: string }) {
     entryModule.mounts();
-    return <div><button type="button">打开 Agent 聊天</button><canvas aria-hidden="true" /></div>;
+    return <div><span>{principalId}</span><button type="button">打开 Agent 聊天</button><canvas aria-hidden="true" /></div>;
   },
 }));
 
@@ -51,6 +51,28 @@ function focusWindow() {
 }
 
 describe("Agent Entry 认证与路由 Gate", () => {
+  it("200 A 到 200 B 也重新挂载身份范围，不需要 logout 通知", async () => {
+    let id = "user-a";
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id })));
+    render(<AgentEntryGate config={config} />);
+    expect(await screen.findByText("user-a")).toBeVisible();
+    const canvas = document.querySelector("canvas");
+    id = "user-b";
+    act(focusWindow);
+    expect(await screen.findByText("user-b")).toBeVisible();
+    expect(screen.queryByText("user-a")).toBeNull();
+    expect(document.querySelector("canvas")).not.toBe(canvas);
+  });
+
+  it.each([{}, { id: "" }, { id: 1 }])("200 缺少有效用户 ID 时不授予入口身份：%j", async (payload) => {
+    const probe = vi.fn(() => HttpResponse.json(payload));
+    mockServer.use(http.get("/api/auth/me", probe));
+    render(<AgentEntryGate config={config} />);
+    await waitFor(() => expect(probe).toHaveBeenCalledOnce());
+    await act(async () => {});
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+
   it.each(["/chat", "/chat/room", "/chat/room/atlas"])("%s 首屏不探测认证、不挂载动态入口", async (pathname) => {
     navigation.pathname = pathname;
     const probe = vi.fn(() => HttpResponse.json({}));
@@ -79,14 +101,14 @@ describe("Agent Entry 认证与路由 Gate", () => {
     expect(entryModule.mounts).not.toHaveBeenCalled();
     navigation.pathname = "/chat/room";
     view.rerender(<AgentEntryGate config={config} />);
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     navigation.pathname = "/about";
     view.rerender(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button", { name: "打开 Agent 聊天" })).toBeVisible();
   });
 
   it("200 后非 Chat 导航保留入口，Chat 往返必须重新认证", async () => {
-    const probe = vi.fn(() => new HttpResponse("不需身份载荷", { status: 200 }));
+    const probe = vi.fn(() => HttpResponse.json({ id: "user-a" }));
     mockServer.use(http.get("/api/auth/me", probe));
     const view = render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
@@ -105,7 +127,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
 
   it("Chat 首屏离开后才发起认证探测", async () => {
     navigation.pathname = "/chat/room";
-    const probe = vi.fn(() => new HttpResponse(null, { status: 200 }));
+    const probe = vi.fn(() => HttpResponse.json({ id: "user-a" }));
     mockServer.use(http.get("/api/auth/me", probe));
     const view = render(<AgentEntryGate config={config} />);
     expect(probe).not.toHaveBeenCalled();
@@ -123,7 +145,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
       requestSignal = request.signal;
       started();
       await new Promise<void>((resolve) => { finish = resolve; });
-      return new HttpResponse(null, { status: 200 });
+      return HttpResponse.json({ id: "user-a" });
     }));
     const view = render(<AgentEntryGate config={config} />);
     await waitFor(() => expect(started).toHaveBeenCalledTimes(1));
@@ -138,7 +160,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
     const signals: AbortSignal[] = [];
     mockServer.use(http.get("/api/auth/me", ({ request }) => {
       signals.push(request.signal);
-      return new HttpResponse(null, { status: 200 });
+      return HttpResponse.json({ id: "user-a" });
     }));
     const view = render(<StrictMode><AgentEntryGate config={config} /></StrictMode>);
     expect(await screen.findByRole("button")).toBeVisible();
@@ -150,7 +172,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
   });
 
   it.each([401, 403])("已认证用户从 Chat 返回遇到 %s，不挂载旧入口或 Canvas", async (status) => {
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     const view = render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
     navigation.pathname = "/chat/room";
@@ -169,7 +191,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
   for (const trigger of ["focus", "visibilitychange", "pageshow"] as const) {
     it.each([401, 403])(`${trigger} 重验从 200 变为 %s 后卸载入口与 Canvas`, async (status) => {
       let currentStatus = 200;
-      const probe = vi.fn(() => new HttpResponse(null, { status: currentStatus }));
+      const probe = vi.fn(() => currentStatus === 200 ? HttpResponse.json({ id: "user-a" }) : new HttpResponse(null, { status: currentStatus }));
       mockServer.use(http.get("/api/auth/me", probe));
       render(<AgentEntryGate config={config} />);
       expect(await screen.findByRole("button")).toBeVisible();
@@ -190,7 +212,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
   }
 
   it("聚焦和可见事件合并重验，隐藏事件与等待时间不产生轮询", async () => {
-    const probe = vi.fn(() => new HttpResponse(null, { status: 200 }));
+    const probe = vi.fn(() => HttpResponse.json({ id: "user-a" }));
     mockServer.use(http.get("/api/auth/me", probe));
     render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
@@ -217,7 +239,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
   });
 
   it.each(["500", "网络失败"])("已显示入口遇到重验 %s 时隐藏，后续聚焦成功可恢复", async (failure) => {
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
     mockServer.use(http.get("/api/auth/me", () => failure === "500"
@@ -226,13 +248,13 @@ describe("Agent Entry 认证与路由 Gate", () => {
     act(focusWindow);
     await waitFor(() => expect(screen.queryByRole("button")).not.toBeInTheDocument());
     expect(document.querySelector("canvas")).toBeNull();
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     act(focusWindow);
     expect(await screen.findByRole("button")).toBeVisible();
   });
 
   it.each(["同标签", "其他标签"])("%s退出立即隐藏并作废在途 200，最新 401 后不能复活", async (tab) => {
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
     const stale = deferredResponse();
@@ -253,9 +275,9 @@ describe("Agent Entry 认证与路由 Gate", () => {
     expect(document.querySelector("canvas")).toBeNull();
     await waitFor(() => expect(probe).toHaveBeenCalledTimes(2));
     await act(async () => { latest.resolve(new Response(null, { status: 401 })); });
-    await act(async () => { stale.resolve(new Response(null, { status: 200 })); });
+    await act(async () => { stale.resolve(Response.json({ id: "user-a" })); });
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    probe.mockResolvedValue(new Response(null, { status: 200 }));
+    probe.mockResolvedValue(Response.json({ id: "user-a" }));
     act(focusWindow);
     expect(await screen.findByRole("button")).toBeVisible();
     expect(probe).toHaveBeenCalledTimes(3);
@@ -263,7 +285,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
 
   it("存储不可用不妨碍本标签退出通知，无关 storage 事件不重验", async () => {
     let status = 200;
-    const probe = vi.fn(() => new HttpResponse(null, { status }));
+    const probe = vi.fn(() => status === 200 ? HttpResponse.json({ id: "user-a" }) : new HttpResponse(null, { status }));
     mockServer.use(http.get("/api/auth/me", probe));
     render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
@@ -281,7 +303,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
   });
 
   it("离开或卸载时清理事件、定时器和在途请求", async () => {
-    mockServer.use(http.get("/api/auth/me", () => new HttpResponse(null, { status: 200 })));
+    mockServer.use(http.get("/api/auth/me", () => HttpResponse.json({ id: "user-a" })));
     const view = render(<AgentEntryGate config={config} />);
     expect(await screen.findByRole("button")).toBeVisible();
     vi.useFakeTimers();
@@ -301,7 +323,7 @@ describe("Agent Entry 认证与路由 Gate", () => {
     expect(signal?.aborted).toBe(true);
     act(() => { focusWindow(); notifySessionLogout(); });
     await act(async () => {
-      response.resolve(new Response(null, { status: 200 }));
+      response.resolve(Response.json({ id: "user-a" }));
       await vi.advanceTimersByTimeAsync(1_000);
     });
     expect(probe).toHaveBeenCalledTimes(1);

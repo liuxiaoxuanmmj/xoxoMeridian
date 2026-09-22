@@ -1,4 +1,4 @@
-import { assertRoomAccess } from "@/lib/access";
+import { assertSharedRoomAccess } from "@/lib/access";
 import { errorToResponse, jsonOk } from "@/lib/api";
 import { requireCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -15,7 +15,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ room
   try {
     const user = await requireCurrentUser();
     const { roomId } = await params;
-    await assertRoomAccess(roomId, user.id);
+    await assertSharedRoomAccess(roomId, user.id);
 
     const limited = enforceRateLimit(request, `weather:${user.id}`, 30, 60_000);
     if (limited) return limited;
