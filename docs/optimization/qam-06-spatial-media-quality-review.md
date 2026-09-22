@@ -10,9 +10,10 @@
 | 标准版本 | [`module-quality-review-standard.md`](./module-quality-review-standard.md) v1.0.0 |
 | 范围来源 | [`PROJECT_VIEW.md`](../../PROJECT_VIEW.md) 的 QAM-06、Cross-cutting Concerns、共享映射、BU-01/BU-05 与 Quality Tracking Index；[`AGENTS.md`](../../AGENTS.md) |
 | 本轮 Delta | `+2（QAM-06-005 resolved；79→81）` |
+| 2026-09-21 Delta | `0（QAM-06-008 按退役弃用面关闭；开放 P2 4→3；**本轮未重新评分**，Score/Gate 维持 81/L3、L2，被 SSE 引用的扣分理由待下一次完整复审重算）` |
 | 当前基线命令 | 收尾 `./scripts/run-node22.sh ./init.sh` exit 0、85 文件/751 项（含 `prisma generate`、类型检查、lint 与两主题资产预算）；`./scripts/run-node22.sh npm run check:full` 内的快速门禁 exit 0、85 文件/750 项 |
 | 风险匹配命令 | `./scripts/run-node22.sh npm run check:full` 单次 exit 0：85 文件 Vitest（快速门禁 750 项、覆盖率阶段 751 项）、Next.js production build、覆盖率 53.06/46.97/57.64/53.78（门槛 40/35/45/40）、32 文件/126 项真实 PostgreSQL（194.00s）、生产 Playwright 44/44（7.4 分钟，无 skip/flaky）；本轮定向 [`上传回归`](../../tests/server/home-board-routes.test.ts) 3 文件/48 项 exit 0。两次标准门禁的用例总数差 1 且仅在首次出现，四次复测（覆盖率阶段、`./init.sh`、两次 `--reporter=json`）稳定为 751 且逐文件计数一致，未复现，已如实登记在进度与交接中 |
-| 证据纪律 | 本轮 E3 为实际执行的上传 Route/适配层行为测试：旧实现负向对照 18 failed/29 passed（伪造 MIME 被接受并调用 `save`、`File` 型 caption 触发 `.trim is not a function` 的 500、`Infinity`/`NaN`/`1e999` 坐标与 201 字符 caption 落库），修复后同一批用例全绿；测试字节由 `sharp` 生成并逐个回读验证可解码，避免用不可解码 fixture 自证。**上传路径本轮未走真实 PostgreSQL 与浏览器**，Home 授权、编辑/删除失败恢复与串行写入的真实 PostgreSQL/浏览器 E3 沿用上一轮结论；Atlas 建板、DB/blob 补偿与 SSE 生命周期仍保留各自证据缺口 |
+| 证据纪律 | 本轮 E3 为实际执行的上传 Route/适配层行为测试：旧实现负向对照 18 failed/29 passed（伪造 MIME 被接受并调用 `save`、`File` 型 caption 触发 `.trim is not a function` 的 500、`Infinity`/`NaN`/`1e999` 坐标与 201 字符 caption 落库），修复后同一批用例全绿；测试字节由 `sharp` 生成并逐个回读验证可解码，避免用不可解码 fixture 自证。**上传路径本轮未走真实 PostgreSQL 与浏览器**，Home 授权、编辑/删除失败恢复与串行写入的真实 PostgreSQL/浏览器 E3 沿用上一轮结论；Atlas 建板与 DB/blob 补偿仍保留各自证据缺口（SSE 生命周期问题已随弃用面退役关闭，2026-09-21） |
 
 ## Overall
 
@@ -23,25 +24,25 @@
 | Gate Level | **L2** |
 | Final Level | **L2** |
 | Trend | `+2（79→81；较 baseline +24）` |
-| Evidence Confidence | 中高（Home 权限、编辑/删除失败恢复与串行写入有真实 PostgreSQL/浏览器 E3；上传内容信任与字段边界有本轮实际执行的 Route/适配层行为测试 E3，**未走真实 PostgreSQL 与浏览器**；Atlas 首次建板、SSE 与 DB/blob 补偿仍缺对应验证） |
-| 当前开放问题 | 4 项（P2×4；无开放 P0/P1） |
+| Evidence Confidence | 中高（Home 权限、编辑/删除失败恢复与串行写入有真实 PostgreSQL/浏览器 E3；上传内容信任与字段边界有本轮实际执行的 Route/适配层行为测试 E3，**未走真实 PostgreSQL 与浏览器**；Atlas 首次建板与 DB/blob 补偿仍缺对应验证；SSE 生命周期已随弃用面于 2026-09-21 退役关闭） |
+| 当前开放问题 | 3 项（P2×3；无开放 P0/P1） |
 
-当前产品入口仍以 `/home` 中嵌入的空间画布为准。QAM-06-005 已关闭：两条上传路径的图片信任来源从客户端声明的 `File.type` 改为文件内容，位置/尺寸/标题经同一 Zod form-data 边界解析，失败在读取字节与写存储之前就返回 400，既不落 blob 也不建记录。路由行为测试在旧实现下复现了伪造 MIME 被接受、`File` 型 caption 触发 `.trim is not a function` 的 500、非有限坐标与超长 caption 落库，修复后全部转为稳定 400，三种合法格式仍以判定出的 content type 保存与回读。Atlas 首次建板、DB/blob 补偿、连接约束与 SSE 生命周期仍是四个独立 P2，因此 Gate 仍为 L2。
+当前产品入口仍以 `/home` 中嵌入的空间画布为准。QAM-06-005 已关闭：两条上传路径的图片信任来源从客户端声明的 `File.type` 改为文件内容，位置/尺寸/标题经同一 Zod form-data 边界解析，失败在读取字节与写存储之前就返回 400，既不落 blob 也不建记录。路由行为测试在旧实现下复现了伪造 MIME 被接受、`File` 型 caption 触发 `.trim is not a function` 的 500、非有限坐标与超长 caption 落库，修复后全部转为稳定 400，三种合法格式仍以判定出的 content type 保存与回读。Atlas 首次建板、DB/blob 补偿与连接约束仍是三个独立 P2；Atlas SSE 生命周期问题（QAM-06-008）已于 2026-09-21 随弃用页面与其传输一并退役关闭，因此它不再计入开放项，Gate 仍为 L2（剩余三项仍缺风险匹配 E3）。
 
 ## Score Breakdown
 
 | 维度 | Score | Max | Finding / Evidence |
 | --- | ---: | ---: | --- |
 | 架构与责任边界 | 10 | 14 | Home 是当前空间画布产品入口；[`getHomeBoardElementAccessWhere()`](../../lib/home-board.ts#L18-L33) 与 connection 派生谓词把 QAM-05 Post 可见性显式提升为空间读写边界，Home page 与三个 mutation 入口共用，不再各自推断成员资格。legacy Atlas 与 Home board 的固定 ID 边界、BU-01 global Atlas 语义保持不变（E2/E3）。 |
-| 代码结构与复杂度 | 8 | 10 | 本轮将 Home 保存/删除状态从页面装配抽取到 [`useHomeBoardMutations`](../../components/home/useHomeBoardMutations.ts#L27)，`HomeTimelineBoard` 保留组合与反馈，失败分支有单一落点；Atlas/Home 上传删除重复与旧 SSE/drag cache 分散状态仍在（E2/E3）。 |
+| 代码结构与复杂度 | 8 | 10 | 本轮将 Home 保存/删除状态从页面装配抽取到 [`useHomeBoardMutations`](../../components/home/useHomeBoardMutations.ts#L27)，`HomeTimelineBoard` 保留组合与反馈，失败分支有单一落点；Atlas/Home 上传删除重复与 drag cache 分散状态仍在（旧 SSE 客户端已于 2026-09-21 随弃用面删除）（E2/E3）。 |
 | 抽象与复用 | 7 | 8 | 位置、大小、标注共享 [`runPhotoQueue`](../../components/home/useHomeBoardMutations.ts#L52) 的最新字段合并、2xx 确认和失败重试，照片 DELETE 复用同一串行边界；Home spatial access、storage key/helper 继续复用。Atlas/Home 上传和 DB/blob 补偿仍未统一（E2/E3）。 |
 | 数据流与状态一致性 | 11 | 12 | 照片 PATCH 失败保留未确认字段，新的同名字段优先；成功响应不整体覆盖后续草稿。照片及连线 DELETE 只有 2xx 才移除，失败无需从旧 snapshot 恢复整张画布；真实 PostgreSQL 与浏览器逐操作重试/reload 证明尺寸、trim 标注和级联记录一致。DB/blob 的跨资源补偿仍开放（E3）。 |
 | 接口与依赖关系 | 9 | 10 | JSON body 有 Zod 校验；Home snapshot、element Route 与 connection Route 共用 QAM-05 的 Post 可见性 contract，connection 还要求两端同时可见并保留 board/type 约束。本轮把两条上传 Route 的 multipart 字段收敛到 [`lib/validation.ts`](../../lib/validation.ts) 的 `homeUploadFieldsSchema`/`atlasUploadFieldsSchema`：x/y/width/height/caption 与非字符串、非有限数、超长文本的行为有单一边界，Atlas/Home 不再各自 `Number(...)` 与类型断言。Atlas connection 反向重复仍会落入 500/重复记录（QAM-06-006，E2/E3）。 |
-| 健壮性、并发与生命周期 | 10 | 14 | 照片 PATCH/DELETE 串行，失败可重试；deferred 成功/失败证明后续编辑不会被旧响应回退，照片已删除时迟到的连线失败不复活提示，卸载后不派发排队写入。组件四操作分别覆盖 500 与网络拒绝，PostgreSQL 故障验证保留记录/级联语义，Home 授权条件写保持。旧 Atlas 建板、SSE 和 DB/blob 生命周期仍有缺口（E2/E3）。 |
-| 性能与资源使用 | 6 | 8 | board/坐标/z-index 索引和可见元素渲染路径合理；每个 Atlas SSE 连接每 800ms 做完整元素/连接查询，且没有 in-flight guard，慢查询时工作与连接数线性放大（E2）。 |
+| 健壮性、并发与生命周期 | 10 | 14 | 照片 PATCH/DELETE 串行，失败可重试；deferred 成功/失败证明后续编辑不会被旧响应回退，照片已删除时迟到的连线失败不复活提示，卸载后不派发排队写入。组件四操作分别覆盖 500 与网络拒绝，PostgreSQL 故障验证保留记录/级联语义，Home 授权条件写保持。旧 Atlas 建板与 DB/blob 生命周期仍有缺口（E2/E3）；引用了旧 SSE 关闭/重入的扣分理由已随该路径退役失效，待下一次完整复审重算。 |
+| 性能与资源使用 | 6 | 8 | board/坐标/z-index 索引和可见元素渲染路径合理；每个 Atlas SSE 连接每 800ms 做完整元素/连接查询且没有 in-flight guard 的路径已于 2026-09-21 退役，扣 2 分的原始理由待下一次完整复审重算（当前无产品或测试入口消费该轮询）。 |
 | 安全与隐私 | 8 | 10 | 主要入口均要求认证；Home 的 room-scoped `agent_log` anchor 与关联 connection 现按当前用户 RoomParticipant 事实过滤，未授权读写统一表现为 404，且实际数据库写条件也复核授权。legacy Atlas board/Post-anchor 隔离、storage key 与私有读取缓存仍有效；本轮上传的可信来源从请求元数据（`File.type`）改为文件内容（magic bytes + EOI/IEND/RIFF 长度自洽），落库扩展名与回读 content type 由判定结果而非声明值决定（E3）。 |
-| 可测试性与验证可信度 | 7 | 8 | 组件回归旧实现 12/12 failed、修复后扩为 14/14；PostgreSQL 4/4 验证实际 Route 故障/重试/级联，Chromium 逐次刷新并回读真实数据库。本轮上传契约补齐 E3：旧实现负向对照 18 failed/29 passed，修复后 48/48；覆盖伪造 MIME、截断图片、非有限坐标、File 型/超长 caption、空白归一化与三种合法格式的判定值。Atlas SSE、首次建板与 DB/blob 补偿仍缺风险匹配验证，未给满分。 |
-| 可维护性、演进与技术债 | 5 | 6 | Home 的 mutation queue 与保存状态现集中在单一 hook，UI 控件只提交意图并呈现反馈；修改保持 QAM-06 局部，未引入新的协作协议。旧 Atlas SSE、资源补偿与上传重复仍是可定位的独立技术债（E2/E3）。 |
+| 可测试性与验证可信度 | 7 | 8 | 组件回归旧实现 12/12 failed、修复后扩为 14/14；PostgreSQL 4/4 验证实际 Route 故障/重试/级联，Chromium 逐次刷新并回读真实数据库。本轮上传契约补齐 E3：旧实现负向对照 18 failed/29 passed，修复后 48/48；覆盖伪造 MIME、截断图片、非有限坐标、File 型/超长 caption、空白归一化与三种合法格式的判定值。首次建板与 DB/blob 补偿仍缺风险匹配验证，未给满分；退役面本身已有生产 Playwright 守卫（不可达 + Home 共享面不受影响，含两组灵敏度对照）。 |
+| 可维护性、演进与技术债 | 5 | 6 | Home 的 mutation queue 与保存状态现集中在单一 hook，UI 控件只提交意图并呈现反馈；修改保持 QAM-06 局部，未引入新的协作协议。资源补偿、上传重复与无产品入口的 `/api/atlas/*` 服务端面仍是可定位的独立技术债（E2/E3）。 |
 | **合计** | **81** | **100** | 算术核对：10+8+7+11+9+10+6+8+7+5 = 81。 |
 
 ## Level Gate
@@ -50,8 +51,8 @@
 | --- | --- | --- |
 | 开放 P0 | 通过 | 当前无开放 P0；`AtlasElement.post` 的 FK 方向仍为 `AtlasElement.postId → Post.id`，没有把删除 anchor 错写成删除 Post。 |
 | 开放 P1 且涉及权限、不可恢复错误、并发重复副作用或持续故障 | 通过 | QAM-06-009 已解决，QAM-06 当前无开放 P1；未授权 snapshot 与三个 mutation 均由真实 PostgreSQL/HTTP 证据关闭。 |
-| 最高风险不变量有风险匹配行为验证 | 未通过 | Home 跨房间授权、跨 board 条件写、最终拖动持久化与上传内容契约已有 PostgreSQL/浏览器 E3，但上传 DB/blob 部分失败和 Atlas SSE 生命周期仍缺风险匹配验证，因此 Gate 不高于 L2。 |
-| L4 要求 | 未通过 | 四个 P2 仍包含资源部分失败、首次建板并发与 SSE 生命周期缺口，且对应风险匹配 E3 不完整。 |
+| 最高风险不变量有风险匹配行为验证 | 未通过 | Home 跨房间授权、跨 board 条件写、最终拖动持久化与上传内容契约已有 PostgreSQL/浏览器 E3，但上传 DB/blob 部分失败仍缺风险匹配验证，因此 Gate 不高于 L2。 |
+| L4 要求 | 未通过 | 剩下三个 P2 仍包含资源部分失败与首次建板并发缺口，且对应风险匹配 E3 不完整。 |
 | **最终判定** | **L2** | Score Level=L3；Gate Level=L2；Final Level=min(L3,L2)=L2。 |
 
 ## Critical Issues
@@ -120,16 +121,17 @@
 - **验收证据**：Route 行为测试覆盖 A→B、B→A、同向并发请求，断言最多一个记录、重复稳定 409；现有自连接和跨 board 拒绝继续通过。
 - **影响范围**：QAM-06；不改变 QAM-05 Post 内容事实。
 
+### 已解决的 P2
+
 #### QAM-06-008：Atlas SSE 的初始 abort、异步 enqueue 和 interval 重入没有独立生命周期保护
 
-- **状态**：`open`
-- **问题**：Atlas stream 在 [`sendSnapshot()`](../../app/api/atlas/stream/route.ts#L43-L94) 完成后才注册 `request.signal` 的 abort listener（[`route.ts`](../../app/api/atlas/stream/route.ts#L96-L103)）；session 查询和元素/连接查询 `await` 返回后没有再次检查 `closed`，且多处直接 `controller.enqueue`，catch 分支还可能在 controller 已关闭时再次 enqueue。`setInterval(sendSnapshot, 800)` 不等待上一次查询完成，慢查询时会并发取快照并以完成顺序写出；客户端只按 ID 合并，没有 sequence/version 栅栏（[`AtlasApp`](../../components/atlas/AtlasApp.tsx#L117-L159)）。Room stream 是独立实现，已在建流前注册 abort、await 后检查 `closed` 并通过统一 `write` 防护（[`room stream`](../../app/api/rooms/%5BroomId%5D/stream/route.ts#L27-L120)）；本轮没有 Atlas SSE Route 或慢查询浏览器测试（E2）。
-- **质量影响**：客户端在首个 snapshot 尚未完成时断开、session 检查或 DB 查询超过 800ms 时，Atlas 连接可能向已关闭 controller 写入并产生单连接 unhandled rejection/错误事件；重入快照可能以旧结果覆盖新位置/连接，造成短暂回退和额外 DB 工作。当前证据不能证明它会使 Web 进程整体不可用或造成持久数据库损坏，因此按 P2 处理，不触发 Gate L1。
-- **最小修正**：在创建 stream 后立即安装 abort/cancel 处理，所有 await 边界和 enqueue 统一经过 `closed` 检查与安全写入；将 interval 改为完成后再调度下一次的串行循环，保留 session kicked/error/关闭语义。不要把 Room stream 的修复视作 Atlas stream 已修复。
-- **验收证据**：Route deferred 测试覆盖初始 snapshot 期间 abort、session 查询/DB 查询返回后 abort、controller close 后 error；断言不再 enqueue 或产生未处理拒绝。另以 deferred snapshot 证明第二次查询不会在第一次完成前开始，旧快照不会覆盖新结果；补充真实浏览器连接重连验证。
-- **影响范围**：QAM-06 直接受影响；QAM-02-006 仅记录 Room stream 的独立 interval 重入，不作为本问题的替代或共享修复证据；QAM-09 只关联 Web 进程观测，不承担 Route 生命周期。
-
-### 已解决的 P2
+- **状态**：`resolved`（2026-09-21，按「退役弃用面」关闭，**未重写 SSE 生命周期**）
+- **修复前问题与影响**：Atlas stream 在 `sendSnapshot()`（`app/api/atlas/stream/route.ts`）完成后才注册 `request.signal` 的 abort listener；session 查询与元素/连接查询 `await` 返回后没有再次检查 `closed`，多处直接 `controller.enqueue`，catch 分支还可能在 controller 已关闭时再次 enqueue。`setInterval(sendSnapshot, 800)` 不等待上一次查询完成，慢查询时会并发取快照并以完成顺序写出，客户端只按 ID 合并、没有 sequence/version 栅栏（`components/atlas/AtlasApp.tsx`）。一次性真实 Route 诊断探针（跑完即删）实测：慢查询期间 3 个 tick 内元素/session 查询各 4 次（重入）；`reader.cancel()` 后 3 次 unhandled rejection（`TypeError: Invalid state: Controller is already closed`）；首快照进行中 `abort()` 时轮询照常启动并留下 1 个永不清理的 timer；请求一开始就已 abort 时仍执行 4 次查询并留下 1 个残留 timer——每条被放弃的连接泄漏一个永久 800ms 轮询。**严重度修正**：Next 16.3.3 的 app-route runtime 会注册只做 `console.error` 的 `unhandledRejection` 监听与 `uncaughtException` 处理器，进程大概率不会被这些拒绝终止（未在真实服务器上验证），所以实际危害是日志噪声与常驻泄漏，而非进程退出。
+- **已实施修正（退役，不重写）**：该 SSE Route 的唯一消费者是 `AtlasApp`，而 `AtlasApp` 只被 `/chat/[roomId]/atlas` 页面渲染；该页在 `app/`、`components/`、`lib/`、`hooks/` 中没有任何 `href`/`router.push` 入口，Home 也不消费这条流（Home 走服务端快照 + `/api/home-board/*` 写入，`lib/atlas-drag-cache` 在 Home 侧零引用）。经用户确认「`/atlas` 页已弃用、其画布功能已嵌入 `/home`」后，本问题的前提——这是一个活跃产品入口——不再成立，因此按退役处理而不是为一条无入口的路由重写生命周期：删除 `app/chat/[roomId]/atlas/page.tsx`、`components/atlas/AtlasApp.tsx`、`app/api/atlas/stream/route.ts`，以及只被 `AtlasApp` 引用的 `AtlasToolbar`、`AtlasUploadModal`、`lib/atlas-reconcile.ts`；`components/atlas/types.ts` 中只服务于该流的 `AtlasBoardSnapshot`/`OptimisticOp` 同步删除。Home 依赖的 `/api/atlas/uploads/[filename]` 读取路由、`components/atlas/types.ts` 与 `lib/storage/atlas-storage.ts` 保持不变。**未采用**最小修正中的「重写串行循环与 safe write」方案——那条路径已无入口，重写只会让退役面活得更久。
+- **验收证据（E3，真实生产构建 + Chromium）**：新增两条生产 Playwright 用例。(1) **退役面不可达**：已认证请求下 `GET /api/atlas/stream` 与 `/chat/<roomId>/atlas` 均返回 404（页面用真实房间 ID，避免「路径本来就不存在」的空断言）；正向对照 `GET /api/atlas` 返回 200 且 `boardId = atlas-global-board`，既证明被保留的子树仍在服务（排除「整棵 `/api/atlas` 挂掉」也算通过），也证明会话确实已认证（未认证会得到 401）。(2) **退役不影响 Home**：真实上传 1×1 PNG 到 `/api/home-board/uploads` → 返回的 `imageUrl` 指向共享的 `/api/atlas/uploads/…` 读取路由 → 同一 URL 读回字节与上传字节逐字节相同（200 / `image/png`）→ `/home` 中浏览器真实解码（`naturalWidth === 1`），并验证 Home 元素 PATCH 仍落库回读。**灵敏度对照**：按 HEAD 临时还原全部 6 个退役文件后重跑用例 (1)，`1 failed | 1 passed`、EXIT≠0，失败点显示 `← 200 OK` 与 `content-type: text/event-stream`（守卫在有界 15s 超时内失败，不会一直挂着）；让共享读取路由返回 404 后用例 (2) 在 `:1718` 变红（`Expected: 200 / Received: 404`）。两处还原后按 sha256 与冻结副本比对一致。检索证据：退役后 `app/`、`components/`、`lib/`、`hooks/`、`tests/` 中 `AtlasApp|AtlasToolbar|AtlasUploadModal|atlas-reconcile|atlas/stream` 零残留引用。
+- **影响范围**：QAM-06 直接受影响；QAM-02-006 记录的 Room stream 是独立实现，本次退役未触及它，也不作为本项的替代证据；QAM-09 只关联 Web 进程观测，不承担 Route 生命周期。
+- **保留的残余（本轮未扩大范围）**：`/api/atlas`（global board 的 GET/POST/DELETE）与其 elements/connections/drag/uploads Route 仍在服务，但已无产品入口——`components/atlas` 的画布组件现在只被 `tests/component/atlas-canvas.test.tsx` 引用。本轮按「只删除删除后无任何引用者的文件」执行，因此 QAM-06-002/004/006 的风险面如今只存在于这条无入口的服务端面上。
+- **评分处理**：本轮只登记关闭与事实同步，**未重新评分**（仍 81/L3、Gate L2）；下一次完整复审再重算被 SSE 生命周期影响的两个维度。
 
 #### QAM-06-005：上传只信任 multipart MIME，且位置/标题字段未经过服务端 schema
 
@@ -152,11 +154,7 @@
 
 ```text
 已认证页面/浏览器
-  ├─ /chat/:roomId/atlas（已弃用页面；legacy API 实际固定 atlas-global-board）
-  │    ├─ AtlasApp optimistic ops ──> Atlas element/connection/upload Route ──> Prisma
-  │    ├─ drag POST ──> 当前 Web 进程 Map ──> Atlas SSE 快照覆盖坐标
-  │    └─ PATCH/DELETE ──> AtlasElement / AtlasConnection
-  └─ /home
+  └─ /home（唯一的产品空间画布入口）
        ├─ getPostVisibilityWhere(userId) ──> 当前用户可见 Post
        ├─ 可见 Post ──> ensureHomePostElements ──> home-board AtlasElement(postId)
        ├─ Home spatial access predicate
@@ -169,11 +167,15 @@
 
 Atlas/Home photo upload：File/FormData ──> storage.save(blob) ──> AtlasElement.create(record)
 图片读取：认证 ──> /api/atlas/uploads/:filename ──> key normalize ──> local/OSS read
+
+已退役（2026-09-21，无产品入口、无代码）
+  /chat/:roomId/atlas 页面 ──> AtlasApp ──> /api/atlas/stream（SSE）+ optimistic ops + drag cache
+  保留的服务端面：/api/atlas 的 global board GET/POST/DELETE 与 elements/connections/drag/uploads Route
 ```
 
-Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。当前产品入口 `/home` 不消费 legacy Atlas drag Map/SSE；Home 的乐观位置、大小和标注只负责即时显示，必须经过串行 PATCH 的 2xx 确认；失败保留最新字段及重试状态。照片和连线在 DELETE 2xx 前持续显示，照片删除与在途 PATCH 串行；成功后移除对应本地记录与关联操作。两个独立进程已通过实际 Home snapshot 读取证明成功写入后以 PostgreSQL 坐标收敛。`AtlasElement.postId` 把 Home 空间锚点与 QAM-05 Post 生命周期和可见性相连；空间 snapshot 与 mutation 现通过单一谓词消费相同成员条件，connection 由两端可见性派生。legacy Atlas element/connection 写入口仍在实际条件写中限定 global board；其 URL room scope 不一致按 BU-01 保留，Atlas stream 的 abort/interval 问题继续由 QAM-06-008 追踪。
+Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。当前产品入口 `/home` 不消费 legacy Atlas drag Map/SSE；Home 的乐观位置、大小和标注只负责即时显示，必须经过串行 PATCH 的 2xx 确认；失败保留最新字段及重试状态。照片和连线在 DELETE 2xx 前持续显示，照片删除与在途 PATCH 串行；成功后移除本地记录与关联操作。两个独立进程已通过实际 Home snapshot 读取证明成功写入后以 PostgreSQL 坐标收敛。`AtlasElement.postId` 把 Home 空间锚点与 QAM-05 Post 生命周期和可见性相连；空间 snapshot 与 mutation 现通过单一谓词消费相同成员条件，connection 由两端可见性派生。legacy Atlas element/connection 写入口仍在实际条件写中限定 global board；其 URL room scope 不一致按 BU-01 保留，但随着渲染它的页面退役，该不一致现在只存在于「无 UI 入口的 `/api/atlas/*` 服务端面 vs 全局唯一 board」之间。Atlas stream 的 abort/interval 问题已随该面退役关闭（QAM-06-008）。
 
-剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；Atlas connection 冲突与 SSE 慢查询/关闭竞态。Home 拖动/大小/标注 PATCH 失败与乱序覆盖、照片/连线 DELETE 的虚假成功均已由队列、确认状态和重试关闭，旧 Atlas mutation 跨 board 路径与 Home anchor 跨房间路径也已由条件写关闭，上传内容信任与 multipart 字段边界由统一契约关闭。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束；普通 global Atlas/共享照片读取只做认证仍符合当前 global 实现，room-scoped `agent_log` anchor 则由 RoomParticipant 事实授权。
+剩余主要失败路径是：首次 global board 并发 create 的唯一冲突；blob 已保存而 DB create 失败；Atlas connection 冲突。Home 拖动/大小/标注 PATCH 失败与乱序覆盖、照片/连线 DELETE 的虚假成功均已由队列、确认状态和重试关闭，旧 Atlas mutation 跨 board 路径与 Home anchor 跨房间路径也已由条件写关闭，上传内容信任与 multipart 字段边界由统一契约关闭，SSE 慢查询/关闭竞态随弃用面退役消失。存储 key 的 prefix、外域 URL、路径遍历和私有缓存头已有明确 adapter 约束；普通 global Atlas/共享照片读取只做认证仍符合当前 global 实现，room-scoped `agent_log` anchor 则由 RoomParticipant 事实授权。
 
 ## Verified Strengths
 
@@ -189,12 +191,14 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 - 图片读取要求当前认证会话，使用 `Cache-Control: private`、`Vary: Cookie` 和 immutable 响应，存储缺失/非法 key 映射 404；本轮定向 Route 测试通过（E3）。
 - Atlas element/connection 创建的两端 board 检查、JSON 输入的有限数/长度约束、Home 照片尺寸 clamp 及 canvas 原生 wheel listener 清理均有清楚落点（E2）。
 - 上传的可信来源由请求元数据改为文件内容：`detectAtlasImageFormat`/`validateAtlasImageContent` 只依据字节判定 JPEG/PNG/WebP，落库扩展名与回读 content type 取自判定结果；字段解析前置于 `arrayBuffer()` 与 `storage.save`，因此 400 路径既不落 blob 也不建记录（E3）。
-- 本轮最终标准与完整门禁通过；QAM-06-001/003/009 的原有授权及双进程拖动回归继续通过。Atlas SSE、首次建板和 DB/blob 补偿仍需各自风险匹配验证。
+- 退役面本身有两层生产 Playwright 守卫（入口 404 + Home 共享面不受影响），且两组灵敏度对照都真的变红；`/api/atlas` 正向对照让「未认证/整棵子树挂掉」不会伪装成守卫通过（E3）。
+- 本轮最终标准与完整门禁通过；QAM-06-001/003/009 的原有授权及双进程拖动回归继续通过。首次建板和 DB/blob 补偿仍需各自风险匹配验证；SSE 生命周期已随退役面关闭。
 
 ## Recommended Improvements
 
 1. 治理 **QAM-06-002/004（P2）**：按风险收益补 fixed-ID 建板幂等与 DB/blob 补偿；上传内容信任已由 QAM-06-005 关闭，后续只随格式清单或校验强度变化复审。
-2. 治理 **QAM-06-006/008（P2）**：补稳定的无向连接冲突响应及 Atlas SSE 串行/关闭保护；QAM-02-006 仅作为 Room stream 的关联复审入口。
+2. 治理 **QAM-06-006（P2）**：补稳定的无向连接冲突响应；QAM-02-006 仅作为 Room stream 的关联复审入口。QAM-06-008 已随弃用面退役关闭（2026-09-21），不再列入待治理项。
+3. 若要继续收缩 QAM-06 的服务端面，可评估**无产品入口的 `/api/atlas/*` 与 `components/atlas` 画布组件**：它们现在只被测试引用（`tests/component/atlas-canvas.test.tsx`、`tests/server/atlas-storage-routes.test.ts` 等），且 QAM-06-002/004/006 的风险面全部落在这条面上。这属于新的退役决策，需要用户确认后再登记，本轮未扩大范围。
 
 以上均保持现有 global Atlas、Home board、元素类型、连线类型和存储供应商边界，不新增画布或协作功能。
 
@@ -207,28 +211,28 @@ Prisma `AtlasBoard`、`AtlasElement` 和 `AtlasConnection` 是持久事实源。
 | QAM-06-002 | P2 | `open` | global board read-then-create；单次首访唯一冲突但数据库保持一致（E2） | QAM-06 board service | QAM-09 运行拓扑启动并发 |
 | QAM-06-004 | P2 | `open` | blob save 后 DB create 无补偿，形成孤儿资源债务（E2） | QAM-06 upload lifecycle | QAM-09 volume/OSS 运维 |
 | QAM-06-006 | P2 | `open` | Atlas connection 缺少反向 pair 约束（E2） | QAM-06 connection Route/schema | 无 |
-| QAM-06-008 | P2 | `open` | Atlas SSE 初始 abort/await enqueue/800ms interval 无串行保护（E2） | QAM-06 Atlas stream lifecycle | QAM-09 Web 进程观测；QAM-02 Room stream 为独立实现 |
 
 ### 已解决问题
 
 | ID | Priority | 状态 | 解决证据 | 直接责任 | 关联责任 |
 | --- | --- | --- | --- | --- | --- |
+| QAM-06-008 | P2 | `resolved` | 按「退役弃用面」关闭：`/chat/[roomId]/atlas` 页面、`AtlasApp`、`/api/atlas/stream` 及其专属叶子全部删除，问题前提（活跃入口）不再成立；生产 Playwright 证明已认证下两个入口 404（含 `/api/atlas` 200 正向对照），并用真实上传 + 共享读取路由 + `/home` 解码证明退役不影响 Home；还原退役文件后守卫 1 failed/1 passed，共享路由改 404 后 Home 用例变红（E3） | QAM-06 Atlas stream lifecycle（已退役） | QAM-09 Web 进程观测；QAM-02 Room stream 为独立实现 |
 | QAM-06-005 | P2 | `resolved` | 上传按文件内容判定格式（magic bytes + EOI/IEND/RIFF 自洽），multipart 字段走统一 Zod form-data 边界且在读写存储之前；负向对照复现伪造 MIME 被接受、`File` 型 caption 500、非有限坐标与超长 caption 落库，修复后两条 Route 与适配层回归全绿，三种合法格式仍以判定 content type 保存/回读（E3） | QAM-06 storage/upload adapter | QAM-09 storage config |
 | QAM-06-007 | P2 | `resolved` | Home 编辑串行保存与确认删除；组件 14/14、PostgreSQL trigger 故障/重试 4/4、Chromium 四操作重试/reload 与 DB 一致，迟到响应不覆盖新状态（E3） | QAM-06 Home client state | QAM-05 首页组合 |
 | QAM-06-009 | P1 | `resolved` | 单一 Home spatial access predicate 约束 snapshot 与实际 element/connection 写；真实 PostgreSQL 负向对照复现 200/201/200 与持久副作用，修复后双 Room 1/1、真实载荷/HTTP 旅程通过，非成员统一 404 且数据库不变（E3） | QAM-06 Home snapshot/access | QAM-05 Post visibility；QAM-02 RoomParticipant |
 | QAM-06-001 | P1 | `resolved` | Atlas element PATCH/DELETE 与 connection DELETE 使用 board-scoped 条件写；真实 PostgreSQL Route Handler 回归证明 Home anchor/布局/连接/Post 保留，global mutation 正常（E3） | QAM-06 Atlas mutation boundary | QAM-05 Post 生命周期 |
 | QAM-06-003 | P1 | `resolved` | Home 最终拖动 PATCH 按元素串行、只保留最新目标；503/网络失败显示可访问错误并可重试，两个独立 Home snapshot 进程最终读取相同 PostgreSQL 坐标（E3） | QAM-06 drag/persistence protocol | QAM-09 多实例拓扑 |
 
-Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追踪；QAM-02-006 只覆盖 Room stream 的 interval 重入。两者概念相似但不是共享实现，修复 QAM-02-006 时不会自动修复 [`app/api/atlas/stream/route.ts`](../../app/api/atlas/stream/route.ts#L23-L103)。
+**QAM-06-008**（Atlas SSE 的 abort/interval 重入与乱序）已于 2026-09-21 随弃用面退役关闭：`app/api/atlas/stream/route.ts` 与渲染它的 `/chat/[roomId]/atlas` 页面都已删除，因此该风险不再有代码载体。QAM-02-006 记录的 Room stream 是独立实现，两者概念相似但不是共享实现，本次退役没有触及 Room stream，也不构成对它的修复证据。
 
 ### 复审触发条件
 
 - 修改 Atlas/Home board Route、`AtlasElement`/`AtlasConnection` schema 或迁移、global/home board service、Post/anchor 生命周期或上传/读取 key contract。
 - 修改 `getPostVisibilityWhere()`、`agent_log.roomId`/RoomParticipant 语义、Home spatial predicate、initial snapshot 或 Home element/connection Route 时，必须复跑 QAM-06-009 的双 Room 可见性与 mutation 授权回归；只证明 `props.posts` 已过滤不能维持 resolved 结论。
-- 修改 Atlas SSE、optimistic reconciliation、drag cache、Home mutation 状态、storage adapter 或 Web 多实例部署方式。
+- 修改 drag cache、Home mutation 状态、storage adapter 或 Web 多实例部署方式。（Atlas SSE 与 optimistic reconciliation 已随弃用面退役，不再是可修改对象；若有人重新引入它们，属于新的待评审面。）
 - 修改 `validateAtlasImageFile`/`validateAtlasImageContent`/`detectAtlasImageFormat`、允许格式清单、`ATLAS_MAX_FILE_SIZE`、`homeUploadFieldsSchema`/`atlasUploadFieldsSchema` 或 caption 归一化语义时，必须复跑本条 resolved 结论的负向对照（伪造 MIME、截断图片、非有限坐标、非字符串与超长 caption、合法三格式 content type）。把校验从「magic bytes + 结构完整性」提升为「完整可解码」同样属于本触发条件，`JPEG_HEADER_ONLY_WITH_EOI` 用例是当前边界的锚点。
 - 完成 QAM-06-002 的并发建板或 QAM-06-004 的 DB/blob 故障验证；若修改 Home 拖动队列/元素 PATCH，复跑 QAM-06-003 的失败、串行与跨进程收敛回归；若修改 legacy Atlas mutation 条件，复跑 QAM-06-001 的真实 PostgreSQL 跨 board 回归。
-- 修改或修复 QAM-06-008 后，重新执行 Atlas stream 的 abort、慢查询重入、乱序和 controller close 验收；QAM-02-006 的 Room SSE 测试不能代替 Atlas 验证。
+- QAM-06-008 已随弃用面退役（2026-09-21），不再有对应的 Route 可改；若 `/api/atlas/stream` 或 `/chat/[roomId]/atlas` 被重新引入，守卫用例 [`authenticated.spec.ts`](../../tests/e2e/authenticated.spec.ts) 会立刻变红，此时必须按「新增产品入口」重新评审——包括这里原先要求的 abort、慢查询重入、乱序和 controller close 验收，且 QAM-02-006 的 Room SSE 测试不能代替 Atlas 验证。
 
 ### 只追加评分历史
 
@@ -243,5 +247,7 @@ Atlas SSE 的独立 abort/interval 重入与乱序风险由 **QAM-06-008** 追�
 | 2026-09-12 | 74 | L2 | L2 | L2 | `+9（QAM-06-009 resolved）` | 单一 Home spatial predicate 复用 Post/Room 可见性并约束 snapshot、connection 两端和实际 element/connection 写。未修复 PostgreSQL 负向对照 0/1：隐藏 ID 可见，PATCH/POST/DELETE 为 200/201/200，坐标与连接发生持久变化；修复后同场景 1/1、真实浏览器载荷/HTTP 旅程通过。`npm run check:full` 单次退出 0：72/472 Vitest、production build/coverage、20/61 PostgreSQL、30/30 Playwright。 |
 | 2026-09-12 | 79 | L2 | L2 | L2 | `+5（QAM-06-007 resolved）` | Home 编辑/删除队列与显式失败重试，结构 +1、复用 +1、状态一致性 +1、健壮性 +2；旧组件 12/12 failed→扩展后 14/14 passed，真实 PostgreSQL 故障/重试 4/4，Chromium 指针/键盘四操作重试与刷新记录一致。完整门禁 exit 0：73/496 Vitest、production build/coverage、24/75 PostgreSQL、32/32 Playwright；其余五个 P2 与 Gate L2 保持。 |
 | 2026-09-20 | 81 | L3 | L2 | L2 | `+2（QAM-06-005 resolved）` | 上传可信来源由请求元数据 `File.type` 改为文件内容（magic bytes + EOI/IEND/RIFF 长度自洽），落库扩展名与回读 content type 取判定结果；multipart 字段收敛到共享 Zod form-data 边界且前置于读字节与写存储，400 路径不落 blob、不建记录；`AtlasImageValidationError` 使拒绝稳定映射 400。接口与依赖关系 8→9、安全与隐私 7→8；可测试性与验证可信度保持 7/8（Atlas SSE、首次建板与 DB/blob 补偿仍缺风险匹配验证），Gate 因此仍为 L2，`Final = min(L3, L2) = L2`。定向回归旧实现 18 failed/29 passed（伪造 MIME 被接受并调用 save、`File` 型 caption 触发 `.trim is not a function` 的 500、`Infinity`/`NaN`/`1e999` 坐标与 201 字符 caption 落库）→ 修复后 48/48；fixture 由 `sharp` 生成并回读验证可解码。`npm run check:full` 单次 exit 0：85 文件 Vitest（750/751）、production build、覆盖率 53.06/46.97/57.64/53.78、32 文件/126 项真实 PostgreSQL、44/44 生产 Playwright；收尾 `./init.sh` exit 0、85/751。 |
+
+| 2026-09-21 | 81 | L3 | L2 | L2 | `0（QAM-06-008 退役关闭；未重新评分）` | 按用户确认的「`/atlas` 页已弃用、画布功能已嵌入 `/home`」重新评估 QAM-06-008：该 SSE Route 的唯一消费者 `AtlasApp` 只被无导航入口的 `/chat/[roomId]/atlas` 渲染，Home 走服务端快照 + `/api/home-board/*`、不消费该流，因此问题前提（活跃入口）不成立。删除退役范围内的 6 个文件与只服务于该流的两个类型导出，保留 Home 依赖的 `/api/atlas/uploads/[filename]` 读取路由、`components/atlas/types.ts` 与 `lib/storage/atlas-storage.ts`。新增两条生产 Playwright 守卫：已认证下 `/api/atlas/stream` 与 `/chat/<roomId>/atlas` 均 404（`/api/atlas` 200 + `boardId=atlas-global-board` 作正向对照，同时证明会话已认证），以及真实上传 → 共享读取路由逐字节回读 → `/home` 浏览器真实解码（`naturalWidth === 1`）→ Home 元素 PATCH 落库。灵敏度对照：按 HEAD 还原 6 个退役文件后守卫 `1 failed \| 1 passed`（响应为 `200 OK` + `text/event-stream`），把共享读取路由改为 404 后 Home 用例在 `:1718` 变红（`Expected: 200 / Received: 404`），两处均按 sha256 还原比对一致。**本轮只登记关闭与事实同步，未重新评分**：开放 P2 由 4 降为 3，Score/Gate/Final 维持 81/L3、L2/L2；健壮性与性能两个维度中引用 SSE 生命周期的扣分理由已失效，留待下一次完整复审重算。`npm run check:full` 单次 exit 0（见 progress.md#feat-078）。 |
 
 复审时保留上述稳定 ID 和历史行；仅在当前代码或风险匹配证据变化时重算受影响维度，并重新核对 100 分合计、Gate 与 Final。

@@ -9,6 +9,7 @@ import { expect, request as playwrightRequest, test, type Locator } from "@playw
 
 import type { ChatMessage, RoomSnapshot } from "@/components/chat/types";
 import { cancelOnlyPlan, scheduleClarificationPrompt } from "@/tests/fixtures/schedule-clarification";
+import { MINIMAL_PNG } from "@/tests/fixtures/image-bytes";
 
 import { E2E_PASSWORD, E2E_USERS } from "./support/credentials";
 import { startStudyFocus, stopStudyFocus, withStudyUser } from "./support/study";
@@ -1579,6 +1580,67 @@ test("编辑器提交纯空白正文时显示错误横幅并停在编辑页，�
   }
 });
 
+test("编辑器遇到数据库异常时只显示通用文案且不跳转", async ({ baseURL, page }) => {
+  test.setTimeout(90_000);
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required for the Post editor error contract");
+  }
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const suffix = Date.now().toString(36);
+  const failingTitle = `错误脱敏 ${suffix}`;
+  const contrastTitle = `错误脱敏对照 ${suffix}`;
+
+  // 只让带哨兵标题的那一行 INSERT 失败：触发器带 WHEN 条件，绝不影响同库上其它 Post 写入。
+  // 注入的是真实 PostgreSQL 拒绝，消息里带约束名，正是最容易被原样透给客户端的文本。
+  await db.$executeRawUnsafe(`
+    CREATE FUNCTION fail_probe_post_insert() RETURNS trigger AS $$
+    BEGIN
+      RAISE EXCEPTION 'duplicate key value violates unique constraint "Post_probe_key"';
+    END;
+    $$ LANGUAGE plpgsql
+  `);
+  await db.$executeRawUnsafe(`
+    CREATE TRIGGER fail_probe_post_insert BEFORE INSERT ON "Post"
+    FOR EACH ROW WHEN (NEW."title" = '${failingTitle}')
+    EXECUTE FUNCTION fail_probe_post_insert()
+  `);
+
+  try {
+    await page.goto("/posts/new");
+    await page.getByLabel("Post title", { exact: true }).fill(failingTitle);
+    await page.getByLabel("Post content", { exact: true }).fill("正文");
+    await page.getByRole("button", { name: "Publish", exact: true }).click();
+
+    const banner = page.getByText("Internal server error", { exact: true });
+    await expect(banner).toBeVisible();
+    await expect(page).toHaveURL(/\/posts\/new$/);
+
+    // 失败原因是服务端实现细节：横幅、可见页面与文档文本都不得出现约束名或数据库原文。
+    for (const leaked of ["Post_probe_key", "Unique constraint", "duplicate key value", "PrismaClient", "\n    at "]) {
+      expect(await banner.innerText()).not.toContain(leaked);
+      expect(await page.locator("body").innerText()).not.toContain(leaked);
+    }
+    expect(await db.post.count({ where: { title: failingTitle } })).toBe(0);
+
+    // 对照步骤：同一个编辑器与写入路径，换成不触发注入的标题必须真正发布并跳转，
+    // 证明上面的失败来自注入的数据库异常，而不是「提交永远不生效」的假阳性。
+    await page.getByLabel("Post title", { exact: true }).fill(contrastTitle);
+    await page.getByRole("button", { name: "Publish", exact: true }).click();
+    // 必须排除 /posts/new：`/posts/[^/]+$` 会把当前页面也算命中，断言会立刻通过、
+    // 失去同步点，后面的行数检查就会与仍在飞行的写入竞争。
+    await expect(page).toHaveURL(/\/posts\/(?!new$)[^/]+$/, { timeout: 15_000 });
+    expect(await db.post.count({ where: { title: contrastTitle } })).toBe(1);
+  } finally {
+    await page.goto("about:blank").catch(() => undefined);
+    await db.$executeRawUnsafe('DROP TRIGGER IF EXISTS fail_probe_post_insert ON "Post"');
+    await db.$executeRawUnsafe("DROP FUNCTION IF EXISTS fail_probe_post_insert()");
+    await db.post.deleteMany({ where: { title: { in: [failingTitle, contrastTitle] } } });
+    await db.$disconnect();
+  }
+});
+
 test("keeps the Home navigation sticky above the scrollable felt board", async ({ page }) => {
   test.setTimeout(120_000);
   // 回归对象：SiteNav 在 /home 上必须吸顶。页面容器 .home-linen-page 一旦是粘性元素的
@@ -1673,6 +1735,110 @@ test("keeps the Home navigation sticky above the scrollable felt board", async (
   } finally {
     await db.atlasElement.deleteMany({ where: { id: photoId } });
     await db.post.deleteMany({ where: { id: { in: postIds } } });
+    await db.$disconnect();
+  }
+});
+
+test("keeps the Home board working on the Atlas surface it still shares", async ({ page, baseURL }) => {
+  test.setTimeout(120_000);
+  if (!baseURL) {
+    throw new Error("Playwright baseURL is required for the Home shared-surface journey");
+  }
+  // 回归对象：退役 `/atlas` 页面与其 SSE 传输（feat-078）时，Home 与它共享的运行时面必须原样可用——
+  // 共享的是 `/api/atlas/uploads/[filename]` 读取路由与 atlas-storage 适配层，Home 照片的
+  // `<img src>` 正是这条读取路由。只断言「/home 返回 200」抓不到这条路径断掉：照片仍会渲染成
+  // 破图。这里走完整旅程：真实上传字节 → 记录返回的 imageUrl → 该 URL 读回同一份字节 →
+  // /home 中浏览器真实解码成图。
+  await page.setViewportSize({ width: 1600, height: 1000 });
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const suffix = Date.now().toString(36);
+  const caption = `退役后共享面照片 ${suffix}`;
+  const photoElement = () =>
+    page.locator("[data-home-photo]").filter({ has: page.getByRole("img", { name: caption, exact: true }) });
+
+  try {
+    const user = await db.user.findUniqueOrThrow({ where: { email: E2E_USERS[0].email } });
+    await db.atlasBoard.upsert({ where: { id: "home-board" }, update: {}, create: { id: "home-board" } });
+
+    const uploadResponse = await page.request.post("/api/home-board/uploads", {
+      headers: { origin: baseURL },
+      multipart: {
+        file: { name: "home-photo.png", mimeType: "image/png", buffer: MINIMAL_PNG },
+        x: "24", y: "80", caption, width: "240", height: "180",
+      },
+    });
+    expect(uploadResponse.status()).toBe(201);
+    const uploaded = (await uploadResponse.json()) as { element: { id: string; imageUrl: string } };
+    // 共享面就在这里：Home 的上传路由把图片写进 atlas-storage，回读 URL 指向 atlas 读取路由。
+    expect(uploaded.element.imageUrl.startsWith("/api/atlas/uploads/")).toBe(true);
+
+    // 读回同一份字节：状态、内容类型与字节都必须是真实图片，而不是任何错误页。
+    const readResponse = await page.request.get(uploaded.element.imageUrl);
+    expect(readResponse.status()).toBe(200);
+    expect(readResponse.headers()["content-type"]).toBe("image/png");
+    expect(Buffer.compare(await readResponse.body(), MINIMAL_PNG)).toBe(0);
+
+    await page.goto("/home");
+    await expect(photoElement()).toBeVisible();
+    // naturalWidth 是「浏览器真的解码了这份字节」的判据：读取路由返回错误页或截断内容时，
+    // 元素仍在 DOM 里可见（alt 文本），但解码宽度为 0。
+    await expect.poll(() => photoElement().locator("img").evaluate((img) => (img as HTMLImageElement).naturalWidth))
+      .toBe(1);
+
+    // 共享面之外的 Home 写入路径同样不受退役影响：拖动位置仍能落库并回读。
+    const moved = await page.request.patch(`/api/home-board/elements/${uploaded.element.id}`, {
+      headers: { origin: baseURL },
+      data: { x: 320 },
+    });
+    expect(moved.status()).toBe(200);
+    await expect.poll(async () =>
+      (await db.atlasElement.findUniqueOrThrow({ where: { id: uploaded.element.id } })).x
+    ).toBe(320);
+  } finally {
+    await db.atlasElement.deleteMany({ where: { caption } });
+    await db.$disconnect();
+  }
+});
+
+test("keeps the retired Atlas page and its SSE transport unreachable", async ({ page }) => {
+  test.setTimeout(120_000);
+  // 回归对象：`/chat/[roomId]/atlas` 页面与 `/api/atlas/stream` 传输已于 2026-09-21 退役
+  // （feat-078，来源 QAM-06-008）——该页无任何导航入口，其 SSE 路由每放弃一条连接就泄漏
+  // 一个永久轮询。这条用例守住「不再可达」：重新引入任一入口都会让它变红。
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const roomId = `e2e-atlas-retired-${Date.now().toString(36)}`;
+
+  try {
+    const viewer = await db.user.findUniqueOrThrow({ where: { email: E2E_USERS[0].email } });
+    // 必须是真实房间：退役前这个 URL 会渲染出画布页，404 才有意义。
+    await db.room.create({ data: {
+      id: roomId, slug: roomId, name: "退役画布回归",
+      participants: { create: { userId: viewer.id, role: "owner" } },
+    } });
+
+    // 传输面：已认证请求也必须是 404。若被重新引入且仍在流式输出，这里会有界超时失败，
+    // 而不是一直挂着——守卫的失败必须是快的、可读的。
+    const streamResponse = await page.request.get("/api/atlas/stream", { timeout: 15_000 });
+    expect(streamResponse.status()).toBe(404);
+
+    // 页面面：退役的路由不再渲染。
+    const pageResponse = await page.request.get(`/chat/${roomId}/atlas`);
+    expect(pageResponse.status()).toBe(404);
+
+    // 正向对照（同时证明会话确实已认证）：被保留的 Atlas API 子树仍在服务。没有它，
+    // 「整棵 /api/atlas 子树挂掉」也会让上面的 404 通过；未认证时这里会得到 401。
+    const boardResponse = await page.request.get("/api/atlas");
+    expect(boardResponse.status()).toBe(200);
+    expect(await boardResponse.json()).toMatchObject({ boardId: "atlas-global-board" });
+
+    // 正向对照：接替它的产品面（Home 空间毡板）仍然可达。
+    expect((await page.goto("/home"))?.status()).toBe(200);
+  } finally {
+    await db.room.deleteMany({ where: { id: roomId } });
     await db.$disconnect();
   }
 });

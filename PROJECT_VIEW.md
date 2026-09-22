@@ -521,7 +521,7 @@ flowchart LR
 
 - 固定 `atlas-global-board` 的 Atlas 便签、照片、连接、清空和 viewport 查询。
 - 固定 `home-board` 的 Post 锚点、照片、允许的连接类型和空间布局。
-- Atlas 高频 SSE、optimistic operation reconciliation 和拖动位置快速缓存。
+- Atlas 拖动位置快速缓存。
 - 首页空间层的 anchor registration、照片拖放/缩放/标题和连线交互。
 - 图片类型/大小/对象 key 校验，local filesystem / Aliyun OSS save/read/delete adapter。
 - 受认证的图片读取以及数据库记录删除后的 best-effort blob cleanup。
@@ -534,9 +534,9 @@ flowchart LR
 
 **Interfaces**
 
-- HTTP：`/api/atlas`、`elements`、`connections`、`drag`、`stream`、`uploads[/filename]`；`/api/home-board/elements/:id`、`connections`、`uploads`。
-- 页面/UI：`/chat/:roomId/atlas`、`AtlasApp`、`AtlasCanvas`、`HomeTimelineBoard`、`HomeSpatialLayer`。
-- 服务接口：`getOrCreateBoard()`、`getOrCreateHomeBoard()`、`ensureHomePostElements()`、`reconcileOps()`、`getAtlasStorage()`。
+- HTTP：`/api/atlas`、`elements`、`connections`、`drag`、`uploads[/filename]`；`/api/home-board/elements/:id`、`connections`、`uploads`。
+- 页面/UI：`AtlasCanvas`、`HomeTimelineBoard`、`HomeSpatialLayer`。
+- 服务接口：`getOrCreateBoard()`、`getOrCreateHomeBoard()`、`ensureHomePostElements()`、`getAtlasStorage()`。
 - Storage contract：`AtlasStorage.save/read/delete()`。
 
 **Owned Data / State**
@@ -544,7 +544,7 @@ flowchart LR
 - Prisma：`AtlasBoard`、`AtlasElement`、`AtlasConnection`；`AtlasElement.postId` 同时关联 QAM-05。
 - 外部资源：Aliyun OSS objects 或 `ATLAS_UPLOAD_DIR` 下的本地文件。
 - 进程内：Atlas drag position cache、storage provider/client cache。
-- 客户端：viewport、active drags、optimistic ops、anchors、connect mode、modal/context menu 和 SSE reconnect state。
+- 客户端：Home 毡板的 anchors、board rect、connect mode、context menu 与 upload modal 状态。
 
 **Dependencies**
 
@@ -563,16 +563,15 @@ flowchart LR
 - Global Atlas board domain。
 - Home spatial board domain。
 - Element/connection persistence。
-- Drag cache 和 optimistic reconciliation。
-- Atlas SSE transport。
+- Drag cache。
 - Media validation、key normalization 和 storage adapters。
 
 **Code Mapping**
 
 - Directories：`app/api/atlas/`、`app/api/home-board/`、`components/atlas/`、`components/home/`、`lib/storage/`。
-- Files：`lib/atlas-board.ts`、`lib/home-board.ts`、`lib/home-spatial.ts`、`lib/atlas-drag-cache.ts`、`lib/atlas-reconcile.ts`、`app/chat/[roomId]/atlas/page.tsx`、`app/home/page.tsx`（共享）。
-- Entry points：Atlas/Home-board Route Handlers、`AtlasApp`、`HomeTimelineBoard`、`getAtlasStorage()`。
-- Important types：`AtlasBoardSnapshot`、`AtlasElementData`、`AtlasConnectionData`、`OptimisticOp`、`HomeSpatialElementData`、`AtlasStorage`，Prisma `AtlasBoard` / `AtlasElement` / `AtlasConnection`。
+- Files：`lib/atlas-board.ts`、`lib/home-board.ts`、`lib/home-spatial.ts`、`lib/atlas-drag-cache.ts`、`app/home/page.tsx`（共享）。
+- Entry points：Atlas/Home-board Route Handlers、`HomeTimelineBoard`、`getAtlasStorage()`。
+- Important types：`AtlasElementData`、`AtlasConnectionData`、`HomeSpatialElementData`、`AtlasStorage`，Prisma `AtlasBoard` / `AtlasElement` / `AtlasConnection`。
 - Tests：`tests/lib/atlas-*.test.ts`、`home-board.test.ts`、`home-spatial.test.ts`、`tests/server/atlas-storage-routes.test.ts`、`home-board-routes.test.ts`、`tests/component/atlas-canvas.test.tsx`。
 
 **Main Change Drivers**

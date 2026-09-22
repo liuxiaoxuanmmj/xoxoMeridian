@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 
-import { env } from "@/lib/env";
+import { INTERNAL_ERROR_MESSAGE, logInternalError } from "@/lib/internal-error";
 import { ValidationError } from "@/lib/validation";
 
 export function jsonOk<T>(data: T, init?: ResponseInit) {
@@ -32,15 +32,9 @@ export function errorToResponse(error: unknown) {
     );
   }
 
-  const isProd = env.NODE_ENV === "production";
-  const message = error instanceof Error ? error.message : String(error);
-  const stack = error instanceof Error ? error.stack : undefined;
+  // 未被识别的异常一律收敛为通用文案：开发与生产返回同一响应，
+  // 原始 message、表名、约束名与 stack 只进入带关联标识的受控日志。
+  logInternalError("api", error);
 
-  console.error("[api] unhandled error:", message, stack);
-
-  if (isProd) {
-    return jsonError("Internal server error", 500);
-  }
-
-  return jsonError(message, 500);
+  return jsonError(INTERNAL_ERROR_MESSAGE, 500);
 }

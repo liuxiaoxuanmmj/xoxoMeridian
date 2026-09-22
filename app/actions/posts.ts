@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import type { Prisma } from "@prisma/client";
 
 import { getCurrentUser } from "@/lib/auth";
+import { INTERNAL_ERROR_MESSAGE, logInternalError } from "@/lib/internal-error";
 import { prisma } from "@/lib/prisma";
 import { generateSlug, snapshotProfileLocation, writePostWithUniqueSlug } from "@/lib/posts";
 import {
@@ -17,10 +18,11 @@ import {
 type PostResult = { id: string; slug: string; title: string };
 type ActionResult<T> = { error: string } | T;
 
+// 非预期异常对编辑器只呈现稳定文案：Error.message 是服务端实现细节，
+// 既不随开发/生产变化，也不把 Prisma、provider 或 stack 文本交给客户端。
 function serverError(err: unknown, ctx: string): { error: string } {
-  const message = err instanceof Error ? err.message : String(err);
-  console.error(`[${ctx}]`, message, err instanceof Error ? err.stack : "");
-  return { error: `Server error: ${message}` };
+  logInternalError(ctx, err);
+  return { error: INTERNAL_ERROR_MESSAGE };
 }
 
 // 验证失败是稳定的用户可见文案；其余内部异常仍交给 serverError 处理。

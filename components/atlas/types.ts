@@ -20,17 +20,3 @@ export type AtlasConnectionData = {
   toId: string;
   color: string;
 };
-
-export type AtlasBoardSnapshot = {
-  boardId: string;
-  elements: AtlasElementData[];
-  connections: AtlasConnectionData[];
-};
-
-export type OptimisticOp =
-  | { type: "add"; id: string; element: AtlasElementData; ts: number }
-  | { type: "update"; id: string; patch: Partial<AtlasElementData>; ts: number }
-  | { type: "delete"; id: string; ts: number }
-  | { type: "drag"; id: string; x: number; y: number; ts: number }
-  | { type: "addConn"; id: string; connection: AtlasConnectionData; ts: number }
-  | { type: "deleteConn"; id: string; ts: number };

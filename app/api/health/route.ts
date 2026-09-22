@@ -1,6 +1,6 @@
 import { jsonOk } from "@/lib/api";
+import { logInternalError } from "@/lib/internal-error";
 import { prisma } from "@/lib/prisma";
-import { env } from "@/lib/env";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -14,13 +14,10 @@ export async function GET() {
     await prisma.$queryRaw`SELECT 1`;
     dbOk = true;
   } catch (error) {
-    // In production, hide internal error details to prevent information leakage
-    if (env.NODE_ENV === "production") {
-      dbError = "database unavailable";
-      console.error("[Health] Database error:", error);
-    } else {
-      dbError = error instanceof Error ? error.message : String(error);
-    }
+    // 与其余错误响应同一契约：客户端只得到稳定文案，数据库原因与关联标识只进受控日志，
+    // 且不随 NODE_ENV 变化（探测方在开发机与线上看到同一种响应）。
+    dbError = "database unavailable";
+    logInternalError("health", error);
   }
 
   return jsonOk(
