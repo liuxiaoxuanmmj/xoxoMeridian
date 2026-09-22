@@ -757,7 +757,8 @@ test("两位用户的私聊持久隔离，关闭后任务完成、重新打开�
     await approve.click();
     expect((await approved).status()).toBe(200);
     await runPrivateTask(approvalSend.task.id, databaseUrl);
-    await expect(page.getByRole("dialog").getByText("这条私人备忘录已经删除。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("备忘录已删除。", { exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").getByText("这条私人备忘录已经删除。", { exact: true })).toHaveCount(0);
     expect(await db.memo.findUnique({ where: { id: memo.id } })).toBeNull();
     await page.reload();
     await openDialog(page);

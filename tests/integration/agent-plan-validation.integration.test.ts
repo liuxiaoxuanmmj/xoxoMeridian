@@ -240,7 +240,7 @@ describe("Agent plan validation before any durable Tool execution", () => {
   it("replays a valid completed Tool and preserves the remaining calls and requester", async () => {
     const plan = {
       ...validPlan,
-      toolInputs: { "memo.create": [{ content: "第一条" }, { content: "第二条" }] }
+      toolInputs: { "memo.create": [{ title: "首条备忘", content: "第一条" }, { title: "后续备忘", content: "第二条" }] }
     };
     const data = await fixture();
     const lease = await checkpoint(data, plan);
@@ -254,7 +254,8 @@ describe("Agent plan validation before any durable Tool execution", () => {
     });
     await expireLease(data.task.id);
     await expect(runAgentTask(data.task.id)).resolves.toMatchObject({
-      status: "completed", attemptCount: 2, finalMessage: { content: "备忘录已保存：新的备忘录。" }
+      status: "completed", attemptCount: 2,
+      finalMessage: { content: "备忘录已保存：首条备忘。\n\n备忘录已保存：后续备忘。" }
     });
     const memos = await prisma.memo.findMany({ orderBy: { createdAt: "asc" } });
     expect(memos.map((memo) => ({ content: memo.content, createdById: memo.createdById }))).toEqual([

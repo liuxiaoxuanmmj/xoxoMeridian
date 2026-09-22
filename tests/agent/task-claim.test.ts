@@ -146,6 +146,7 @@ describe("runAgentTask claim handling", () => {
     };
     const task = {
       id: "task-2",
+      createdAt: new Date("2026-08-30T00:00:00Z"),
       roomId: "room-1",
       agentId: "agent-1",
       requestedById: "user-1",
@@ -221,6 +222,7 @@ describe("runAgentTask semantic clarification", () => {
     });
     mocks.findUnique.mockResolvedValue({
       id: "task-clarify", roomId: "room-1", agentId: "agent-1", requestedById: null,
+      createdAt: new Date("2026-09-13T00:00:00Z"),
       input: { normalizedContent: scheduleClarificationPrompt },
       plan: null, agent: { systemPrompt: null }
     });
@@ -280,6 +282,7 @@ describe("runAgentTask semantic clarification", () => {
   it("preserves a normal zero-Tool reply without retrying or asking for clarification", async () => {
     mocks.findUnique.mockResolvedValue({
       id: "task-clarify", roomId: "room-1", agentId: "agent-1", requestedById: null,
+      createdAt: new Date("2026-09-13T00:00:00Z"),
       input: { normalizedContent: "你好" }, plan: null, agent: { systemPrompt: null }
     });
     planner.mockResolvedValue({

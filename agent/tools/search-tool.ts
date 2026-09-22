@@ -1,3 +1,4 @@
+import { searchInputSchema } from "@/agent/tool-contracts";
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 
@@ -5,14 +6,21 @@ type SearchInput = {
   query: string;
   maxResults?: number;
   searchDepth?: "basic" | "advanced";
+  topic?: "general" | "news";
+  timeRange?: "day" | "week" | "month" | "year";
+  startDate?: string;
+  endDate?: string;
+  includeDomains?: string[];
 };
+
+type SearchConstraints = Omit<SearchInput, "query" | "maxResults" | "searchDepth">;
 
 type TavilySearchResult = {
   title: string;
   url: string;
   content: string;
   score: number;
-  published_date?: string;
+  published_date?: string | null;
 };
 
 type TavilyResponse = {
@@ -26,12 +34,18 @@ export type SearchOutput = {
   provider: "tavily" | "mock";
   query: string;
   answer?: string;
+  availability: "available" | "unavailable";
+  fetchedAt: string;
+  constraints?: SearchConstraints;
   results: Array<{
     title: string;
     url: string;
     content: string;
     score: number;
-    publishedDate?: string;
+    publishedDate: string | null;
+    dateStatus: "known" | "unknown";
+    dateMeaning: "published_or_updated";
+    fetchedAt: string;
   }>;
   responseTime?: number;
   fallbackReason?: string;
@@ -48,8 +62,10 @@ export async function fetchSearchResults(
   query: string,
   maxResults = 5,
   searchDepth: "basic" | "advanced" = "basic",
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  constraints: SearchConstraints = {}
 ): Promise<SearchOutput> {
+  if (signal?.aborted) throw signal.reason ?? new Error("Search request aborted.");
   let trimmedQuery = query.trim();
   if (!trimmedQuery) {
     throw new Error("Search query is required.");
@@ -60,26 +76,33 @@ export async function fetchSearchResults(
     trimmedQuery = trimmedQuery.slice(0, 400);
   }
 
+  const {
+    query: normalizedQuery,
+    maxResults: normalizedMaxResults = 5,
+    searchDepth: normalizedSearchDepth = "basic",
+    ...normalizedConstraints
+  } = searchInputSchema.parse({ query: trimmedQuery, maxResults: Math.min(maxResults, 10), searchDepth, ...constraints });
   const apiKey = process.env.TAVILY_API_KEY ?? "";
 
   if (!apiKey) {
     console.warn("[web.search] using mock — TAVILY_API_KEY is empty");
-    return mockSearch(trimmedQuery, "TAVILY_API_KEY missing");
+    return mockSearch(normalizedQuery, "TAVILY_API_KEY missing", normalizedConstraints);
   }
 
   try {
     return await callTavilyAPI(
-      trimmedQuery,
-      Math.min(maxResults, 10),
-      searchDepth,
+      normalizedQuery,
+      normalizedMaxResults,
+      normalizedSearchDepth,
       apiKey,
-      signal
+      signal,
+      normalizedConstraints
     );
   } catch (error) {
     if (signal?.aborted) throw signal.reason ?? error;
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`[web.search] Tavily API call failed, falling back to mock: ${reason}`);
-    return mockSearch(trimmedQuery, reason);
+    return mockSearch(normalizedQuery, reason, normalizedConstraints);
   }
 }
 
@@ -92,7 +115,9 @@ export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
       "Search the web for real-time information using Tavily API. " +
       "**Use for**: breaking news, local recommendations (restaurants/events/attractions), " +
       "product info, fact-checking, time-sensitive content (exhibitions/movies/concerts). " +
-      "**DO NOT use for**: info already in memory/memos, weather (use weather.get), " +
+      "Use weather.get for ordinary weather; search official sources for typhoon warnings, marine restrictions, and dates outside weather coverage. " +
+      "Publication filters refer to when a page was published/updated, not future travel dates. Scores measure relevance, not reliability. " +
+      "**DO NOT use for**: info already in memory/memos, " +
       "personal data, scheduling (use schedule.create), or casual chat. " +
       "Falls back to mock when TAVILY_API_KEY is missing.",
     schema: {
@@ -117,49 +142,31 @@ export function createSearchTool(): AgentTool<SearchInput, SearchOutput> {
           description:
             "Search depth. 'basic' (default, 1 credit) for most cases, " +
             "'advanced' (2 credits) for deep research requiring higher relevance."
-        }
+        },
+        topic: { type: "string", enum: ["general", "news"], description: "Use news for recent events and warnings." },
+        timeRange: { type: "string", enum: ["day", "week", "month", "year"], description: "Publication/update window before now; do not combine with startDate/endDate." },
+        startDate: { type: "string", description: "Earliest publication/update date, YYYY-MM-DD. Not the travel date." },
+        endDate: { type: "string", description: "Latest publication/update date, YYYY-MM-DD." },
+        includeDomains: { type: "array", items: { type: "string" }, description: "Restrict to at most ten source domains, such as nmc.cn. Use bare domains, without paths or schemes." }
       }
     },
     async execute(input: SearchInput, context: ToolExecutionContext) {
-      const query = input.query?.trim() || "";
-      const maxResults = input.maxResults ?? 5;
-      const searchDepth = input.searchDepth ?? "basic";
-
-      return fetchSearchResults(query, maxResults, searchDepth, context.signal);
+      const { query, maxResults = 5, searchDepth = "basic", ...constraints } = searchInputSchema.parse(input);
+      return fetchSearchResults(query, maxResults, searchDepth, context.signal, constraints);
     }
   };
 }
 
-function mockSearch(query: string, fallbackReason?: string): SearchOutput {
+function mockSearch(query: string, fallbackReason?: string, constraints: SearchConstraints = {}): SearchOutput {
   return {
     provider: "mock",
+    availability: "unavailable",
     query,
-    answer: "这是模拟搜索结果。实际使用需要配置 TAVILY_API_KEY。",
-    results: [
-      {
-        title: "示例结果 1",
-        url: "https://example.com/1",
-        content: "这是一个模拟的搜索结果内容。在配置 Tavily API key 后，这里会显示真实的搜索结果。",
-        score: 0.95
-      },
-      {
-        title: "示例结果 2",
-        url: "https://example.com/2",
-        content: "模拟搜索结果的第二条内容。",
-        score: 0.88
-      },
-      {
-        title: "示例结果 3",
-        url: "https://example.com/3",
-        content: "模拟搜索结果的第三条内容。",
-        score: 0.82
-      }
-    ],
+    fetchedAt: new Date().toISOString(),
+    constraints,
+    results: [],
     fallbackReason,
-    _meta: {
-      totalResults: 3,
-      displayMode: "inline"
-    }
+    _meta: { totalResults: 0, displayMode: "inline" }
   };
 }
 
@@ -168,7 +175,8 @@ async function callTavilyAPI(
   maxResults: number,
   searchDepth: "basic" | "advanced",
   apiKey: string,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  constraints: SearchConstraints = {}
 ): Promise<SearchOutput> {
   const controller = signal ? null : new AbortController();
   const timeoutId = controller
@@ -188,9 +196,17 @@ async function callTavilyAPI(
         query,
         search_depth: searchDepth,
         max_results: maxResults,
-        include_answer: true,
+        include_answer: false,
+        include_published_date: true,
+        filter_by_published_date: false,
         include_images: false,
-        include_raw_content: false
+        include_raw_content: false,
+        topic: constraints.topic,
+        time_range: constraints.timeRange,
+        start_date: constraints.startDate,
+        end_date: constraints.endDate,
+        include_domains: constraints.includeDomains,
+        include_domains_mode: constraints.includeDomains ? "restrict" : undefined
       })
     });
 
@@ -212,17 +228,23 @@ async function callTavilyAPI(
 
     const data = (await response.json()) as TavilyResponse;
     const responseTime = (Date.now() - startTime) / 1000;
+    const fetchedAt = new Date().toISOString();
 
     return {
       provider: "tavily",
       query: data.query || query,
-      answer: data.answer,
+      availability: "available",
+      fetchedAt,
+      constraints,
       results: (data.results || []).map((r) => ({
         title: r.title,
         url: r.url,
         content: r.content,
         score: r.score,
-        publishedDate: r.published_date
+        publishedDate: r.published_date || null,
+        dateStatus: r.published_date && Number.isFinite(Date.parse(r.published_date)) ? "known" : "unknown",
+        dateMeaning: "published_or_updated",
+        fetchedAt
       })),
       responseTime,
       _meta: {

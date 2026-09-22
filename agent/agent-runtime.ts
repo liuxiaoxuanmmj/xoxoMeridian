@@ -1,11 +1,13 @@
 import type { Prisma } from "@prisma/client";
 
+import { renderEvidenceFallback } from "@/agent/answer-evidence";
 import { buildAgentContext } from "@/agent/context-builder";
 import {
   beginAgentStep,
   completeAgentStep,
   executeDurableToolStep,
-  AgentStepConflictError
+  AgentStepConflictError,
+  readStepOutput
 } from "@/agent/durable-step";
 import { runPostTaskHooks } from "@/agent/post-task";
 import { ExecutionTracer } from "@/agent/execution-tracer";
@@ -34,6 +36,8 @@ import { createToolRegistry, type ToolRegistry } from "@/agent/tool-registry";
 import type {
   AgentPlan,
   AgentTaskLeaseOwnership,
+  LLMAnswerRequest,
+  LLMAnswerResult,
   LLMPlanRequest,
   LLMPlanResult,
   LLMProvider,
@@ -86,6 +90,7 @@ export async function runAgentTask(
   });
   const tracer = new ExecutionTracer(prisma, task.id, task.roomId, lease);
   let budget: AgentRuntimeBudget | null = null;
+  let completedEvidence: LLMAnswerRequest | null = null;
 
   try {
     await tracer.markRunning(claim.claimedAt);
@@ -109,6 +114,7 @@ export async function runAgentTask(
 
     const registry = createToolRegistry();
     const prompt = getTaskPrompt(task.input);
+    const referenceTime = task.createdAt.toISOString();
     const trigger = getTaskTrigger(task.input);
     const allTools = registry.list().map((tool) => ({
       name: tool.name,
@@ -166,17 +172,20 @@ export async function runAgentTask(
       });
       const planRequest: LLMPlanRequest = {
         prompt,
+        referenceTime,
         roomContext: runtimeContext.roomContext,
         availableTools,
         agentSystemPrompt: task.agent.systemPrompt
       };
-      const planResult = await runBudgetedPlanCall({
+      const planResult = await runBudgetedModelCall({
         budget: runtimeBudget,
         provider,
+        call: (request: LLMPlanRequest) => provider.plan(request),
         request: planRequest,
         inputSummary: prompt.slice(0, 240),
         requestPayload: {
           prompt,
+          referenceTime,
           roomContext: runtimeContext.roomContext,
           availableTools: availableToolNames
         },
@@ -207,6 +216,7 @@ export async function runAgentTask(
         try {
           const retryRequest: LLMPlanRequest = {
             prompt,
+            referenceTime,
             roomContext: runtimeContext.roomContext,
             availableTools,
             agentSystemPrompt: task.agent.systemPrompt,
@@ -215,13 +225,15 @@ export async function runAgentTask(
               issues: formatIssuesForLLM(planIssues)
             }
           };
-          const retryResult = await runBudgetedPlanCall({
+          const retryResult = await runBudgetedModelCall({
             budget: runtimeBudget,
             provider,
+            call: (request: LLMPlanRequest) => provider.plan(request),
             request: retryRequest,
             inputSummary: `[retry] ${prompt.slice(0, 230)}`,
             requestPayload: {
               prompt,
+              referenceTime,
               roomContext: runtimeContext.roomContext,
               availableTools: availableToolNames,
               validationFeedback: {
@@ -299,19 +311,104 @@ export async function runAgentTask(
             agentId: task.agentId,
             requestedById: runtimeContext.roomContext.requestedById,
             runtimeContext,
+            referenceTime,
             tracer,
             lease,
             signal: runtimeBudget.signal,
             reserveToolCall: (reservation) => runtimeBudget.reserveToolCall(reservation)
           }
         });
-        toolResults.push(output);
+        toolResults.push({ ...output, input: arg, stepKey: `tool:${stepIndex}` });
       }
     }
 
+    const answerRequest: LLMAnswerRequest = {
+      prompt,
+      referenceTime,
+      roomContext: runtimeContext.roomContext,
+      agentSystemPrompt: task.agent.systemPrompt,
+      plan,
+      toolResults
+    };
+    completedEvidence = answerRequest;
     await heartbeat.assertActive();
     await runtimeBudget.assertCanFinalize();
-    const content = renderAgentReply(plan, toolResults);
+    let content = plan.finalResponseText.trim()
+      || "我已经把你的请求记下了，可以再补充一些细节让我更准确地帮到你。";
+    if (toolResults.length > 0) {
+      const needsSynthesis = plan.requiredTools.some((name) => (
+        registry.list().find((tool) => tool.name === name)?.effect !== "database-write"
+      ));
+      if (needsSynthesis) {
+        // plan 表示模型计算步骤；用独立 key 区分执行前规划和执行后综合，
+        // 复用既有枚举与恢复协议，避免只为内部阶段新增数据库迁移。
+        const checkpoint = await beginAgentStep({
+          taskId: task.id,
+          roomId: task.roomId,
+          lease,
+          stepKey: "synthesis",
+          kind: "plan",
+          stepInput: { prompt, referenceTime, toolResults }
+        });
+        let answer: { text: string; mode: "model" | "fallback" };
+        if (checkpoint.step.status === "completed") {
+          answer = readStepOutput(checkpoint.step.output, isPersistedAnswer, "synthesis");
+          await tracer.event("agent.synthesis.resumed", { mode: answer.mode });
+        } else {
+          const provider = createLLMProvider(registry);
+          answer = {
+            text: renderEvidenceFallback(answerRequest, "暂时无法综合查询结果"),
+            mode: "fallback"
+          };
+          if (provider.synthesize) {
+            await tracer.event("agent.synthesis.started", {
+              provider: provider.name,
+              model: provider.model,
+              resultCount: toolResults.length
+            });
+            try {
+              const synthesized = await runBudgetedModelCall({
+                budget: runtimeBudget,
+                provider,
+                call: (request: LLMAnswerRequest) => provider.synthesize!(request),
+                request: answerRequest,
+                inputSummary: `[synthesis] ${prompt.slice(0, 220)}`,
+                requestPayload: { phase: "synthesis", prompt, referenceTime, toolResults },
+                roomId: task.roomId,
+                taskId: task.id,
+                assertLease: heartbeat.assertActive
+              });
+              if (!synthesized.text?.trim()) throw new Error("Empty synthesized answer.");
+              answer = { text: synthesized.text.trim(), mode: "model" };
+            } catch (error) {
+              if (error instanceof AgentRuntimeBudgetExceededError
+                || error instanceof AgentTaskLeaseLostError) throw error;
+              await heartbeat.assertActive();
+              runtimeBudget.assertWithinDeadline();
+              await tracer.event("agent.synthesis.fallback", { reason: "provider_failed" });
+            }
+          } else {
+            await tracer.event("agent.synthesis.fallback", { reason: "provider_unsupported" });
+          }
+          await heartbeat.assertActive();
+          await runtimeBudget.assertCanFinalize();
+          await completeAgentStep({
+            taskId: task.id,
+            roomId: task.roomId,
+            lease,
+            stepKey: "synthesis",
+            output: answer
+          });
+          await tracer.event("agent.synthesis.completed", { mode: answer.mode });
+        }
+        content = answer.text;
+      } else {
+        // 纯写操作逐项确认实际结果，不把执行前的成功承诺当成事实。
+        content = renderEvidenceFallback(answerRequest);
+      }
+    }
+    await heartbeat.assertActive();
+    await runtimeBudget.assertCanFinalize();
     const result = { plan, toolResults };
     const finalCheckpoint = await beginAgentStep({
       taskId: task.id,
@@ -373,7 +470,10 @@ export async function runAgentTask(
     if (error instanceof AgentRuntimeBudgetExceededError) {
       let finalMessage;
       try {
-        const content = getBudgetLimitMessage(error.reason);
+        const content = getBudgetLimitMessage(error.reason)
+          + (completedEvidence?.toolResults.length
+            ? `\n\n${renderEvidenceFallback(completedEvidence, "综合预算不足")}`
+            : "");
         finalMessage = await tracer.limitExceededWithMessage(
           {
             roomId: task.roomId,
@@ -507,16 +607,20 @@ export async function runAgentTask(
   }
 }
 
-async function runBudgetedPlanCall(input: {
+async function runBudgetedModelCall<
+  Request extends LLMPlanRequest | LLMAnswerRequest,
+  Result extends LLMPlanResult | LLMAnswerResult
+>(input: {
   budget: AgentRuntimeBudget;
   provider: LLMProvider;
-  request: LLMPlanRequest;
+  request: Request;
+  call: (request: Request) => Promise<Result>;
   inputSummary: string;
   requestPayload: unknown;
   roomId: string;
   taskId: string;
   assertLease: () => Promise<void>;
-}): Promise<LLMPlanResult> {
+}): Promise<Result> {
   const reservation = await input.budget.reserveModelTurn({
     provider: input.provider.name,
     model: input.provider.model,
@@ -525,10 +629,10 @@ async function runBudgetedPlanCall(input: {
     requestPayload: input.requestPayload
   });
   const startedAt = Date.now();
-  let result: LLMPlanResult | null = null;
+  let result: Result | null = null;
   let completedLogAttempted = false;
   try {
-    result = await input.provider.plan({
+    result = await input.call({
       ...input.request,
       maxCompletionTokens: reservation.maxCompletionTokens,
       signal: input.budget.signal
@@ -561,7 +665,7 @@ async function runBudgetedPlanCall(input: {
         await appendCompletedLLMLog(input, result, startedAt);
       }
     } else {
-      const message = error instanceof Error ? error.message : "LLM planning failed";
+      const message = error instanceof Error ? error.message : "LLM call failed";
       await appendChatLog(input.roomId, {
         kind: "llm.call",
         taskId: input.taskId,
@@ -584,7 +688,7 @@ async function appendCompletedLLMLog(
     roomId: string;
     taskId: string;
   },
-  result: LLMPlanResult,
+  result: LLMPlanResult | LLMAnswerResult,
   startedAt: number
 ) {
   await appendChatLog(input.roomId, {
@@ -661,142 +765,9 @@ export function filterToolsForTrigger<T extends { name: string }>(
   return tools.filter((t) => !SCHEDULER_BLOCKED_TOOL_SET.has(t.name));
 }
 
-function renderAgentReply(plan: AgentPlan, toolResults: ToolResult[]) {
-  const byTool = new Map(toolResults.map((r) => [r.toolName, r]));
-
-  if (byTool.has("weather.get")) {
-    const output = byTool.get("weather.get")?.output as
-      | {
-          provider?: string;
-          city?: string;
-          condition?: string;
-          temperatureC?: number;
-          feelsLikeC?: number;
-          humidityPercent?: number;
-          wind?: { direction?: string; scale?: string };
-          forecast?: Array<{
-            date: string;
-            tempMinC?: number;
-            tempMaxC?: number;
-            textDay?: string;
-          }>;
-          advice?: string;
-        }
-      | undefined;
-
-    if (output?.provider === "qweather") {
-      const city = output.city ?? "对方那边";
-      const cond = output.condition ?? "未知";
-      const temp = output.temperatureC;
-      const feels = output.feelsLikeC;
-      const wind = output.wind?.direction && output.wind?.scale
-        ? `${output.wind.direction} ${output.wind.scale} 级`
-        : null;
-      const humidity = output.humidityPercent !== undefined ? `湿度 ${output.humidityPercent}%` : null;
-      const parts = [
-        `${city}现在${cond}，${temp !== undefined ? `${temp}°C` : "温度未知"}`,
-        feels !== undefined ? `体感 ${feels}°C` : null,
-        humidity,
-        wind
-      ].filter(Boolean);
-
-      let body = parts.join("，") + "。";
-      if (output.forecast && output.forecast.length > 0) {
-        const preview = output.forecast
-          .slice(0, 3)
-          .map(
-            (d) =>
-              `${d.date.slice(5)} ${d.textDay ?? ""} ${d.tempMinC ?? "--"}~${d.tempMaxC ?? "--"}°C`
-          )
-          .join("；");
-        body += `\n未来几天：${preview}。`;
-      }
-      if (output.advice) body += `\n${output.advice}`;
-      return body;
-    }
-
-    return `${output?.city ?? "对方那边"}现在天气：${output?.condition ?? "已查询"}，约 ${output?.temperatureC ?? "--"}°C。${
-      output?.advice ?? "出门前再看一眼实时天气会更稳。"
-    }`;
-  }
-
-  if (byTool.has("timezone.compare")) {
-    const output = byTool.get("timezone.compare")?.output as
-      | {
-          from?: { label?: string; time?: string };
-          to?: { label?: string; time?: string };
-          suggestion?: string;
-        }
-      | undefined;
-    return `${output?.from?.label ?? "你"}这边是 ${output?.from?.time ?? "当前时间未知"}；${
-      output?.to?.label ?? "对方"
-    }那边是 ${output?.to?.time ?? "当前时间未知"}。${output?.suggestion ?? ""}`;
-  }
-
-  if (byTool.has("memo.create")) {
-    const output = byTool.get("memo.create")?.output as { title?: string } | undefined;
-    return `备忘录已保存：${output?.title ?? "新的备忘录"}。`;
-  }
-
-  if (byTool.has("web.search")) {
-    const output = byTool.get("web.search")?.output as
-      | {
-          provider?: "tavily" | "mock";
-          query?: string;
-          answer?: string;
-          results?: Array<{
-            title: string;
-            url: string;
-            content: string;
-            score: number;
-            publishedDate?: string;
-          }>;
-          fallbackReason?: string;
-        }
-      | undefined;
-
-    if (!output) {
-      return plan.finalResponseText || "搜索完成。";
-    }
-
-    const parts: string[] = [];
-
-    // AI 摘要（如果有）
-    if (output.answer) {
-      parts.push(output.answer);
-    }
-
-    // 搜索结果列表
-    if (output.results && output.results.length > 0) {
-      const resultLines = output.results
-        .slice(0, 3) // 最多显示 3 条
-        .map((r, i) => {
-          const title = r.title || "无标题";
-          const snippet = r.content.slice(0, 80) + (r.content.length > 80 ? "..." : "");
-          const url = r.url;
-          // 为前端卡片展示预留：包含完整 URL，前端可以渲染为可点击链接
-          return `${i + 1}. ${title}\n   ${snippet}\n   ${url}`;
-        })
-        .join("\n\n");
-
-      if (output.answer) {
-        parts.push(`\n相关来源：\n${resultLines}`);
-      } else {
-        parts.push(`关于「${output.query}」的搜索结果：\n${resultLines}`);
-      }
-    }
-
-    // Mock 降级提示
-    if (output.provider === "mock" && output.fallbackReason) {
-      parts.push(`\n（注：当前使用模拟数据，原因：${output.fallbackReason}）`);
-    }
-
-    return parts.join("\n");
-  }
-
-  if (plan.finalResponseText) {
-    return plan.finalResponseText;
-  }
-
-  return "我已经把你的请求记下了，可以再补充一些细节让我更准确地帮到你。";
+function isPersistedAnswer(value: unknown): value is { text: string; mode: "model" | "fallback" } {
+  if (typeof value !== "object" || value === null) return false;
+  const answer = value as { text?: unknown; mode?: unknown };
+  return typeof answer.text === "string" && answer.text.trim().length > 0
+    && (answer.mode === "model" || answer.mode === "fallback");
 }

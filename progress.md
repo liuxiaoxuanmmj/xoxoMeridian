@@ -2,7 +2,8 @@
 
 ## Current State（当前状态）
 
-- Last Updated：2026-09-22。**feat-082「默认3D小人自由拖拽、位置停留与拖拽动作反馈」已完成（done）**；自由放置、浏览器记忆、动作台词与移动端弹窗恢复均实现并验证。feat-080/081成果保留，开发服务3000健康可验收；本次按用户要求将当前工作区修改纳入一个commit，未推送。
+- Last Updated：2026-09-22。**feat-083「修复 Agent 天气与搜索查询的证据质量和回答闭环」已完成，状态 done。** 共享 Runtime、工具证据和回归已实现；软件 WebGL 模式完整门禁 exit 0（915 项单元、162 项真实数据库、58 项生产浏览器）。实现、先前失败与验证边界见[方案第 8 节](docs/plan/2026-09-22-agent-tool-answer-quality.md#8-实施记录2026-09-22)。本轮未重新评分 QAM。
+- 上一交付（2026-09-22）：**feat-082「默认3D小人自由拖拽、位置停留与拖拽动作反馈」已完成（done）**；自由放置、浏览器记忆、动作台词与移动端弹窗恢复均实现并验证。feat-080/081成果保留，开发服务3000健康可验收；本次按用户要求将当前工作区修改纳入一个commit，未推送。
 
 - 上一实现轮（2026-09-22）：**feat-079**「修复 QAM-05-006 错误响应泄漏内部异常」已实现并置为 `done`（P2，依赖 feat-078 已满足，来源 QAM-05-006，由用户上一轮指定）：非预期异常收敛到单点 [`lib/internal-error.ts`](lib/internal-error.ts)——客户端恒得 `Internal server error`，服务端日志仍带既有作用域前缀与 12 位关联 id，且**有意不按 `NODE_ENV` 分支**，开发与生产是同一份可观察契约。[`lib/api.ts`](lib/api.ts) 的 `errorToResponse` 删除 NODE_ENV 分支与原始 `console.error`，[`app/actions/posts.ts`](app/actions/posts.ts) 的 `serverError` 不再把 `Error.message` 交给编辑器，[`app/api/health/route.ts`](app/api/health/route.ts) 原先也有同一条 `env.NODE_ENV === "production"` 门控、现一并收敛（`dbError` 恒为 `database unavailable`）。领域错误（`ScheduledJob*`/`ToolApproval*`/`StudyTransitionConflictError`/`AtlasImageValidationError`/`ValidationError`）与天气、refine-note、房间 SSE 的既有诊断负载**经核查为刻意面向调用方或 UI 不展示，全部保持原样**，不是遗漏。详见 [feat-079](#feat-079)。
 - feat-079 本轮实际运行的命令：**先红后绿**——Node 层新增 [`tests/server/error-response-contract.test.ts`](tests/server/error-response-contract.test.ts) 在旧实现下 **`5 failed | 4 passed (9)`**（失败项为 API 唯一约束、API 数据库异常、Action 唯一约束、Action 数据库异常、NODE_ENV 一致性；通过的四项是守卫，如实标注），修复后 **9/9**；真实 PostgreSQL 层新增 [`tests/integration/error-response-redaction.integration.test.ts`](tests/integration/error-response-redaction.integration.test.ts)，用临时还原 `lib/api.ts` + `app/actions/posts.ts` 旧行为的对照得到 **`3 failed | 1 passed (4)`**（唯一索引 `Post_title_probe_key` 触发真实 P2002、触发器 `fail_post_insert()` 抛带约束名的 PG 异常、同一触发器下的 Server Action 三项变红；畸形 JSON 守卫两项实现前后都通过），恢复后 **4/4**，两文件按 sha256 `868c099a…`/`d470a86d…` 比对还原一致、`TEMP-RED-PROBE` 零残留；production Chromium 新增用例 **50 passed（3.7 分钟，0 skipped、0 flaky）**。风险匹配门禁 `npm run check:full` **单次 exit 0**（88 文件 **780 项** ×2、生产构建 `✓ Compiled successfully in 19.3s`、覆盖率 **55.05/48.40/59.91/55.67**、真实 PostgreSQL **36 文件/144 项** 127.11s、生产 Playwright **50 passed**）；`npm run typecheck`、`npm run lint` exit 0。未跑 `npm run test:compose-smoke`、Compose 构建与实体设备。
@@ -48,6 +49,7 @@
 
 | 任务 | 状态 | 完整进度 |
 | --- | --- | --- |
+| feat-083 | done | [工具证据与回答闭环](#feat-083) |
 | feat-082 | done | [自由拖拽与动作反馈](#feat-082) |
 | feat-081 | done | [移除旧静态提示气泡](#feat-081) |
 | feat-080 | done | [全局 Agent 私聊弹窗与点击反馈](#feat-080) |
@@ -760,3 +762,24 @@
 - 提交前复核：当前代码仍为上一实施轮通过门禁的版本，没有额外代码、依赖、配置或数据库变更。沿用已记录的最终标准门禁860项、真实PG157项、默认production E2E57项和生日22项，以及feat-080独立Worker Compose证据；本轮只整理提交状态，按AGENTS文档/状态例外不重复init、应用测试或构建。
 - 核对全部待提交文件与既有验证范围，未发现真实凭据、运行日志或构建/测试产物被纳入；`.env`、缓存和报告均按既有ignore规则排除。JSON/全局ID/依赖/计数字段、交接链接及diff核验通过，未达归档门槛；不创建临时工件、不改变开发服务，不做推送。
 - 上文“未提交/推送”是各实施轮当时的事实，080～082及当前工作区改动随本次commit交付后，提交状态以本节及Git历史为准。下一步仍为用户在3000端口验收。
+
+<a id="feat-083"></a>
+## 2026-09-22 — feat-083：Agent 天气与搜索查询的证据质量和回答闭环
+
+- **排查阶段状态：not-started；当时等待方案讨论，尚未实施。** 用户要求“排查后登记为一个 feature，与用户讨论后再开始执行”；本轮已完成排查并登记，但没有授权进入实现。完整根因、证据链接、拟定验收和离线复现命令见[调查与方案](docs/plan/2026-09-22-agent-tool-answer-quality.md)。
+- **根因：** Runtime 在天气分支直接返回，搜索结果及其他问题被跳过；按 toolName 建 Map 还会覆盖同工具多次调用。模型只在执行前生成 plan/finalResponseText，工具执行后没有模型综合；天气固定 3 天并再次截断，搜索缺时间/来源约束且直接使用供应商摘要。用户样例中的旧公告、气候均值不能证明目标日期有/无台风；未重新核验真实台风事实。
+- **相关风险：** 天气失败返回 mock，但最终消息隐藏模拟标识；这不是本次 qweather/tavily 成功返回场景的触发原因。规划期“没有明显威胁”的草稿也不能当成最终答案。QAM-08 为直接责任、QAM-03 为天气领域关联；本次没有进行全模块重新评分。
+- **本轮实际验证：** `./scripts/run-node22.sh node --input-type=module` 的完整 stdin 程序见方案第 6 节，exit 0：精确复现用户提供的天气回复，七项机制观察为 true；这是断言缺陷存在的离线呈现实验，不是修复通过或数据库/E2E 证据。`./scripts/run-node22.sh npm exec -- vitest run tests/agent/agent-runtime.test.ts tests/agent/weather-tool.test.ts tests/agent/search-tool.test.ts` exit 0，3 文件/40 项，534ms；说明这些既有测试尚未验证多工具最终回答场景。没有新增永久测试或修改产品代码。
+- **建议与待定：** 推荐“一次规划 → 工具 → 证据整理 → 一次结果综合”，增强已有 weather.get/web.search 的日期、时效和不可用契约；新增模型调用须继承预算、lease、Trace 和 checkpoint。需要与用户确认额外综合调用的费用/延迟，以及本期是否包含最多一次定向补查，未确认前不进入实现。QWeather 官方文档标注 v7 将弃用，支持范围及账户端点兼容性需实施前核实；不自动扩大为整体供应商迁移。
+- **未运行及原因：** `./init.sh`、`npm run check`、`npm run check:full`、真实 PostgreSQL、Playwright、Compose smoke、构建/重启均未运行。本轮是排查与文档登记，代码/依赖/构建运行配置未改，并按用户要求等待讨论；定向测试不代表应用门禁通过。
+- **收尾：** 本轮只新增调查文档并更新 feature/progress/handoff；没有创建临时数据库、容器、截图或失败日志，没有保存原始模型思考过程或真实用户身份。收尾结构命令 `./scripts/run-node22.sh node --input-type=module` exit 0：JSON、跨归档 ID/状态/依赖/计数一致，27 个本地链接有效，既有 feature 与进度正文保留，变更范围仅四个文档/状态文件；`git diff --check` exit 0，`git status --short` 已核对。归档按 featuresNumber 判断，不满足触发条件；未提交。
+- **唯一下一步：** 与用户确认 feat-083 的两阶段综合方案和补查范围；确认后才改为 in-progress 并运行启动基线。
+
+- **后续讨论：通用性复核（2026-09-22）。** 用户追问是否仅影响天气。以现有呈现函数离线执行 `./scripts/run-node22.sh node --input-type=module`（完整命令见方案第 7 节），exit 0，6/6 断言复现：timezone.compare+web.search 只呈现时区，memo.create+web.search 只确认备忘，同工具两次创建只确认最后一条，memory.recall 的不同输出与 memo.list 均退回规划期草稿。这是共享 Runtime 的结果消费缺陷；不据此断言工具执行或数据库写入失败。天气窗口与搜索时效性分别是领域适配问题。仍为 not-started，实施范围待讨论；没有修改验收标准或业务代码，没有重跑上轮 40 项测试、init、应用门禁、PostgreSQL、浏览器或 Compose。本次只补文档证据，沿用文档例外；新增探针不创建临时工件。收尾 JSON/计数/链接与 git diff --check/status 核验通过。
+
+- **实施启动（2026-09-22）：** 用户明确要求执行本方案并完成 feat-083，采用推荐的“一次规划 → 工具 → 一次综合”，接受增加一次模型调用；本期不纳入可选自动补查。已确认 dependencies 为空并标为 in-progress。`./init.sh` exit 0：Prisma generate、类型检查、lint、93 文件/860 项测试通过。并行实施已有工具证据契约、Provider 综合与真实数据库/浏览器回归，主线负责 Runtime 预算/checkpoint/最终消息；未引入新服务或依赖。
+- **实现收敛：** Runtime 保留每次调用的输入/结果/stepKey，查询工具执行后综合一次，纯写逐项确认真实结果；无工具聊天保持原路径。综合复用预算、deadline/AbortSignal、lease、LLMCall/Trace 和独立 synthesis checkpoint，已完成 checkpoint 恢复不重复模型或副作用；综合预算终止仍展示已完成操作。天气新增目标日期范围、3d/7d 选择、来源/发布时间/覆盖缺口和 partial/unavailable；搜索新增日期/来源约束、规范化输入与来源日期，禁止供应商生成摘要直接进入证据。Provider 只综合原问题、必要近期上下文与实际证据，失败诚实降级，引用限于工具真实来源。README/PROJECT_VIEW 同步共享链路，详细实现与局限见方案第 8 节。
+- **迭代失败证据：** 首轮四文件真实 PostgreSQL 21 通过/1 失败，是旧回归只期待两次备忘创建的最后一条确认，现改为两条不同标题且保留 DB/幂等断言。首轮 check:full 快速门禁 902 通过/5 失败，域名 trim 红回归和四个缺 createdAt 的旧 fixture 均已修复，定向 2 文件/32 项复测通过。第二轮 check:full 的标准门禁通过（95 文件/915 项 ×2、生产构建、覆盖率 57.18/52.58/61.94/57.68），真实 PostgreSQL 39 文件/162 项通过，生产 Playwright 56/58；新双轮天气台风旅程通过。剩余为旧私聊删除草稿文案期待和既有 3D 拖拽 tooltip。私聊断言已改为真实删除结果并禁止草稿，定向复测通过；拖拽原样复测仍失败，正在用已有软件 WebGL 模式对照。原始命令/结果及后续收尾统一记在方案第 8 节，不把中间非零门禁称为全部通过。
+- **最终验收：** `E2E_SOFTWARE_WEBGL=true ./scripts/run-node22.sh npm run check:full` **exit 0**：95 文件/915 项单元测试（快速与覆盖率阶段一致）、生产构建、覆盖率 statements/branches/functions/lines **57.18/52.58/61.94/57.68**、真实 PostgreSQL **39 文件/162 项（159.69s）**、生产 Playwright **58/58（6.6m，无 skip/retry）**。新工具质量双轮旅程 5.3s；私聊删除 19.4s；既有拖拽原断言 18.1s。此前拖拽默认渲染失败的对照命令 `E2E_SOFTWARE_WEBGL=true E2E_APP_MODE=production ./scripts/run-node22.sh npm run test:e2e -- tests/e2e/agent-entry-authenticated.spec.ts --grep '拖拽超过阈值才移动' --trace on` 先以 2/2 通过，再运行全量门禁；使用现有模式，未改拖拽产品、断言或超时，也不声明默认 GPU 模式已通过。完整原始失败和定向命令见方案第 8 节。
+- **验收范围与限制：** 补齐 Node/HTTP 的日期不足、旧公告、气候均值、未知日期、摘要冲突、模拟与供应商失败、来源引用、顺序交换和多调用用例；真实 PG 验证综合 checkpoint、lease、预算、失败降级以及工具和消息幂等；生产浏览器验证真实聊天双轮调用、七天覆盖、来源文字/URL可见与刷新一致性。工作区 QWeather 核对结果为 `configured:false`，未发真实天气请求；官方 v7 7d 契约、无配置及403降级已核对，**真实账户七天权限未验证**，未做真实 LLM 抽样。无日期搜索结果保留并标记未知，来源约束须由规划传入；确定性 URL 校验不等于逐句语义判断，现有消息为纯文本。没有新增自动补查、监控面板、台风专用工具、依赖或迁移，未改 Worker/部署路径，未运行 Compose smoke、Compose 构建、部署或重启。
+- **收尾：** feat-083 已标 done，featuresNumber 保持 30；30≤40，按规则跳过归档。构建自动改写的 next-env 两条引用恢复原有 `.next/dev/types/*` 后，`./scripts/run-node22.sh npm run typecheck` exit 0。最终 `python3` 结构核验 exit 0：30 个根条目、跨归档 83 个唯一 ID，状态/依赖/计数一致，方案及交接 37 个本地链接有效，既有 feature 原样保留。已清理本轮 coverage/、test-results/、playwright-report/ 和 `/tmp/xoxo-feat-083-8TWRU6/`；失败命令和结论已转存方案，不保留诊断临时日志。Docker 仅剩既有项目 PostgreSQL 容器，本轮隔离容器/网络/卷均已退出清理；两个早于本轮的匿名卷保持不动。3100 测试端口无监听；未操作既有开发 Web/Worker。`git diff --check` exit 0，`git status --short` 已检查，next-env 无残留差异。未提交、未推送。

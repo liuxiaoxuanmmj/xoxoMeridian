@@ -55,6 +55,7 @@ export type StructuredRoomContext = {
 
 export type LLMPlanRequest = {
   prompt: string;
+  referenceTime?: string;
   roomContext: StructuredRoomContext;
   availableTools: LLMToolDescriptor[];
   agentSystemPrompt?: string | null;
@@ -75,10 +76,28 @@ export type LLMPlanResult = AgentPlan & {
   };
 };
 
+export type LLMAnswerRequest = {
+  prompt: string;
+  referenceTime: string;
+  roomContext: StructuredRoomContext;
+  plan: AgentPlan;
+  toolResults: ToolResult[];
+  agentSystemPrompt?: string | null;
+  maxCompletionTokens?: number;
+  signal?: AbortSignal;
+};
+
+export type LLMAnswerResult = {
+  text: string;
+  rawResponse?: unknown;
+  usage?: LLMPlanResult["usage"];
+};
+
 export interface LLMProvider {
   name: string;
   model: string;
   plan(request: LLMPlanRequest): Promise<LLMPlanResult>;
+  synthesize?(request: LLMAnswerRequest): Promise<LLMAnswerResult>;
 }
 
 export type RuntimeContext = Awaited<ReturnType<typeof import("@/agent/context-builder").buildAgentContext>>;
@@ -99,6 +118,7 @@ export type ToolExecutionContext = {
   tracer: ExecutionTracer;
   lease?: AgentTaskLeaseOwnership;
   signal?: AbortSignal;
+  referenceTime?: string;
   reserveToolCall?: (input: {
     toolName: string;
     stepKey: string;
@@ -135,5 +155,7 @@ export interface AgentTool<Input = unknown, Output = unknown> {
 
 export type ToolResult = {
   toolName: string;
+  input?: unknown;
+  stepKey?: string;
   output: unknown;
 };

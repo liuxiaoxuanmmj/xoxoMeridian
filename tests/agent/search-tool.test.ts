@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { BUILT_IN_TOOL_CONTRACTS } from "@/agent/tool-contracts";
 import { createSearchTool, fetchSearchResults, __testing } from "@/agent/tools/search-tool";
 import type { ToolExecutionContext } from "@/agent/types";
 
@@ -12,7 +13,9 @@ describe("search-tool", () => {
   });
 
   afterEach(() => {
-    process.env.TAVILY_API_KEY = originalEnv;
+    if (originalEnv === undefined) delete process.env.TAVILY_API_KEY;
+    else process.env.TAVILY_API_KEY = originalEnv;
+    vi.restoreAllMocks();
   });
 
   describe("createSearchTool", () => {
@@ -45,7 +48,7 @@ describe("search-tool", () => {
       expect(result.provider).toBe("mock");
       expect(result.query).toBe("test query");
       expect(result.fallbackReason).toBe("TAVILY_API_KEY missing");
-      expect(result.results).toHaveLength(3);
+      expect(result.results).toHaveLength(0);
     });
 
     it("should truncate query longer than 400 chars", async () => {
@@ -94,18 +97,12 @@ describe("search-tool", () => {
       expect(result).toMatchObject({
         provider: "mock",
         query: "test query",
-        answer: expect.stringContaining("模拟搜索结果"),
+        availability: "unavailable",
         fallbackReason: "API key invalid",
-        results: expect.arrayContaining([
-          expect.objectContaining({
-            title: expect.any(String),
-            url: expect.any(String),
-            content: expect.any(String),
-            score: expect.any(Number)
-          })
-        ])
+        fetchedAt: expect.any(String),
+        results: []
       });
-      expect(result.results).toHaveLength(3);
+      expect(result.results).toHaveLength(0);
     });
   });
 
@@ -143,7 +140,9 @@ describe("search-tool", () => {
             query: "test query",
             search_depth: "basic",
             max_results: 5,
-            include_answer: true,
+            include_answer: false,
+            include_published_date: true,
+            filter_by_published_date: false,
             include_images: false,
             include_raw_content: false
           })
@@ -153,7 +152,7 @@ describe("search-tool", () => {
       expect(result).toMatchObject({
         provider: "tavily",
         query: "test query",
-        answer: "Test answer",
+        availability: "available",
         results: [
           {
             title: "Result 1",
@@ -166,6 +165,7 @@ describe("search-tool", () => {
         responseTime: expect.any(Number)
       });
 
+      expect(result).not.toHaveProperty("answer");
       fetchSpy.mockRestore();
     });
 
@@ -295,5 +295,85 @@ describe("search-tool", () => {
 
       fetchSpy.mockRestore();
     });
+  });
+});
+
+describe("search evidence constraints", () => {
+  beforeEach(() => {
+    vi.stubEnv("TAVILY_API_KEY", "test-key");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.restoreAllMocks();
+  });
+
+  it("sends publication and source constraints without synthesizing a provider answer", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true,
+      json: async () => ({ query: "三亚台风", answer: "过期公告被误写成当前台风", results: [
+        { title: "历史预警", url: "https://www.nmc.cn/old", content: "09-12 发布，09-15 前有效", score: 0.9, published_date: "2026-09-12" },
+        { title: "气候统计", url: "https://www.nmc.cn/climate", content: "多年九月平均气温", score: 0.8, published_date: null }
+      ] })
+    } as Response);
+    const result = await createSearchTool().execute({
+      query: "三亚台风", topic: "news", startDate: "2026-09-20", endDate: "2026-09-22",
+      includeDomains: ["nmc.cn"], searchDepth: "advanced"
+    }, {} as ToolExecutionContext);
+    const body = JSON.parse(fetchSpy.mock.calls[0][1]!.body as string);
+    expect(body).toMatchObject({ topic: "news", start_date: "2026-09-20", end_date: "2026-09-22",
+      include_domains: ["nmc.cn"], include_domains_mode: "restrict", include_answer: false,
+      include_published_date: true, filter_by_published_date: false });
+    expect(result).not.toHaveProperty("answer");
+    expect(BUILT_IN_TOOL_CONTRACTS["web.search"].outputSchema.parse(result)).toEqual(result);
+    expect(result).toMatchObject({ availability: "available", fetchedAt: expect.any(String),
+      constraints: { startDate: "2026-09-20", endDate: "2026-09-22", includeDomains: ["nmc.cn"] },
+      results: [
+        { content: "09-12 发布，09-15 前有效", publishedDate: "2026-09-12", dateStatus: "known", dateMeaning: "published_or_updated", fetchedAt: expect.any(String) },
+        { content: "多年九月平均气温", publishedDate: null, dateStatus: "unknown", dateMeaning: "published_or_updated", fetchedAt: expect.any(String) }
+      ]
+    });
+  });
+
+  it("normalizes domain constraints through the exported helper before HTTP and evidence output", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({
+      ok: true, json: async () => ({ results: [] })
+    } as unknown as Response);
+    const result = await fetchSearchResults("  三亚预报  ", 5, "basic", undefined, {
+      includeDomains: [" nmc.cn "]
+    });
+    expect(JSON.parse(fetchSpy.mock.calls[0][1]!.body as string)).toMatchObject({
+      query: "三亚预报", include_domains: ["nmc.cn"], include_domains_mode: "restrict"
+    });
+    expect(result.constraints).toEqual({ includeDomains: ["nmc.cn"] });
+  });
+
+  it("keeps an undated result explicitly unknown and transmits relative publication windows", async () => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockResolvedValue({ ok: true, json: async () => ({ results: [
+      { title: "预报", url: "https://www.nmc.cn/forecast", content: "未来几天天气", score: 0.5 }
+    ] }) } as Response);
+    const result = await createSearchTool().execute({ query: "三亚预报", timeRange: "day" }, {} as ToolExecutionContext);
+    expect(JSON.parse(fetchSpy.mock.calls[0][1]!.body as string)).toMatchObject({ time_range: "day" });
+    expect(result.results[0]).toMatchObject({ publishedDate: null, dateStatus: "unknown" });
+  });
+
+  it.each([
+    { startDate: "2026-02-30" },
+    { startDate: "2026-09-22", endDate: "2026-09-20" },
+    { timeRange: "day", startDate: "2026-09-20" },
+    { includeDomains: ["https://www.nmc.cn/path"] },
+    { includeDomains: ["nmc.cn/../../"] }
+  ])("rejects invalid constraints before HTTP: %j", async (constraints) => {
+    const fetchSpy = vi.spyOn(global, "fetch").mockRejectedValue(new Error("Unexpected network access"));
+    await expect(createSearchTool().execute({ query: "三亚", ...constraints } as Parameters<ReturnType<typeof createSearchTool>["execute"]>[0], {} as ToolExecutionContext)).rejects.toThrow();
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("does not turn cancellation into unavailable mock data", async () => {
+    const controller = new AbortController();
+    controller.abort(new Error("task cancelled"));
+    const fetchSpy = vi.spyOn(global, "fetch").mockRejectedValue(new Error("Unexpected network access"));
+    await expect(createSearchTool().execute({ query: "三亚" }, { signal: controller.signal } as ToolExecutionContext)).rejects.toThrow("task cancelled");
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

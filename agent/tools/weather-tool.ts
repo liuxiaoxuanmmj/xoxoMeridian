@@ -1,10 +1,13 @@
 import type { AgentTool, ToolExecutionContext } from "@/agent/types";
+import { weatherInputSchema } from "@/agent/tool-contracts";
 import { TRANSIENT_TOOL_RETRY } from "@/agent/tool-errors";
 import { resolveParticipantPair } from "@/lib/participant-resolution";
 
 type WeatherInput = {
   city?: string;
   includeForecast?: boolean;
+  startDate?: string;
+  endDate?: string;
 };
 
 type CacheEntry<T> = { value: T; expiresAt: number };
@@ -68,17 +71,55 @@ type QWeatherSnapshot = {
   location: QWeatherLocation;
   now: QWeatherNow;
   daily?: QWeatherDaily[];
+  fetchedAt: string;
+  issuedAt: string | null;
+  sourceUrl: string | null;
+  forecastDays: 0 | 3 | 7;
+  fallbackReason?: string;
 };
+
+type WeatherQuery = Pick<WeatherInput, "startDate" | "endDate"> & { referenceTime?: string };
+const DAY_MS = 86400000;
+
+function datesBetween(start?: string, end?: string): string[] {
+  if (!start || !end) return [];
+  const length = Math.min(31, Math.floor((Date.parse(end) - Date.parse(start)) / DAY_MS) + 1);
+  return Array.from({ length }, (_, index) => new Date(Date.parse(start) + index * DAY_MS).toISOString().slice(0, 10));
+}
+
+function dateAtTimezone(referenceTime: string, timezone?: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: timezone || "UTC", year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(new Date(referenceTime));
+}
+
+function coverageFor(query: WeatherQuery, availableDates: string[], referenceDate: string | null, forecastDays: 0 | 3 | 7) {
+  const startDate = query.startDate ?? (forecastDays ? referenceDate : null);
+  const endDate = query.endDate ?? (startDate && forecastDays
+    ? new Date(Date.parse(startDate) + (forecastDays - 1) * DAY_MS).toISOString().slice(0, 10) : null);
+  return {
+    requestedStartDate: startDate,
+    requestedEndDate: endDate,
+    referenceDate,
+    availableDates,
+    missingDates: datesBetween(startDate ?? undefined, endDate ?? undefined).filter((date) => !availableDates.includes(date)),
+    forecastDays
+  };
+}
 
 type WeatherSnapshotResult = ReturnType<typeof formatSnapshot> | ReturnType<typeof mockWeather>;
 
 export async function fetchWeatherSnapshot(
   cityInput: string,
   includeForecast = false,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  query: WeatherQuery = {}
 ): Promise<WeatherSnapshotResult> {
-  const city = cityInput.trim();
-  if (!city) throw new Error("city is required.");
+  const parsed = weatherInputSchema.parse({ city: cityInput, includeForecast, startDate: query.startDate, endDate: query.endDate });
+  const city = parsed.city!;
+  if (signal?.aborted) throw signal.reason ?? new Error("Weather request aborted.");
+  const referenceTime = query.referenceTime ?? new Date().toISOString();
+  const request = { ...query, referenceTime };
 
   const provider = process.env.WEATHER_PROVIDER ?? "mock";
   const apiKey = process.env.WEATHER_API_KEY ?? "";
@@ -87,20 +128,20 @@ export async function fetchWeatherSnapshot(
     console.warn(
       `[weather.get] using mock — WEATHER_PROVIDER="${provider}" (need "qweather")`
     );
-    return mockWeather(city, `WEATHER_PROVIDER=${provider}`);
+    return mockWeather(city, `WEATHER_PROVIDER=${provider}`, request);
   }
   if (!apiKey) {
     console.warn("[weather.get] using mock — WEATHER_API_KEY is empty");
-    return mockWeather(city, "WEATHER_API_KEY missing");
+    return mockWeather(city, "WEATHER_API_KEY missing", request);
   }
 
   try {
-    return await getQWeather(city, includeForecast, apiKey, signal);
+    return await getQWeather(city, includeForecast || Boolean(query.startDate), apiKey, signal, request);
   } catch (error) {
     if (signal?.aborted) throw signal.reason ?? error;
     const reason = error instanceof Error ? error.message : String(error);
     console.warn(`[weather.get] qweather call failed, falling back to mock: ${reason}`);
-    return mockWeather(city, reason);
+    return mockWeather(city, reason, request);
   }
 }
 
@@ -110,7 +151,7 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
     risk: "low",
     retry: TRANSIENT_TOOL_RETRY,
     description:
-      "Get current weather (and optional 3-day forecast) via QWeather. Falls back to a mock when WEATHER_PROVIDER is not 'qweather' or credentials are missing.",
+      "Get current weather and a bounded 3- or 7-day forecast via QWeather. Pass startDate/endDate for a trip, including both endpoints. Reports missing dates and unavailable data. Does not provide typhoon warnings; use web.search for current official warnings or forecast gaps.",
     schema: {
       type: "object",
       properties: {
@@ -120,13 +161,18 @@ export function createWeatherTool(): AgentTool<WeatherInput> {
         },
         includeForecast: {
           type: "boolean",
-          description: "When true, also fetch the 3-day forecast."
-        }
+          description: "When true, also fetch the 3-day forecast. A date range automatically requests a forecast of up to seven days from the reference date."
+        },
+        startDate: { type: "string", description: "First destination calendar date, YYYY-MM-DD. Supply together with endDate." },
+        endDate: { type: "string", description: "Last destination calendar date, inclusive; requested range is limited to 31 dates." }
       }
     },
     async execute(input: WeatherInput, context: ToolExecutionContext) {
-      const city = input.city?.trim() || inferPartnerCity(context) || "Beijing";
-      return fetchWeatherSnapshot(city, Boolean(input.includeForecast), context.signal);
+      const parsed = weatherInputSchema.parse(input);
+      const city = parsed.city || inferPartnerCity(context) || "Beijing";
+      return fetchWeatherSnapshot(city, Boolean(parsed.includeForecast), context.signal, {
+        startDate: parsed.startDate, endDate: parsed.endDate, referenceTime: context.referenceTime
+      });
     }
   };
 }
@@ -140,13 +186,17 @@ function inferPartnerCity(context: ToolExecutionContext) {
   return partner?.user.profile?.city;
 }
 
-function mockWeather(city: string, fallbackReason?: string) {
+function mockWeather(city: string, fallbackReason?: string, query: WeatherQuery = {}) {
   return {
     provider: "mock" as const,
+    availability: "unavailable" as const,
     city,
-    condition: "partly cloudy",
-    temperatureC: 16,
-    advice: "带一件薄外套，晚上可能会凉一点。",
+    condition: "未知",
+    advice: "暂无真实天气数据，无法确认实况与预报。",
+    fetchedAt: new Date().toISOString(),
+    issuedAt: null,
+    source: { name: "QWeather", url: null },
+    coverage: coverageFor(query, [], null, 0),
     fallbackReason
   };
 }
@@ -155,27 +205,44 @@ async function getQWeather(
   city: string,
   includeForecast: boolean,
   apiKey: string,
-  signal?: AbortSignal
+  signal: AbortSignal | undefined,
+  query: WeatherQuery
 ) {
   const apiHost = (process.env.QWEATHER_API_HOST || "devapi.qweather.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
   const geoHost = (process.env.QWEATHER_GEOAPI_HOST || "geoapi.qweather.com").replace(/^https?:\/\//, "").replace(/\/$/, "");
-
-  const cacheKey = `${apiHost}|${city}|${includeForecast ? "fc" : "now"}`;
+  const location = await resolveLocation(city, apiKey, geoHost, signal);
+  const referenceDate = dateAtTimezone(query.referenceTime!, location.tz);
+  const daysUntilEnd = query.endDate ? Math.floor((Date.parse(query.endDate) - Date.parse(referenceDate)) / DAY_MS) + 1 : 3;
+  const forecastDays = includeForecast ? (daysUntilEnd > 3 ? 7 : 3) : 0;
+  const cacheKey = `${apiHost}|${geoHost}|${city}|${forecastDays}|${referenceDate}`;
   const cached = WEATHER_CACHE.get(cacheKey);
   if (cached && cached.expiresAt > Date.now()) {
-    return formatSnapshot(cached.value);
+    return formatSnapshot(cached.value, query, referenceDate);
   }
 
-  const location = await resolveLocation(city, apiKey, geoHost, signal);
-  const now = await fetchWeatherNow(location.id, apiKey, apiHost, signal);
-  const daily = includeForecast
-    ? await fetchWeather3d(location.id, apiKey, apiHost, signal)
-    : undefined;
-
-  const snapshot: QWeatherSnapshot = { location, now, daily };
-  evictOldest(WEATHER_CACHE, MAX_CACHE_SIZE);
-  WEATHER_CACHE.set(cacheKey, { value: snapshot, expiresAt: Date.now() + WEATHER_TTL_MS });
-  return formatSnapshot(snapshot);
+  const current = await fetchWeatherNow(location.id, apiKey, apiHost, signal);
+  let forecast: QWeatherDailyResponse | undefined;
+  let fallbackReason: string | undefined;
+  if (forecastDays) {
+    try {
+      forecast = await fetchWeatherDaily(location.id, forecastDays, apiKey, apiHost, signal);
+    } catch (error) {
+      if (signal?.aborted) throw signal.reason ?? error;
+      fallbackReason = error instanceof Error ? error.message : String(error);
+    }
+  }
+  const snapshot: QWeatherSnapshot = {
+    location, now: current.now, daily: forecast?.daily,
+    fetchedAt: new Date().toISOString(),
+    issuedAt: (forecastDays ? forecast?.updateTime : current.updateTime) ?? null,
+    sourceUrl: forecast?.fxLink ?? current.fxLink ?? null,
+    forecastDays, fallbackReason
+  };
+  if (!fallbackReason) {
+    evictOldest(WEATHER_CACHE, MAX_CACHE_SIZE);
+    WEATHER_CACHE.set(cacheKey, { value: snapshot, expiresAt: Date.now() + WEATHER_TTL_MS });
+  }
+  return formatSnapshot(snapshot, query, referenceDate);
 }
 
 async function resolveLocation(
@@ -212,24 +279,26 @@ async function fetchWeatherNow(
   apiKey: string,
   apiHost: string,
   signal?: AbortSignal
-): Promise<QWeatherNow> {
+): Promise<{ now: QWeatherNow; updateTime?: string; fxLink?: string }> {
   const url = `https://${apiHost}/v7/weather/now?location=${encodeURIComponent(locationId)}&lang=zh&unit=m`;
-  const data = await qweatherFetch<{ code: string; now?: QWeatherNow }>(url, apiKey, signal);
+  const data = await qweatherFetch<{ code: string; now?: QWeatherNow; updateTime?: string; fxLink?: string }>(url, apiKey, signal);
   if (!data.now) {
     throw new Error(`QWeather weather/now returned no payload (code=${data.code})`);
   }
-  return data.now;
+  return { now: data.now, updateTime: data.updateTime, fxLink: data.fxLink };
 }
 
-async function fetchWeather3d(
+type QWeatherDailyResponse = { code: string; daily?: QWeatherDaily[]; updateTime?: string; fxLink?: string };
+
+async function fetchWeatherDaily(
   locationId: string,
+  days: 3 | 7,
   apiKey: string,
   apiHost: string,
   signal?: AbortSignal
-): Promise<QWeatherDaily[]> {
-  const url = `https://${apiHost}/v7/weather/3d?location=${encodeURIComponent(locationId)}&lang=zh&unit=m`;
-  const data = await qweatherFetch<{ code: string; daily?: QWeatherDaily[] }>(url, apiKey, signal);
-  return data.daily ?? [];
+): Promise<QWeatherDailyResponse> {
+  const url = `https://${apiHost}/v7/weather/${days}d?location=${encodeURIComponent(locationId)}&lang=zh&unit=m`;
+  return qweatherFetch<QWeatherDailyResponse>(url, apiKey, signal);
 }
 
 async function qweatherFetch<T extends { code: string }>(
@@ -262,13 +331,22 @@ async function qweatherFetch<T extends { code: string }>(
   }
 }
 
-function formatSnapshot(snapshot: QWeatherSnapshot) {
+function formatSnapshot(snapshot: QWeatherSnapshot, query: WeatherQuery = {}, referenceDate: string | null = null) {
   const { location, now, daily } = snapshot;
+  const coverage = coverageFor(query, [...new Set(daily?.map((day) => day.fxDate) ?? [])].sort(), referenceDate, snapshot.forecastDays);
+  const availability = snapshot.fallbackReason || coverage.missingDates.length || (snapshot.forecastDays && !daily?.length)
+    ? "partial" as const : "available" as const;
   const tempC = toNumber(now.temp);
   const feelsC = toNumber(now.feelsLike);
 
   return {
     provider: "qweather" as const,
+    availability,
+    fetchedAt: snapshot.fetchedAt,
+    issuedAt: snapshot.issuedAt,
+    source: { name: "QWeather", url: snapshot.sourceUrl },
+    coverage,
+    fallbackReason: snapshot.fallbackReason,
     city: location.name,
     region: [location.adm2, location.adm1, location.country].filter(Boolean).join(" / "),
     locationId: location.id,
@@ -292,6 +370,7 @@ function formatSnapshot(snapshot: QWeatherSnapshot) {
       tempMinC: toNumber(d.tempMin),
       textDay: d.textDay,
       textNight: d.textNight,
+      wind: { direction: d.windDirDay, scale: d.windScaleDay },
       humidityPercent: d.humidity ? toNumber(d.humidity) : undefined,
       precipitationMm: d.precip ? toNumber(d.precip) : undefined,
       uvIndex: d.uvIndex ? toNumber(d.uvIndex) : undefined

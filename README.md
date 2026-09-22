@@ -96,10 +96,16 @@ flowchart TD
   I --> J[写 LLMCall]
   J --> K[Tool Registry 白名单调用工具]
   K --> L[写 ToolCall 和 EventLog]
-  L --> M[Agent 回复 Message 入库]
+  L --> Q{包含查询工具?}
+  Q -- 是 --> R[按原问题和全部工具证据进行一次 LLM 综合]
+  Q -- 否 --> W[逐项确认实际写入结果]
+  R --> M[Agent 回复 Message 入库]
+  W --> M
   M --> N[AgentTask completed/failed]
   N --> E
 ```
+
+无工具聊天直接答复；查询综合继承任务预算、超时、租约和持久化恢复。证据不足或综合不可用时明确说明缺口，不使用执行前草稿代替事实。天气按目标日期范围选择三天或七天预报，并标明实际覆盖和缺失日期；搜索保留来源与时间信息，不把供应商生成的摘要当作证据。具体实现与验证边界见 [feat-083 方案](docs/plan/2026-09-22-agent-tool-answer-quality.md)。
 
 ## 5. API
 

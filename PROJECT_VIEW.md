@@ -16,7 +16,7 @@
 - 用户发布、编辑、检索 Markdown 博文；首页时间线把 Post 与可移动照片、连线共同呈现在空间画布上。
 - 用户在独立 Atlas 画布创建便签、上传照片、拖动元素和建立连接，并接收高频 SSE 快照。
 - 用户启动、暂停、恢复和停止专注计时器，维护每日目标，查看伙伴在线/专注状态及近期统计，并复用房间聊天。
-- Agent Worker 抢占待执行或租约过期的任务，构建房间上下文，调用 LLM 规划，执行受注册、校验、预算、重试和审批约束的 Tool，最后写回消息和 Trace。
+- Agent Worker 抢占待执行或租约过期的任务，构建房间上下文，调用 LLM 规划，执行受注册、校验、预算、重试和审批约束的 Tool；查询结果经一次后置综合，写操作逐项确认实际结果，最后写回消息和 Trace。
 - Scheduler 根据 `ScheduledJob.nextRunAt` 派生 AgentTask；部署初始化器先迁移和 seed，随后 Web 与 Worker 启动。
 - 登录用户在非 Chat 页面通过按需加载的 3D 全局入口进入 `/chat`；入口主题与模型在构建期冻结，源 GLB 经可重复的检查、候选、人工选择和提升流程形成正式资产。
 
@@ -31,7 +31,7 @@
 | External System | 用途 | 主要接入位置 |
 | --- | --- | --- |
 | PostgreSQL 16 | 全部持久化业务状态、任务队列、执行 Trace | `lib/prisma.ts`、`prisma/schema.prisma` |
-| OpenAI-compatible LLM API | Agent 规划、记忆/摘要提取、个人档案文本润色 | `agent/llm-provider.ts`、`lib/llm.ts`、`app/api/profile/refine-note/route.ts` |
+| OpenAI-compatible LLM API | Agent 规划与工具结果综合、记忆/摘要提取、个人档案文本润色 | `agent/llm-provider.ts`、`lib/llm.ts`、`app/api/profile/refine-note/route.ts` |
 | QWeather | 城市解析、当前天气和可选预报 | `agent/tools/weather-tool.ts` |
 | Tavily | Agent Web 搜索 | `agent/tools/search-tool.ts` |
 | Resend / TurboSMTP / SMTP | 欢迎邮件和密码重置邮件 | `lib/email/` |
@@ -677,7 +677,7 @@ flowchart LR
 - AgentTask 的查询、显式 dispatch、手动运行、状态/trace 和 Tool approval API。
 - pending/failed/lease-expired running 任务的 CAS claim、attempt/worker lease、heartbeat 和失权栅栏。
 - 房间上下文构建、LLM provider 选择、结构化 plan、plan validation/repair/fallback。
-- Plan/Tool/Final 的 durable AgentStep checkpoint、replay 和冲突检测。
+- Plan/Tool/综合/Final 的 durable AgentStep checkpoint、replay 和冲突检测；综合使用独立 `synthesis` stepKey、复用模型步骤的 `plan` kind。
 - Tool Registry、Zod input/output contract、风险分级、持久审批、deadline、AbortSignal、错误分类和有界 retry。
 - turn/tool/runtime/token/cost budget 的持久化预留、结算和稳定 `limit_exceeded` 终态。
 - ToolCall、LLMCall、EventLog、JSONL debug log 和最终消息 Trace。
@@ -696,7 +696,7 @@ flowchart LR
 - HTTP：`POST /api/agent/dispatch`、`GET /api/agent/status`、`GET /api/agent/tasks/:id`、`POST .../run`、`GET .../trace`、`GET/POST .../approvals`。
 - Runtime API：`runAgentTask()`、`dispatchPendingAgentTasks()`、`claimAgentTask()`、`createToolRegistry()`。
 - Tool contract：`AgentTool<Input, Output>`、`ToolExecutionContext`、Zod input/output schemas、risk/retry/effect metadata。
-- Provider contract：`LLMProvider.plan()`；OpenAI-compatible 或 mock-local planner。
+- Provider contract：`LLMProvider.plan()` 与 `synthesize()`；OpenAI-compatible 和 mock Provider 均支持执行后综合。旧 Provider 未实现综合时基于真实工具结果降级，不使用规划草稿。
 - 状态/事件：AgentTask status、AgentStep status、ToolCall/LLMCall、AgentToolApproval、EventLog 和最终 Message。
 
 **Owned Data / State**
@@ -740,7 +740,7 @@ flowchart LR
 - Directories：`agent/`、`app/api/agent/`。
 - Primary entry files：`agent/agent-runtime.ts`、`agent/task-dispatcher.ts`、`agent/task-runner.ts`、`agent/agent-worker.ts`（共享）。
 - Reliability files：`task-claim.ts`、`durable-step.ts`、`runtime-budget.ts`、`tool-registry.ts`、`tool-contracts.ts`、`tool-approval.ts`、`tool-errors.ts`、`execution-tracer.ts`。
-- Planning/context files：`llm-provider.ts`、`types.ts`、`context-builder.ts`、`plan-validator.ts`、`plan-repair.ts`、`post-task.ts`、`summarizer.ts`、`memory-extractor.ts`、`memory-dedup.ts`、`lib/llm.ts`、`lib/chat-log-file.ts`。
+- Planning/context files：`llm-provider.ts`、`answer-evidence.ts`、`types.ts`、`context-builder.ts`、`plan-validator.ts`、`plan-repair.ts`、`post-task.ts`、`summarizer.ts`、`memory-extractor.ts`、`memory-dedup.ts`、`lib/llm.ts`、`lib/chat-log-file.ts`。
 - Tool files：`agent/tools/*`; memo/schedule/timezone/weather adapters 与 QAM-03 共享。
 - Important types：`AgentPlan`、`LLMProvider`、`AgentTool`、`ToolExecutionContext`、`AgentTaskLeaseOwnership`、`AgentRuntimeBudget`、`DurableStepSnapshot`，以及对应 Prisma enums/models。
 - Tests：`tests/agent/*`、`tests/integration/agent-*.integration.test.ts`、Agent route tests、`tests/component/tool-approval-panel.test.tsx`、Compose Agent smoke 路径。

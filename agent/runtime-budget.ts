@@ -9,6 +9,8 @@ import {
 } from "@/agent/task-claim";
 import type {
   AgentTaskLeaseOwnership,
+  LLMAnswerRequest,
+  LLMAnswerResult,
   LLMPlanRequest,
   LLMPlanResult
 } from "@/agent/types";
@@ -161,7 +163,7 @@ export class AgentRuntimeBudget {
     provider: string;
     model: string;
     inputSummary: string;
-    request: LLMPlanRequest;
+    request: LLMPlanRequest | LLMAnswerRequest;
     requestPayload: unknown;
   }): Promise<ModelTurnReservation> {
     this.assertWithinDeadline();
@@ -289,7 +291,7 @@ export class AgentRuntimeBudget {
 
   async completeModelTurn(
     reservation: ModelTurnReservation,
-    result: LLMPlanResult,
+    result: LLMPlanResult | LLMAnswerResult,
     durationMs: number
   ) {
     const completed = await withAgentTaskLease(
@@ -487,7 +489,7 @@ export class AgentRuntimeBudget {
   }
 }
 
-export function estimateModelInputTokens(request: LLMPlanRequest) {
+export function estimateModelInputTokens(request: LLMPlanRequest | LLMAnswerRequest) {
   let serializedLength = 0;
   try {
     serializedLength = JSON.stringify(request).length;
