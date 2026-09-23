@@ -22,6 +22,8 @@ export const postTimelineSelect = {
   content: true,
   type: true,
   authorId: true,
+  roomId: true,
+  agentTaskId: true,
   authorCity: true,
   authorCountry: true,
   authorTimezone: true,

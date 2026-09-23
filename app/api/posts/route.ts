@@ -5,6 +5,7 @@ import { requireCurrentUser } from "@/lib/auth";
 import { applyNoStoreHeaders, errorToResponse, jsonOk } from "@/lib/api";
 import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { postTimelineOrderBy, postTimelineSelect } from "@/lib/post-timeline";
+import { projectTimelinePosts } from "@/lib/post-timeline-projection";
 import { encodePostCursor, getPostCursorWhere, postPaginationSchema } from "@/lib/post-pagination";
 import { prisma } from "@/lib/prisma";
 import { generateSlug, snapshotProfileLocation, writePostWithUniqueSlug } from "@/lib/posts";
@@ -42,7 +43,7 @@ export async function GET(request: Request) {
     });
 
     const response = jsonOk({
-      posts,
+      posts: await projectTimelinePosts(posts),
       nextCursor: posts.length === limit ? encodePostCursor(posts[posts.length - 1]) : null,
     });
     applyNoStoreHeaders(response.headers);

@@ -73,7 +73,7 @@ describe("首页与搜索的 Post 展示投影", () => {
       for (const post of searched) {
         expect(Object.keys(post).sort()).toEqual([
           "id", "slug", "title", "content", "type", "authorId", "authorCity", "authorCountry",
-          "authorTimezone", "publishedAt", "metadata", "author",
+          "authorTimezone", "publishedAt", "metadata", "author", "agentRequesterId",
         ].sort());
         if (post.author) {
           expect(Object.keys(post.author).sort()).toEqual(["id", "displayName", "avatarLabel", "profile"].sort());
@@ -87,5 +87,59 @@ describe("首页与搜索的 Post 展示投影", () => {
       expect(byId.get("no-author")?.author).toBeNull();
       expect(JSON.stringify(searched)).not.toMatch(/privateSentinel|private-preferences|192\.0\.2\.10|仅供本人查看的档案|passwordHash|sessionVersion/);
     }
+  });
+
+  it("首页与搜索从任务事实解析新旧 Agent 日志的发起者，房间不匹配时不误认", async () => {
+    const [first, second] = await Promise.all([createTestUser(), createTestUser()]);
+    const [room, otherRoom] = await Promise.all([createTestRoom(), createTestRoom()]);
+    await prisma.roomParticipant.createMany({ data: [
+      { roomId: room.id, userId: first.id },
+      { roomId: room.id, userId: second.id },
+    ] });
+    const agent = await prisma.agent.create({ data: {
+      slug: "timeline-agent", displayName: "时间线助手", description: "测试助手",
+    } });
+    const createTask = (roomId: string, requestedById: string | null) => prisma.agentTask.create({ data: {
+      roomId, agentId: agent.id, requestedById, status: "completed", input: {},
+    } });
+    const [newTask, oldTask, partnerTask, scheduledTask, foreignTask] = await Promise.all([
+      createTask(room.id, first.id),
+      createTask(room.id, first.id),
+      createTask(room.id, second.id),
+      createTask(room.id, null),
+      createTask(otherRoom.id, second.id),
+    ]);
+    const records = [
+      { id: "new-log", taskId: newTask.id, agentTaskId: newTask.id },
+      { id: "legacy-log", taskId: oldTask.id },
+      { id: "partner-log", taskId: partnerTask.id, agentTaskId: partnerTask.id },
+      { id: "scheduled-log", taskId: scheduledTask.id, agentTaskId: scheduledTask.id },
+      { id: "foreign-log", taskId: foreignTask.id },
+      { id: "missing-log", taskId: "missing-task" },
+    ];
+    await prisma.post.createMany({ data: records.map((record, index) => ({
+      id: record.id, slug: record.id, title: `归属验证 ${record.id}`,
+      content: "Agent 日志归属", type: "agent_log", roomId: room.id,
+      agentTaskId: record.agentTaskId, metadata: { taskId: record.taskId },
+      publishedAt: new Date(Date.UTC(2026, 8, 23, index)),
+    })) });
+
+    auth.userId = first.id;
+    const response = await GET(new Request("http://localhost/api/posts?q=归属验证"));
+    expect(response.status).toBe(200);
+    const searched = (await response.json() as { posts: TimelinePost[] }).posts;
+    const home = timelinePosts(await HomePage());
+    expect(home).toEqual(searched);
+    const requesterById = new Map(searched.map((post) => [post.id, post.agentRequesterId]));
+    expect(Object.fromEntries(requesterById)).toEqual({
+      "new-log": first.id,
+      "legacy-log": first.id,
+      "partner-log": second.id,
+      "scheduled-log": null,
+      "foreign-log": null,
+      "missing-log": null,
+    });
+    expect(searched.every((post) => !("roomId" in post) && !("agentTaskId" in post))).toBe(true);
+    expect(searched.every((post) => post.authorId === null)).toBe(true);
   });
 });

@@ -58,28 +58,28 @@ describe("小人持续拖拽动作", () => {
     expect(invalidate).toHaveBeenCalledOnce();
     expect(motion.frame(30000).y).toBe(0);
     for (let now = 30016; now <= 30160; now += 16) {
-      motion.updateDrag(2, 2);
+      motion.updateDrag(1, 1);
       motion.frame(now);
     }
     const forward = motion.frame(30176);
     expect(forward.y).toBeGreaterThan(0.08);
     expect(forward.y).toBeLessThanOrEqual(0.1);
-    expect(forward.roll).toBeGreaterThan(0.08);
-    expect(forward.roll).toBeLessThanOrEqual(0.12);
-    expect(forward.tilt).toBeGreaterThan(0.04);
-    expect(forward.tilt).toBeLessThanOrEqual(0.08);
+    expect(forward.roll).toBeGreaterThan(0.09);
+    expect(forward.roll).toBeLessThanOrEqual(0.18);
+    expect(forward.tilt).toBeGreaterThan(0.07);
+    expect(forward.tilt).toBeLessThanOrEqual(0.12);
     motion.updateDrag(-20, -20);
     const turning = motion.frame(30192);
-    expect(Math.abs(turning.roll! - forward.roll!)).toBeLessThan(0.05);
+    expect(Math.abs(turning.roll! - forward.roll!)).toBeLessThan(0.07);
     for (let now = 30208; now <= 30400; now += 16) {
       motion.updateDrag(-20, -20);
       motion.frame(now);
     }
     const backward = motion.frame(30416);
-    expect(backward.roll).toBeLessThan(-0.05);
-    expect(backward.roll).toBeGreaterThanOrEqual(-0.12);
-    expect(backward.tilt).toBeLessThan(-0.04);
-    expect(backward.tilt).toBeGreaterThanOrEqual(-0.08);
+    expect(backward.roll).toBeLessThan(-0.15);
+    expect(backward.roll).toBeGreaterThanOrEqual(-0.18);
+    expect(backward.tilt).toBeLessThan(-0.1);
+    expect(backward.tilt).toBeGreaterThanOrEqual(-0.12);
   });
 
   it("抓住不动时保留拎起姿态并停止续帧，再移动能够唤醒同一个控制器", () => {

@@ -29,6 +29,7 @@ export type TimelinePost = {
   content: string;
   type: string;
   authorId: string | null;
+  agentRequesterId?: string | null;
   authorCity?: string | null;
   authorCountry?: string | null;
   authorTimezone?: string | null;
@@ -124,16 +125,6 @@ export function Timeline({
   }, [sorted]);
 
   const leftUserId = humanAuthors[0] ?? currentUserId;
-  const agentSides = useMemo(
-    () =>
-      new Map(
-        entries
-          .filter((entry) => entry.post.type === "agent_log")
-          .map((entry, index) => [entry.id, index % 2 === 0 ? "left" : "right"] as const)
-      ),
-    [entries]
-  );
-
   if (entries.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-center">
@@ -156,8 +147,11 @@ export function Timeline({
           const post = entry.post;
 
           if (post.type === "agent_log") {
+            const side = post.agentRequesterId
+              ? post.agentRequesterId === leftUserId ? "left" : "right"
+              : "center";
             return (
-              <TimelineItem key={post.id} side={agentSides.get(post.id) ?? "left"}>
+              <TimelineItem key={post.id} side={side}>
                 <AgentLogCard post={post as any} />
               </TimelineItem>
             );

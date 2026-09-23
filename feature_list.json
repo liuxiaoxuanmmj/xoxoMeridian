@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
-  "updatedAt": "2026-09-22",
-  "featuresNumber": 30,
+  "updatedAt": "2026-09-23",
+  "featuresNumber": 32,
   "priorityPolicy": "P2 以用户体验为首要指标：综合核心操作受阻或结果失真程度、当前产品入口的影响范围、触发频率与恢复成本排序；同等影响时优先已有直接行为证据的问题。priorityRank 表示本批 P2 的执行建议顺序，数字越小越优先，不改变 QAM 严重级别；频率是基于代码路径与触发条件的定性判断，不是线上统计。dependencies 只表达实现前置条件，不用依赖链代替排名。本批登记前 10 项，按 priorityRank 逐项实施；当前状态与验收证据以各 feature 为准。",
   "archivedFeatureFiles": [
     "docs/harness/archive/features-001-053.json"
@@ -579,6 +579,41 @@
         "实施前与用户确认额外一次 LLM 综合调用的延迟/费用，以及是否纳入最多一次定向补查；未确认前保持 not-started。实施后运行 ./init.sh 与 npm run check:full，涉及 Worker/部署路径时补 Compose smoke，并同步状态与证据"
       ],
       "evidence": "2026-09-22 用户明确授权执行计划；采用一次规划、工具执行、一次后置综合，不纳入自动补查。共享 Runtime 保留全部调用并按实际结果综合，纯写逐项确认；综合继承预算、deadline、lease、Trace 和可恢复 checkpoint。天气支持目标日期、3d/7d、来源时间及覆盖缺口；搜索支持发布窗口/来源约束，剥离供应商摘要，模拟与失败如实降级。./init.sh exit 0（93 文件/860 项基线）。最终 E2E_SOFTWARE_WEBGL=true ./scripts/run-node22.sh npm run check:full exit 0：95 文件/915 项单元测试及覆盖率、生产构建、39 文件/162 项真实 PostgreSQL、58 项生产 Playwright 全通过；新双轮天气台风旅程 5.3s。覆盖率 57.18/52.58/61.94/57.68。默认 WebGL 的既有拖拽 tooltip 失败保留历史，仓库已有软件模式下原断言通过；未改拖拽产品/测试。next-env 生成引用还原后 typecheck exit 0。账户核对结果 configured:false，真实 QWeather 账户七天权限未验证；官方端点契约与无配置/403/partial 用受控 HTTP 验证，没有真实模型抽样或部署。原始失败、回归矩阵、命令与限制见 sourceReport 第8节及 progress.md#feat-083。"
+    },
+    {
+      "id": "feat-084",
+      "name": "适度增强默认3D小人拖拽时的倾摆幅度",
+      "description": "根据用户验收反馈，在不改变自由放置与回弹流程的前提下，提高默认模型拖拽时随指针速度变化的水平倾摆和前后倾斜幅度。",
+      "priority": "P1",
+      "priorityReason": "用户在 feat-082 验收后直接反馈拖拽摆动偏小，当前交互的可感知反馈需要调整。",
+      "status": "done",
+      "dependencies": [
+        "feat-082"
+      ],
+      "acceptanceCriteria": [
+        "默认3D模型在相同拖拽速度下有明显但有界的更大水平倾摆和前后倾斜，转向仍平滑；不改模型资产、面部结构或生日主题",
+        "保持现有拎起高度、放手原地回弹时长、位置持久化、点击与拖拽区分、减少动态偏好及停绘行为",
+        "现有动作行为测试与真实浏览器拖拽旅程通过；运行 ./init.sh 和 npm run check，记录验证范围、证据与交接"
+      ],
+      "evidence": "2026-09-23：默认模型拖拽水平速度系数/限幅由0.08/±0.12rad调至0.12/±0.18rad，纵向由0.06/±0.08rad调至0.09/±0.12rad（均提高约50%）；其余动作时序与资产未改。./scripts/run-node22.sh ./init.sh exit0（95文件/915项）；定向Vitest 1文件/13项通过，普通速度与极限反向姿态均有行为断言；./scripts/run-node22.sh npm run check exit0（95文件/915项×2，生产构建，覆盖率57.22/52.61/61.94/57.68）；sudo -n -g docker -u dadalv ./scripts/run-node22.sh npm run test:e2e:agent-entry:production:default exit0（25/25，4.0分钟，软件WebGL，含真实拖拽/回稳/记忆/触摸/边缘）。构建改写的next-env引用已恢复，typecheck exit0；开发Web 0.0.0.0:3000及独立Worker已恢复，健康200且db=true。未改服务端/数据库/依赖/GLB/生日主题，故未重复PG集成、生日E2E、Compose；细节见progress.md#feat-084。"
+    },
+    {
+      "id": "feat-085",
+      "name": "Agent 时间线日志按任务发起者分侧",
+      "description": "让 /home 的 Agent log 卡片沿用用户文章的左右分侧规则，依据 AgentTask.requestedById 而非日志序号排布，并覆盖既有日志和搜索视图。",
+      "priority": "P1",
+      "priorityReason": "用户在生产 /home 发现同一发起者的三条 Agent 日志跨侧显示，直接造成时间轴身份语义失真，并明确要求修复。",
+      "status": "done",
+      "dependencies": [
+        "feat-075"
+      ],
+      "acceptanceCriteria": [
+        "同一时间轴视图中，Agent log 依据真实任务发起者与用户文章使用相同的左右映射；同一发起者的多条日志始终同侧，不再按日志序号交替",
+        "首页及搜索结果都提供可信的任务发起者展示字段；既有未关联 Post.agentTaskId 的日志仍可通过历史 taskId 解析，关联缺失或无发起者的日志使用明确且稳定的回退位置，不误认其他用户",
+        "不改变 Post.authorId 的作者与权限语义、房间可见性、Agent 投影幂等/节流和文章时间顺序",
+        "添加缺陷回归，覆盖同一发起者多条日志、不同发起者、历史日志及无发起者记录；运行启动基线、标准门禁与风险匹配的真实 PostgreSQL 和生产浏览器验证，记录证据与交接"
+      ],
+      "evidence": "2026-09-23 用户授权登记与修复，依赖 feat-075 已完成。AgentTask.requestedById 经服务端批量投影为 agentRequesterId；新日志优先 Post.agentTaskId，旧日志由 metadata.taskId 追溯，核对任务与 Post.roomId 一致；无发起者或失联任务居中，Post.authorId/权限与可见性不变。Timeline 按文章相同的 leftUserId 映射分侧，移除日志序号交替。启动 ./scripts/run-node22.sh ./init.sh exit 0（95 文件/915 项）；定向真实 PostgreSQL 1 文件/2 项通过；定向生产 Playwright 2/2（含 setup）通过；sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/915 项单元与组件测试、生产构建、覆盖率 statements/branches/functions/lines 57.20/52.46/62.10/57.71、真实 PostgreSQL 39 文件/163 项、生产 Playwright 59/59。next-env 恢复原开发引用后 typecheck exit 0，3000 健康 200、ok/db=true。记录与边界见 progress.md#feat-085；本轮未改 schema、迁移、依赖或 Worker，未运行 Compose smoke。2026-09-23 Review P2 复核：搜索回归新增首页可见、搜索结果必排除的第七张文章卡片；响应 200 后校验返回的 6 个 ID，并等待筛选外卡片消失与页面实际渲染 6 张卡片，之后才验证左右分侧，关闭旧列表假阳性窗口。./scripts/run-node22.sh ./init.sh exit 0（95 文件/915 项）；定向生产 Playwright 2/2；sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/915 项、生产构建、真实 PostgreSQL 39 文件/163 项、生产 Playwright 59/59；本次仅修改浏览器回归，产品代码不变，详见 progress.md#feat-085。"
     }
   ]
 }

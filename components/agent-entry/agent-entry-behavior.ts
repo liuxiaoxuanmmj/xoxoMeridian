@@ -79,8 +79,8 @@ export function createEntryMotionController(enabled: boolean) {
         const delta = drag.pendingVelocity && !pose.active ? Math.min(elapsed, 32) : elapsed;
         drag.lastFrame = now;
         if (drag.pendingVelocity) {
-          drag.targetRoll = clamp(drag.pendingVelocity.x * 0.08, 0.12);
-          drag.targetTilt = clamp(drag.pendingVelocity.y * 0.06, 0.08);
+          drag.targetRoll = clamp(drag.pendingVelocity.x * 0.12, 0.18);
+          drag.targetTilt = clamp(drag.pendingVelocity.y * 0.09, 0.12);
           drag.pendingVelocity = null;
           drag.quietMs = 0;
         } else {

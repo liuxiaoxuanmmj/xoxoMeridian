@@ -414,6 +414,88 @@ test("renders the authenticated home navigation", async ({ page }) => {
   await expect(page.getByRole("link", { name: E2E_USERS[0].displayName })).toBeVisible();
 });
 
+test("Agent 日志在首页与搜索中跟随任务发起者的文章分侧", async ({ page }) => {
+  const databaseUrl = process.env.E2E_DATABASE_URL
+    ?? (await readFile(resolve("test-results/.e2e-database-url"), "utf8")).trim();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  const prefix = `e2e-agent-side-${Date.now().toString(36)}`;
+  const roomId = `${prefix}-room`;
+  const postIds = ["article-owner", "article-partner", "log-owner-new", "log-owner-old", "log-partner", "log-scheduled", "article-unmatched"]
+    .map((name) => `${prefix}-${name}`);
+
+  try {
+    const [owner, partner, agent] = await Promise.all([
+      db.user.findUniqueOrThrow({ where: { email: E2E_USERS[0].email } }),
+      db.user.findUniqueOrThrow({ where: { email: E2E_USERS[1].email } }),
+      db.agent.findUniqueOrThrow({ where: { slug: "life-assistant" } }),
+    ]);
+    await db.room.create({ data: {
+      id: roomId, slug: roomId, name: "Agent 日志分侧回归",
+      participants: { create: [{ userId: owner.id }, { userId: partner.id }] },
+    } });
+    const createTask = (requestedById: string | null) => db.agentTask.create({ data: {
+      roomId, agentId: agent.id, requestedById, status: "completed", input: {},
+    } });
+    const [ownerNew, ownerOld, partnerTask, scheduledTask] = await Promise.all([
+      createTask(owner.id), createTask(owner.id), createTask(partner.id), createTask(null),
+    ]);
+    const baseTime = Date.UTC(2098, 8, 23);
+    await db.post.createMany({ data: [
+      { id: postIds[0], slug: postIds[0], title: `${prefix} 我的文章`, content: "同一发起者左侧", type: "user_post", authorId: owner.id, publishedAt: new Date(baseTime) },
+      { id: postIds[1], slug: postIds[1], title: `${prefix} 伙伴文章`, content: "另一发起者右侧", type: "user_post", authorId: partner.id, publishedAt: new Date(baseTime + 1_000) },
+      { id: postIds[2], slug: postIds[2], title: `${prefix} 新日志`, content: "新任务关联", type: "agent_log", roomId, agentTaskId: ownerNew.id, metadata: { taskId: ownerNew.id }, publishedAt: new Date(baseTime + 2_000) },
+      { id: postIds[3], slug: postIds[3], title: `${prefix} 旧日志`, content: "旧任务 metadata", type: "agent_log", roomId, metadata: { taskId: ownerOld.id }, publishedAt: new Date(baseTime + 3_000) },
+      { id: postIds[4], slug: postIds[4], title: `${prefix} 伙伴日志`, content: "伙伴任务", type: "agent_log", roomId, agentTaskId: partnerTask.id, metadata: { taskId: partnerTask.id }, publishedAt: new Date(baseTime + 4_000) },
+      { id: postIds[5], slug: postIds[5], title: `${prefix} 定时日志`, content: "无发起者", type: "agent_log", roomId, agentTaskId: scheduledTask.id, metadata: { taskId: scheduledTask.id }, publishedAt: new Date(baseTime + 5_000) },
+      { id: postIds[6], slug: postIds[6], title: "搜索前附加文章", content: "搜索结果应排除这张卡片", type: "user_post", authorId: owner.id, publishedAt: new Date(baseTime + 6_000) },
+    ] });
+
+    const unmatchedCard = page.getByRole("article").filter({ has: page.getByRole("heading", { name: "搜索前附加文章", exact: true }) });
+    const cards = ["我的文章", "伙伴文章", "新日志", "旧日志", "伙伴日志", "定时日志"]
+      .map((label) => page.getByRole("article").filter({ has: page.getByRole("heading", { name: `${prefix} ${label}`, exact: true }) }));
+    const assertSides = async () => {
+      for (const card of cards) await expect(card).toBeVisible();
+      const centers = await Promise.all(cards.map(async (card) => {
+        const box = await card.boundingBox();
+        expect(box).not.toBeNull();
+        return box!.x + box!.width / 2;
+      }));
+      const axis = page.viewportSize()!.width / 2;
+      expect(centers[0]).toBeLessThan(axis);
+      expect(centers[1]).toBeGreaterThan(axis);
+      expect(centers[2]).toBeLessThan(axis);
+      expect(centers[3]).toBeLessThan(axis);
+      expect(centers[4]).toBeGreaterThan(axis);
+      expect(Math.abs(centers[5] - axis)).toBeLessThan(24);
+    };
+
+    await page.goto("/home");
+    await expect(unmatchedCard).toBeVisible();
+    await assertSides();
+    const search = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/posts" && url.searchParams.get("q") === prefix;
+    });
+    await page.getByRole("textbox", { name: "Search posts", exact: true }).fill(prefix);
+    const searchResponse = await search;
+    expect(searchResponse.status()).toBe(200);
+    const results = await searchResponse.json() as { posts: Array<{ id: string }> };
+    expect(results.posts.map((post) => post.id).sort()).toEqual(postIds.slice(0, 6).sort());
+    await expect(unmatchedCard).toHaveCount(0);
+    await expect(page.getByRole("main").getByRole("article")).toHaveCount(6);
+    await assertSides();
+  } finally {
+    await page.goto("about:blank").catch(() => undefined);
+    try {
+      await db.post.deleteMany({ where: { id: { in: postIds } } });
+      await db.agentTask.deleteMany({ where: { roomId } });
+      await db.room.deleteMany({ where: { id: roomId } });
+    } finally {
+      await db.$disconnect();
+    }
+  }
+});
+
 test("keeps the Home felt surface covering content appended after the page element", async ({ page }) => {
   await page.goto("/home");
   await expect(page.locator(".home-linen-page")).toBeVisible();

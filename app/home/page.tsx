@@ -8,6 +8,7 @@ import { HomeTimelineBoard } from "@/components/home/HomeTimelineBoard";
 import { ensureHomePostElements, getHomeBoardSnapshot, getOrCreateHomeBoard } from "@/lib/home-board";
 import { getPostVisibilityWhere } from "@/lib/post-visibility";
 import { postTimelineOrderBy, postTimelineSelect } from "@/lib/post-timeline";
+import { projectTimelinePosts } from "@/lib/post-timeline-projection";
 
 export const dynamic = "force-dynamic";
 
@@ -20,11 +21,12 @@ export default async function HomePage() {
     take: 50,
     select: postTimelineSelect,
   });
+  const timelinePosts = await projectTimelinePosts(posts);
 
   const board = await getOrCreateHomeBoard();
   await ensureHomePostElements({
     boardId: board.id,
-    posts: posts.map((post) => ({ id: post.id, authorId: post.authorId })),
+    posts: timelinePosts.map((post) => ({ id: post.id, authorId: post.authorId })),
   });
   const initialSnapshot = await getHomeBoardSnapshot({
     boardId: board.id,
@@ -53,7 +55,7 @@ export default async function HomePage() {
       <PageTransition>
         <Suspense fallback={null}>
           <HomeTimelineBoard
-            posts={JSON.parse(JSON.stringify(posts))}
+            posts={JSON.parse(JSON.stringify(timelinePosts))}
             currentUserId={user.id}
             initialSnapshot={JSON.parse(JSON.stringify(initialSnapshot))}
           />
