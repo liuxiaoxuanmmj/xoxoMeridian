@@ -35,7 +35,7 @@ export function useEntryFeedback(enabled: boolean, reduced: boolean) {
   const show = useCallback((kind: OrdinaryFeedback) => {
     if (!enabled || dragging.current || document.visibilityState === "hidden") return;
     const now = performance.now();
-    if (kind !== "click" && now < Math.max(clickUntil.current, releaseUntil.current)) return;
+    if (kind !== "click" && kind !== "reply" && kind !== "failure" && now < Math.max(clickUntil.current, releaseUntil.current)) return;
     if (kind === "attention" && now - lastAttention.current < 5000) return;
     if (kind === "attention") lastAttention.current = now;
     if (kind === "click") { clickUntil.current = now + 2200; interacted.current = true; }

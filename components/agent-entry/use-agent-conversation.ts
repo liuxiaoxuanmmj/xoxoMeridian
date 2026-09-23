@@ -27,6 +27,8 @@ export function useAgentConversation({ principalId, open, onIdentityInvalid, onF
   const [readError, setReadError] = useState<string | null>(null);
   const [sendFailure, setSendFailure] = useState<{ clientMessageId: string; message: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [clearing, setClearing] = useState(false);
+  const [clearError, setClearError] = useState<string | null>(null);
   const channel = useRef<ReadChannel | null>(null);
   const lifetime = useRef(0);
   const mutationVersion = useRef(0);
@@ -34,7 +36,7 @@ export function useAgentConversation({ principalId, open, onIdentityInvalid, onF
   const knownTasks = useRef(new Map<string, string>());
   const acknowledgedIds = useRef(new Set<string>());
 
-  // 只有这一调度器读取快照。即使传输忽略 abort，关窗/重开也等旧请求 settle。
+  // 只有这一调度器读取快照。关窗后只追踪已知进行中的任务；即使传输忽略 abort，暂停/重开也等旧请求 settle。
   useEffect(() => {
     const life = ++lifetime.current;
     let alive = true;
@@ -44,7 +46,8 @@ export function useAgentConversation({ principalId, open, onIdentityInvalid, onF
     let queued = false;
     let failures = 0;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const active = () => alive && panelOpen && document.visibilityState !== "hidden";
+    const hasRunningTask = () => [...knownTasks.current.values()].some((status) => status === "pending" || status === "running");
+    const active = () => alive && document.visibilityState !== "hidden" && (panelOpen || hasRunningTask());
     const refresh = () => {
       clearTimeout(timer);
       if (!active()) return;
@@ -128,6 +131,7 @@ export function useAgentConversation({ principalId, open, onIdentityInvalid, onF
     const current = () => lifetime.current === life && !controller.signal.aborted;
     setSending(true);
     setSendFailure(null);
+    setClearError(null);
     setPending((records) => [...records.filter((item) => item.clientMessageId !== record.clientMessageId), { ...record, state: "sending" }]);
     try {
       const response = await fetch("/api/agent/conversation/messages", {
@@ -168,17 +172,53 @@ export function useAgentConversation({ principalId, open, onIdentityInvalid, onF
     void transmit(record);
   }, [draft, principalId, transmit]);
 
+  const clear = useCallback(async () => {
+    if (mutation.current) return;
+    const controller = new AbortController();
+    mutation.current = controller;
+    const life = lifetime.current;
+    const current = () => lifetime.current === life && !controller.signal.aborted;
+    setClearing(true);
+    setClearError(null);
+    try {
+      const response = await fetch("/api/agent/conversation", {
+        method: "DELETE", cache: "no-store", credentials: "same-origin", signal: controller.signal,
+        headers: { "X-Agent-Viewer-Id": principalId },
+      });
+      if (!current()) return;
+      if (response.status === 401 || response.status === 403) { onIdentityInvalid(); return; }
+      if (!response.ok) throw new Error(response.status === 409
+        ? "小助手正在处理，请等待任务完成后再清空。" : "清空失败，请重试。");
+      const result = await response.json() as { currentUserId: string; roomId: string | null };
+      if (!current()) return;
+      if (result.currentUserId !== principalId) { onIdentityInvalid(); return; }
+      mutationVersion.current += 1;
+      knownTasks.current.clear();
+      acknowledgedIds.current.clear();
+      setSnapshot((previous) => previous ? { ...previous, roomId: result.roomId, messages: [], tasks: [], pendingApprovals: [] } : null);
+      setConfirmed([]);
+      setPending([]);
+      setSendFailure(null);
+      setDraft("");
+      refresh();
+    } catch (error) {
+      if (current()) setClearError(error instanceof Error ? error.message : "清空失败，请重试。");
+    } finally {
+      if (current()) { mutation.current = null; setClearing(false); }
+    }
+  }, [onIdentityInvalid, principalId, refresh]);
+
   const messageMap = new Map((snapshot?.messages ?? []).map((message) => [message.id, message]));
   const taskMap = new Map((snapshot?.tasks ?? []).map((task) => [task.id, task]));
   for (const record of confirmed) {
     if (!messageMap.has(record.message.id)) messageMap.set(record.message.id, record.message);
     const existingTask = taskMap.get(record.task.id);
-    if (!existingTask || existingTask.updatedAt <= record.task.updatedAt) taskMap.set(record.task.id, record.task);
+    if (!existingTask || existingTask.updatedAt < record.task.updatedAt) taskMap.set(record.task.id, record.task);
   }
   const messages = [...messageMap.values()].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id)).slice(-80);
   const tasks = [...taskMap.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)).slice(0, 80);
 
-  return { snapshot, messages, tasks, draft, setDraft, pending, readError, sendError: sendFailure?.message ?? null, sending, send, retry: transmit, refresh };
+  return { snapshot, messages, tasks, draft, setDraft, pending, readError, sendError: sendFailure?.message ?? null, clearError, sending, clearing, send, clear, retry: transmit, refresh };
 }
 
 export type AgentConversationState = ReturnType<typeof useAgentConversation>;

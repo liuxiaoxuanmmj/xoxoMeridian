@@ -1,10 +1,10 @@
 "use client";
 
-import { useLayoutEffect, useRef, type RefObject } from "react";
+import { useCallback, useLayoutEffect, useRef, type RefObject } from "react";
 import type { EntryMotionController } from "@/components/agent-entry/agent-entry-behavior";
 import type { AgentEntryThemeConfig } from "@/components/agent-entry/agent-entry.types";
 import {
-  clampEntryPoint, placementToPoint, pointToPlacement, readEntryPlacement, saveEntryPlacement,
+  clampEntryPoint, clearEntryPlacement, placementToPoint, pointToPlacement, readEntryPlacement, saveEntryPlacement,
   type EntryBounds, type EntryPlacement, type EntryPoint,
 } from "@/components/agent-entry/agent-entry-placement";
 
@@ -34,7 +34,9 @@ type DragOptions = {
 export function useEntryDrag({ enabled, open, config, root, entry, trigger, motion, beginDrag, endDrag, cancelDrag }: DragOptions) {
   const currentOpen = useRef(open);
   const refresh = useRef<(() => void) | null>(null);
+  const reset = useRef<(() => void) | null>(null);
   const placement = useRef<EntryPlacement | null>(null);
+  const resetPosition = useCallback(() => reset.current?.(), []);
 
   useLayoutEffect(() => {
     const shell = root.current;
@@ -205,6 +207,12 @@ export function useEntryDrag({ enabled, open, config, root, entry, trigger, moti
     const buttonBlur = () => { if (gesture?.pointerId === null) finish(false); };
     const visibility = () => { if (document.visibilityState === "hidden") finish(false); };
     const viewportChange = () => { finish(false); measure(); };
+    reset.current = () => {
+      finish(false);
+      placement.current = null;
+      clearEntryPlacement();
+      measure();
+    };
     button.addEventListener("pointerdown", pointerdown);
     button.addEventListener("pointermove", pointermove);
     button.addEventListener("pointerup", pointerup);
@@ -224,6 +232,7 @@ export function useEntryDrag({ enabled, open, config, root, entry, trigger, moti
     measure();
     return () => {
       refresh.current = null;
+      reset.current = null;
       finish(false);
       button.removeEventListener("pointerdown", pointerdown);
       button.removeEventListener("pointermove", pointermove);
@@ -250,4 +259,6 @@ export function useEntryDrag({ enabled, open, config, root, entry, trigger, moti
     currentOpen.current = open;
     refresh.current?.();
   });
+
+  return resetPosition;
 }

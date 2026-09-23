@@ -134,6 +134,69 @@ afterEach(() => {
 });
 
 describe("默认 Agent 入口拖拽", () => {
+  it("私聊归位通过键盘清除专用位置并立即恢复默认点，刷新式重挂载后仍可重新拖拽", async () => {
+    localStorage.setItem(storageKey, saved);
+    localStorage.setItem("other-preference", "keep");
+    const removed = vi.spyOn(Storage.prototype, "removeItem");
+    const user = userEvent.setup();
+    const view = render(entry()); const button = await ready();
+    const canvas = document.querySelector("canvas");
+    expect(position(button)).not.toEqual({ x: 792, y: 536 });
+    await user.click(button);
+    const reset = screen.getByRole("button", { name: "归位" });
+    const clear = screen.getByRole("button", { name: "清空与小助手的聊天记录" });
+    expect(reset).toHaveAttribute("aria-label", "归位");
+    expect(reset.querySelector("svg")).not.toBeNull();
+    expect(reset.querySelector('span[aria-hidden="true"]')).toHaveTextContent("归位");
+    expect(reset.compareDocumentPosition(clear) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.touchStart(reset);
+    expect(reset).toHaveAttribute("data-touch-hint", "true");
+    expect(clear).toHaveAttribute("data-touch-hint", "false");
+    reset.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expectPosition(button, { x: 792, y: 536 }));
+    expect(removed).toHaveBeenCalledWith(storageKey);
+    expect(localStorage.getItem(storageKey)).toBeNull();
+    expect(localStorage.getItem("other-preference")).toBe("keep");
+    expect(screen.getByRole("dialog")).toBeVisible();
+    expect(document.querySelector("canvas")).toBe(canvas);
+    await user.click(screen.getByRole("button", { name: "关闭对话" }));
+    expectPosition(button, { x: 792, y: 536 });
+    view.unmount(); scene.props = undefined;
+    render(entry()); const mounted = await ready();
+    expectPosition(mounted, { x: 792, y: 536 });
+    const { to } = await startDrag(mounted, -90, -60);
+    pointer(mounted, "pointerup", to.x, to.y);
+    expect(localStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it("手机开窗归位保留临时顶部位置，关闭后回到默认点", async () => {
+    viewport.width = 390; viewport.height = 844;
+    localStorage.setItem(storageKey, saved);
+    const user = userEvent.setup();
+    render(entry()); const button = await ready();
+    await user.click(button);
+    const compact = position(button);
+    expect(compact.y).toBeLessThan(100);
+    await user.click(screen.getByRole("button", { name: "归位" }));
+    expectPosition(button, compact);
+    expect(localStorage.getItem(storageKey)).toBeNull();
+    await user.click(screen.getByRole("button", { name: "关闭对话" }));
+    await waitFor(() => expectPosition(button, { x: 214, y: 668 }));
+  });
+
+  it("浏览器拒绝删除位置记录时仍恢复本次挂载中的默认点", async () => {
+    localStorage.setItem(storageKey, saved);
+    const remove = vi.spyOn(Storage.prototype, "removeItem").mockImplementation(() => { throw new DOMException("不可删除", "SecurityError"); });
+    const user = userEvent.setup();
+    render(entry()); const button = await ready();
+    await user.click(button);
+    await user.click(screen.getByRole("button", { name: "归位" }));
+    expect(remove).toHaveBeenCalledWith(storageKey);
+    expectPosition(button, { x: 792, y: 536 });
+    expect(localStorage.getItem(storageKey)).toBe(saved);
+  });
+
   it("小幅按压抖动仍可点击开窗，不保存为拖拽位置", async () => {
     const writes = vi.spyOn(Storage.prototype, "setItem");
     render(entry()); const button = await ready();
@@ -291,5 +354,6 @@ describe("默认 Agent 入口拖拽", () => {
     expect(writes).not.toHaveBeenCalled();
     fireEvent.click(button, { detail: 1 });
     expect(screen.getByRole("dialog")).toBeVisible();
+    expect(screen.queryByRole("button", { name: "归位" })).toBeNull();
   });
 });

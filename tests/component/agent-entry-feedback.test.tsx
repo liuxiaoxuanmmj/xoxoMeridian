@@ -36,7 +36,7 @@ describe("小人拖拽本地反馈", () => {
     expect(result.current.motion.frame(3100).active).toBe(false);
   });
 
-  it("拖拽覆盖点击保护，重复开始不刷新台词计时，抓住时屏蔽普通反馈", () => {
+  it("拖拽覆盖点击保护，抓住时屏蔽反馈，松手后任务结果优先提醒", () => {
     const { result } = renderHook(() => useEntryFeedback(true, false));
     act(() => { result.current.onReady(); result.current.show("click"); });
     expect(result.current.feedback?.text).toBe("在呢，我们聊聊。");
@@ -56,9 +56,11 @@ describe("小人拖拽本地反馈", () => {
     act(() => result.current.endDrag());
     expect(result.current.feedback).toEqual({ symbol: "✦", text: "好，就待在这里。" });
     act(() => { result.current.show("attention"); result.current.show("reply"); });
-    expect(result.current.feedback?.text).toBe("好，就待在这里。");
+    expect(result.current.feedback?.text).toBe("回复准备好啦。");
     act(() => result.current.show("click"));
     expect(result.current.feedback?.text).toBe("在呢，我们聊聊。");
+    act(() => result.current.show("failure"));
+    expect(result.current.feedback?.text).toBe("这次没有完成，看看对话里的提示。");
   });
 
   it("取消清除拖动台词，不播放放下台词，随后点击正常响应", () => {

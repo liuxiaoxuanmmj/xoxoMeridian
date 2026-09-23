@@ -55,6 +55,11 @@ describe("Agent Entry 私聊入口", () => {
     render(entry());
     const button = screen.getByRole("button", { name: "打开 Agent 聊天" });
     expect(button).toBeVisible(); expect(button).toBeEnabled();
+    const logo = button.querySelector("img");
+    expect(logo).toHaveAttribute("src", "/brand/logo_transparent.svg");
+    expect(logo).toHaveAttribute("width", "24");
+    expect(logo).toHaveAttribute("height", "24");
+    expect(button).not.toHaveTextContent("✦");
     await user.click(button);
     expect(screen.getByRole("dialog", { name: "与小助手聊天" })).toBeVisible();
     expect(screen.getByRole("textbox", { name: "消息" })).toHaveFocus();
@@ -92,6 +97,7 @@ describe("Agent Entry 私聊入口", () => {
     const button = await ready(); await user.click(button); await user.type(screen.getByRole("textbox"), "保留我");
     act(() => scene.props?.onError());
     expect(document.querySelector("canvas")).toBeNull();
+    expect(button.querySelector("img")).toHaveAttribute("src", "/brand/logo_transparent.svg");
     expect(screen.getByRole("textbox")).toHaveValue("保留我");
     expect(button).toBeEnabled();
     await user.keyboard("{Escape}");

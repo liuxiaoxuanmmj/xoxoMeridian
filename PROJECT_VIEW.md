@@ -103,7 +103,7 @@ flowchart LR
   Q9 -->|启动 Worker| Q4
   Q9 -->|启动 Worker| Q8
   Q10 -->|消费认证状态| Q1
-  Q10 -->|专属私聊快照与发送| Q2
+  Q10 -->|专属私聊快照、发送与清空| Q2
   Q10 -->|构建主题与正式资产打包| Q9
   Q9 -->|构建和交付入口| Q10
 ```
@@ -242,7 +242,7 @@ flowchart LR
 **Internal Components**
 
 - Room lifecycle 与成员访问控制；`shared`/`agent_private` 用途和唯一 private owner。
-- `lib/agent-conversation.ts` 专属快照、原文发送与幂等；`app/api/agent/conversation/` 认证、身份前置条件和禁缓存；共享 Chat/Study 只选 shared。
+- `lib/agent-conversation.ts` 专属快照、原文发送、幂等与清空；`app/api/agent/conversation/` 认证、身份前置条件和禁缓存；共享 Chat/Study 只选 shared。
 - Message command/detection 与任务派生。
 - Room snapshot query aggregator。
 - SSE server connection lifecycle。

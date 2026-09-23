@@ -27,6 +27,10 @@ export function saveEntryPlacement(placement: EntryPlacement) {
   try { localStorage.setItem(entryPositionKey, JSON.stringify(placement)); } catch { /* 存储被禁用时仍保留本次挂载中的位置。 */ }
 }
 
+export function clearEntryPlacement() {
+  try { localStorage.removeItem(entryPositionKey); } catch { /* 存储被禁用时仍可恢复本次挂载中的默认位置。 */ }
+}
+
 const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
 function axisBounds(length: number, size: number) {
   const margin = Math.min(12, Math.max(0, (length - size) / 2));

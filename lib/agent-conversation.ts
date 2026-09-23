@@ -145,6 +145,8 @@ export async function sendAgentConversationMessage(input: {
         if (room) {
           assertPrivateRoomMembers(room);
           if (room.kind !== "agent_private") throw jsonError("Forbidden", 403);
+          // 与清空操作串行化，避免清空事务跨过正在入库的消息。
+          await tx.$queryRaw`SELECT "id" FROM "Room" WHERE "id" = ${room.id} FOR UPDATE`;
           const existing = await tx.message.findUnique({
             where: { roomId_senderId_clientMessageId: { roomId: room.id, senderId: input.userId, clientMessageId } },
             include: { sourceTask: { select: taskSelect } },
@@ -194,4 +196,34 @@ export async function sendAgentConversationMessage(input: {
       throw error;
     }
   }
+}
+
+export async function clearAgentConversation(userId: string): Promise<{ currentUserId: string; roomId: string | null }> {
+  return prisma.$transaction(async (tx) => {
+    const locked = await tx.$queryRaw<Array<{ id: string }>>`
+      SELECT "id" FROM "Room" WHERE "privateOwnerId" = ${userId} FOR UPDATE
+    `;
+    if (locked.length === 0) return { currentUserId: userId, roomId: null };
+    const room = await tx.room.findUniqueOrThrow({
+      where: { id: locked[0].id },
+      include: { participants: { select: { userId: true } } },
+    });
+    assertPrivateRoomMembers(room);
+    if (room.kind !== "agent_private") throw jsonError("Forbidden", 403);
+
+    const tasks = await tx.$queryRaw<Array<{ status: string }>>`
+      SELECT "status" FROM "AgentTask" WHERE "roomId" = ${room.id} FOR UPDATE
+    `;
+    if (tasks.some((task) => task.status === "running")) {
+      throw jsonError("小助手正在处理，请等待任务完成后再清空。", 409);
+    }
+
+    // Task 的步骤、调用与审批由数据库外键级联清除；保留独立的备忘录和计划。
+    await tx.agentTask.deleteMany({ where: { roomId: room.id } });
+    await tx.message.deleteMany({ where: { roomId: room.id } });
+    await tx.eventLog.deleteMany({ where: { roomId: room.id } });
+    await tx.messageSummary.deleteMany({ where: { roomId: room.id } });
+    await tx.memory.deleteMany({ where: { roomId: room.id } });
+    return { currentUserId: userId, roomId: room.id };
+  });
 }

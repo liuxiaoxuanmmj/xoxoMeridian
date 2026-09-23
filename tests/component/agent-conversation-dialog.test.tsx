@@ -46,6 +46,65 @@ afterEach(() => { vi.restoreAllMocks(); vi.useRealTimers(); });
 async function loaded() { await screen.findByText("今天有什么想聊的？直接告诉我就好。"); }
 
 describe("私聊消息与请求生命周期", () => {
+  it("清空按钮位于关闭按钮左侧，取消确认或接口失败保留消息，成功后不再显示旧快照", async () => {
+    const current = snapshot();
+    current.roomId = "room-user-a";
+    current.messages = [accepted({ clientMessageId: crypto.randomUUID(), content: "待清空消息" }).message];
+    current.tasks = [task()];
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    const deletion = vi.fn(() => new HttpResponse(null, { status: 503 }));
+    mockServer.use(
+      http.get("/api/agent/conversation", () => HttpResponse.json(current)),
+      http.delete("/api/agent/conversation", deletion),
+    );
+    const user = userEvent.setup(); render(<Harness />);
+    expect(await screen.findByText("待清空消息")).toBeVisible();
+    const clear = screen.getByRole("button", { name: "清空与小助手的聊天记录" });
+    const close = screen.getByRole("button", { name: "关闭对话" });
+    expect(clear.querySelector("svg")).not.toBeNull();
+    expect(clear.compareDocumentPosition(close) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    fireEvent.touchStart(clear);
+    expect(clear).toHaveAttribute("data-touch-hint", "true");
+    expect(clear).toHaveTextContent("清空");
+    await user.click(clear);
+    expect(deletion).not.toHaveBeenCalled();
+    expect(screen.getByText("待清空消息")).toBeVisible();
+    confirm.mockReturnValue(true);
+    await user.click(clear);
+    expect(await screen.findByRole("alert")).toHaveTextContent("清空失败");
+    expect(screen.getByText("待清空消息")).toBeVisible();
+    mockServer.use(http.delete("/api/agent/conversation", ({ request }) => {
+      expect(request.headers.get("X-Agent-Viewer-Id")).toBe("user-a");
+      current.messages = []; current.tasks = [];
+      return HttpResponse.json({ currentUserId: "user-a", roomId: "room-user-a" });
+    }));
+    clear.focus();
+    await user.keyboard("{Enter}");
+    await waitFor(() => expect(screen.queryByText("待清空消息")).toBeNull());
+    expect(screen.getByText("今天有什么想聊的？直接告诉我就好。")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "刷新测试快照" }));
+    expect(screen.queryByText("待清空消息")).toBeNull();
+  });
+
+  it("清空成功后丢弃此前在途的旧快照", async () => {
+    const old = deferred();
+    const prior = snapshot();
+    prior.messages = [accepted({ clientMessageId: crypto.randomUUID(), content: "迟到的旧消息" }).message];
+    let reads = 0;
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.spyOn(globalThis, "fetch").mockImplementation((_url, init) => {
+      if (init?.method === "DELETE") return Promise.resolve(Response.json({ currentUserId: "user-a", roomId: "room-user-a" }));
+      reads += 1;
+      return reads === 1 ? old.promise : Promise.resolve(Response.json(snapshot()));
+    });
+    const user = userEvent.setup(); render(<Harness />);
+    await user.click(screen.getByRole("button", { name: "清空与小助手的聊天记录" }));
+    await act(async () => old.resolve(Response.json(prior)));
+    await waitFor(() => expect(reads).toBe(2));
+    expect(screen.queryByText("迟到的旧消息")).toBeNull();
+    expect(await screen.findByText("今天有什么想聊的？直接告诉我就好。")).toBeVisible();
+  });
+
   it("POST 响应失败后 GET 确认入库，清除对应错误及重试入口且只展示一次消息", async () => {
     let current = snapshot();
     mockServer.use(
@@ -303,6 +362,33 @@ describe("私聊消息与请求生命周期", () => {
     await user.click(screen.getByRole("button", { name: "刷新测试快照" }));
     await act(async () => {}); expect(feedback).toHaveBeenCalledOnce();
   });
+
+  it("关窗后继续观察进行中任务，完成时提醒一次并停止后台读取", async () => {
+    let current = { ...snapshot(), tasks: [task("running")] };
+    const reads = vi.fn(() => HttpResponse.json(current));
+    mockServer.use(http.get("/api/agent/conversation", reads));
+    const user = userEvent.setup(); render(<Harness />);
+    expect(await screen.findByText("小助手正在思考…")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "关闭对话" }));
+    await waitFor(() => expect(reads.mock.calls.length).toBeGreaterThanOrEqual(2));
+    current = { ...current, tasks: [task("completed")] };
+    await waitFor(() => expect(feedback).toHaveBeenCalledExactlyOnceWith("reply"), { timeout: 4500 });
+    const completedReads = reads.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 2200));
+    expect(reads).toHaveBeenCalledTimes(completedReads);
+    await user.click(screen.getByRole("button", { name: "打开测试对话" }));
+    expect(screen.getByRole("status")).not.toHaveTextContent("小助手正在思考…");
+  }, 8000);
+
+  it("关窗期间任务失败仍给出失败提醒", async () => {
+    let current = { ...snapshot(), tasks: [task("running")] };
+    mockServer.use(http.get("/api/agent/conversation", () => HttpResponse.json(current)));
+    const user = userEvent.setup(); render(<Harness />);
+    expect(await screen.findByText("小助手正在思考…")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "关闭对话" }));
+    current = { ...current, tasks: [task("failed")] };
+    await waitFor(() => expect(feedback).toHaveBeenCalledExactlyOnceWith("failure"), { timeout: 4500 });
+  }, 6000);
 
   it("仍在执行的旧任务不被更新的完成任务清掉等待状态", async () => {
     mockServer.use(http.get("/api/agent/conversation", () => HttpResponse.json({

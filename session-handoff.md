@@ -2,17 +2,16 @@
 
 ## 当前进展
 
-- feat-085「Agent 时间线日志按任务发起者分侧」保持 `done`。本次修复审查 P2：[`authenticated.spec.ts`](tests/e2e/authenticated.spec.ts) 的搜索回归先确认首页有一张不匹配搜索词的文章，再验证搜索响应 ID、等待该文章消失及六张结果卡片渲染，最后检查左右分侧。这样旧首页列表不能使搜索断言假通过；产品代码本次未改。细节见 [进度](progress.md#feat-085)。
-- feat-084 与 feat-085 的工作区改动及本次 Review P2 修正按用户要求汇总为一个本地 commit；未推送或部署生产。没有 schema、迁移、依赖或 Worker 变更。
+- feat-089「小助手思考气泡与关窗后任务完成提醒」已完成并置为 `done`，依赖 feat-080、feat-088 均已完成。小助手入口在私聊任务 `pending`/`running` 期间持续显示“小助手正在思考…”；关闭私聊弹窗后仍追踪已知进行中任务，终态显示“回复准备好啦”或失败提示，并停止关窗后台读取。页面隐藏时暂停，可见后恢复；重开弹窗可读取最新回复。详见 [进度](progress.md#feat-089) 与 [功能状态](feature_list.json)。
+- feat-086 至 feat-089 的应用、测试与状态修改已按用户要求合并为一个本地 commit；未推送或部署。本次提交整理未再修改 API、数据库、Worker、依赖或部署配置。
 
-## 验证与边界
+## 验证与风险
 
-- `./scripts/run-node22.sh ./init.sh` exit 0：95 文件/915 项。定向生产 Playwright 命令见进度，含 setup 2/2 通过。
-- `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full` exit 0：95 文件/915 项、生产构建、覆盖率 57.20/52.46/62.10/57.71（statements/branches/functions/lines）、真实 PostgreSQL 39 文件/163 项、生产 Playwright 59/59。构建自动改写的 `next-env.d.ts` 已恢复原开发引用，之后 `./scripts/run-node22.sh npm run typecheck` exit 0。
-- 本次仅调整测试，未运行 Compose smoke。本轮生成的 `coverage/`、`test-results/`、`playwright-report/` 已清理；3100 无监听，Docker 仅有既有 PostgreSQL 容器。首次 3000 健康探针 5 秒超时（exit 28、HTTP 000，原因未确定），20 秒限时重试 exit 0，HTTP 200、`ok=true`、`db=true`；原始命令见 [进度](progress.md#feat-085)。
+- `./scripts/run-node22.sh ./init.sh` exit 0（实施前 95 文件/920 项）。定向组件 2 文件/36 项通过，typecheck exit 0。首次 `./scripts/run-node22.sh npm run check` 因旧拖拽断言压制任务结果而 exit 1；按新的提醒优先级更新回归后，原命令重跑 exit 0（95 文件/922 项、生产构建、覆盖率 56.96/52.39/61.80/57.43）。定向生产 Playwright 含 setup 2/2；最终 `sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full` exit 0：95 文件/922 项、真实 PostgreSQL 39 文件/165 项、生产 Playwright 62/62，含关窗前后气泡与重新打开回复。完整失败和命令见 [进度](progress.md#feat-089)。
+- 构建生成的 `next-env.d.ts` 已恢复原开发引用，随后 typecheck exit 0。开发 `/api/health` HTTP 200、`ok/db=true`；测试报告目录已清理。结构与本地链接核验通过：根 36 项、归档 53 项、全局 89 个唯一 ID；`git diff --check` exit 0，`git status --short` 已核对。未运行 Compose smoke（部署路径未变），未使用真实 LLM。`featuresNumber=36`，按计数跳过归档。
+- 提交前 19 个修改文件全部已暂存，无未跟踪文件，`git diff --cached --check` exit 0；本次仅整理提交说明，未再运行 `./init.sh` 或应用门禁，因为代码及运行配置未改变。提交后的工作区状态以本轮最终 `git status --short` 为准。
 
 ## 恢复路径与唯一下一步
 
-- 唯一下一步：用户在 `http://localhost:3000/home` 验收同一发起者的 Agent log 是否与其文章同侧；确认后按项目发布流程部署生产，再复看原生产场景。当前修复已提交到本地仓库，尚未上线。
-- 接续工作依次读 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件。若开发服务停止，保留现有 Compose PostgreSQL，运行 `./scripts/run-node22.sh npm run dev`；Agent Worker 按既有配置单独运行 `./scripts/run-node22.sh npm run agent:worker`。后续改动以本次提交为基线。
-- 根列表 `featuresNumber=32`，按计数跳过归档；结构与跨归档依赖核验通过（根 32 项、全局 85 个唯一 ID、171 个本地链接有效），`git diff --check` exit 0，`git status --short` 已检查，`next-env.d.ts` 无残留差异。完整验收与本次 Review 证据见 [进度](progress.md#feat-085)。
+- 依次读取 `AGENTS.md`、`feature_list.json`、`progress.md` 和本文件。当前开发服务在 3000 端口可预览；若停止，用 `./scripts/run-node22.sh npm run dev` 恢复。
+- 唯一下一步：用户在开发页面验收 feat-086 至 feat-089 的小助手交互，然后按既有发布流程交付。

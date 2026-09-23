@@ -17,7 +17,7 @@ vi.mock("next/headers", () => ({
 import { runAgentTask } from "@/agent/agent-runtime";
 import { buildAgentContext } from "@/agent/context-builder";
 import { clearAllTimers, drainSchedulerTasks, schedulerTick } from "@/agent/scheduler-tick";
-import { GET as getConversation } from "@/app/api/agent/conversation/route";
+import { DELETE as clearConversation, GET as getConversation } from "@/app/api/agent/conversation/route";
 import { POST as sendConversation } from "@/app/api/agent/conversation/messages/route";
 import { POST as dispatchTask } from "@/app/api/agent/dispatch/route";
 import { GET as getAgentStatus } from "@/app/api/agent/status/route";
@@ -218,6 +218,71 @@ describe("Agent 专属对话的事务与快照", () => {
 });
 
 describe("真实 Session 与私聊接口隔离", () => {
+  it("清空只删除本人私聊消息、任务追踪和上下文，保留独立生活数据并允许重新对话", async () => {
+    const { alice, bob, agent } = await fixture();
+    const own = await send(alice.id, "需要删除的私聊");
+    const other = await send(bob.id, "其他用户的私聊");
+    const shared = await createTestRoom();
+    await prisma.message.create({ data: { roomId: shared.id, senderId: alice.id, senderType: "human", content: "共享消息" } });
+    await prisma.agentStep.create({ data: { taskId: own.task.id, stepKey: "plan", kind: "plan", status: "completed" } });
+    await prisma.toolCall.create({ data: { taskId: own.task.id, stepKey: "tool:1", toolName: "memo.list", status: "completed" } });
+    await prisma.lLMCall.create({ data: { taskId: own.task.id, provider: "mock", model: "mock", inputSummary: "私聊", status: "completed" } });
+    await prisma.agentToolApproval.create({ data: { taskId: own.task.id, stepKey: "tool:2", toolName: "memo.delete", risk: "high", input: {} } });
+    await prisma.messageSummary.create({ data: { roomId: own.roomId, summary: "旧对话摘要" } });
+    await prisma.memory.create({ data: { roomId: own.roomId, userId: alice.id, ownerKey: `user:${alice.id}`, key: "person.preference", value: "旧记忆" } });
+    const memo = await prisma.memo.create({ data: { roomId: own.roomId, title: "独立备忘录", content: "保留" } });
+    const job = await prisma.scheduledJob.create({ data: {
+      roomId: own.roomId, agentId: agent.id, cron: "0 12 * * *", timezone: "UTC",
+      nextRunAt: new Date("2035-01-01"), payload: { prompt: "保留计划" },
+    } });
+    await authenticate(alice.id);
+    const response = await clearConversation(new Request("http://localhost/api/agent/conversation", {
+      method: "DELETE", headers: { "X-Agent-Viewer-Id": alice.id },
+    }));
+    expect(response.status).toBe(200);
+    expectPrivateCache(response);
+    expect(await response.json()).toMatchObject({ currentUserId: alice.id, roomId: own.roomId });
+    expect(await getAgentConversationSnapshot(alice)).toMatchObject({ messages: [], tasks: [], pendingApprovals: [] });
+    expect(await prisma.message.count({ where: { roomId: own.roomId } })).toBe(0);
+    expect(await prisma.agentTask.count({ where: { roomId: own.roomId } })).toBe(0);
+    expect(await prisma.eventLog.count({ where: { roomId: own.roomId } })).toBe(0);
+    expect(await prisma.agentStep.count({ where: { taskId: own.task.id } })).toBe(0);
+    expect(await prisma.toolCall.count({ where: { taskId: own.task.id } })).toBe(0);
+    expect(await prisma.lLMCall.count({ where: { taskId: own.task.id } })).toBe(0);
+    expect(await prisma.agentToolApproval.count({ where: { taskId: own.task.id } })).toBe(0);
+    expect(await prisma.messageSummary.count({ where: { roomId: own.roomId } })).toBe(0);
+    expect(await prisma.memory.count({ where: { roomId: own.roomId } })).toBe(0);
+    expect(await prisma.memo.findUnique({ where: { id: memo.id } })).not.toBeNull();
+    expect(await prisma.scheduledJob.findUnique({ where: { id: job.id } })).not.toBeNull();
+    expect(await prisma.message.count({ where: { roomId: other.roomId } })).toBe(1);
+    expect(await prisma.agentTask.count({ where: { roomId: other.roomId } })).toBe(1);
+    expect(await prisma.message.count({ where: { roomId: shared.id } })).toBe(1);
+    const next = await send(alice.id, "新的私聊");
+    expect(next.roomId).toBe(own.roomId);
+    expect((await getAgentConversationSnapshot(alice)).messages.map((message) => message.content)).toEqual(["新的私聊"]);
+  });
+
+  it("清空拒绝身份不符或正在执行的任务，并保持数据库原样", async () => {
+    const { alice, bob } = await fixture();
+    const own = await send(alice.id, "不能误删的消息");
+    await authenticate(bob.id);
+    const wrongViewer = await clearConversation(new Request("http://localhost/api/agent/conversation", {
+      method: "DELETE", headers: { "X-Agent-Viewer-Id": alice.id },
+    }));
+    expect(wrongViewer.status).toBe(401);
+    expectPrivateCache(wrongViewer);
+    expect(await prisma.message.count({ where: { roomId: own.roomId } })).toBe(1);
+    await authenticate(alice.id);
+    await prisma.agentTask.update({ where: { id: own.task.id }, data: { status: "running" } });
+    const active = await clearConversation(new Request("http://localhost/api/agent/conversation", {
+      method: "DELETE", headers: { "X-Agent-Viewer-Id": alice.id },
+    }));
+    expect(active.status).toBe(409);
+    expectPrivateCache(active);
+    expect(await prisma.message.count({ where: { roomId: own.roomId } })).toBe(1);
+    expect(await prisma.agentTask.findUnique({ where: { id: own.task.id } })).not.toBeNull();
+  });
+
   it("Cookie B 携带旧 A 身份时读取、发送与 B 任务审批均拒绝，零写入且 B 会话继续有效", async () => {
     const { alice, bob } = await fixture();
     const accepted = await send(bob.id, "B 已有任务");

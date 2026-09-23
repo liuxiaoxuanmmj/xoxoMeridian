@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties } from "react";
@@ -48,7 +49,7 @@ export default function AgentEntry({ config, principalId, onIdentityInvalid }: A
     document.body.appendChild(portal);
     return () => portal.remove();
   }, [portal]);
-  useEntryDrag({ enabled: movable, open, config, root, entry, trigger, motion, beginDrag, endDrag, cancelDrag });
+  const resetPosition = useEntryDrag({ enabled: movable, open, config, root, entry, trigger, motion, beginDrag, endDrag, cancelDrag });
   useEffect(() => {
     // 路由是宿主系统的外部状态；程序性导航也必须撤销模态锁。
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -72,7 +73,8 @@ export default function AgentEntry({ config, principalId, onIdentityInvalid }: A
     "--entry-accent": config.ui.accent,
     ...viewport,
   } as CSSProperties;
-  const text = feedback?.text;
+  const thinking = conversation.tasks.some((task) => task.status === "pending" || task.status === "running");
+  const text = thinking ? "小助手正在思考…" : feedback?.text;
 
   return (
     <>
@@ -89,18 +91,21 @@ export default function AgentEntry({ config, principalId, onIdentityInvalid }: A
               aria-keyshortcuts={movable ? "ArrowUp ArrowDown ArrowLeft ArrowRight Shift+ArrowUp Shift+ArrowDown Shift+ArrowLeft Shift+ArrowRight" : undefined}
               onFocus={() => show("attention")}
               onClick={() => { show("click"); setOpen(true); }}>
-              {(!ready || failed) && <span className={styles.fallback} aria-hidden="true">✦<span>与小助手聊天</span></span>}
+              {(!ready || failed) && <span className={styles.fallback} aria-hidden="true">
+                <Image src="/brand/logo_transparent.svg" alt="" width={24} height={24} loading="eager" unoptimized />
+              </span>}
               {!failed && <AgentEntryErrorBoundary onError={handleError}>
                 <AgentEntryScene config={config} motion={motion} onReady={handleReady} onError={handleError} />
               </AgentEntryErrorBoundary>}
             </button>
             {movable && <span id={movementHintId} className="sr-only">可拖动小助手；聚焦后用方向键移动，按住 Shift 加快，松键放下，Escape 取消本次移动。Enter 或空格打开聊天。手机聊天时请先关闭对话再移动。</span>}
             {text && <span id={tooltipId} role="tooltip" className={styles.tooltip}>
-              {feedback && <span className={styles.emotion} aria-hidden="true">{feedback.symbol}</span>}{text}
+              <span className={styles.emotion} aria-hidden="true">{thinking ? "…" : feedback?.symbol}</span>{text}
             </span>}
           </div>
           {open && <AgentConversationDialog conversation={conversation} principalId={principalId} titleId={titleId}
-            reducedMotion={reducedMotion} onClose={close} onIdentityInvalid={onIdentityInvalid} />}
+            reducedMotion={reducedMotion} onClose={close} onIdentityInvalid={onIdentityInvalid}
+            onResetPosition={movable ? resetPosition : undefined} />}
         </div>, portal,
       )}
     </>

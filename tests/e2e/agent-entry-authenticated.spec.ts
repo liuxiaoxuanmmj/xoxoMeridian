@@ -24,6 +24,27 @@ async function closeDialog(page: Page) {
   await expect(page.getByRole("button", { name: entryName })).toBeFocused();
 }
 
+async function expectLogoFallback(page: Page) {
+  const logo = page.locator('[data-agent-entry] button img[src="/brand/logo_transparent.svg"]');
+  await expect(logo).toBeVisible();
+  await expect.poll(() => logo.evaluate((image) => (image as HTMLImageElement).complete && (image as HTMLImageElement).naturalWidth > 0)).toBe(true);
+  const box = (await logo.boundingBox())!;
+  expect(box.width).toBe(24);
+  expect(box.height).toBe(24);
+  const entry = (await page.locator("[data-agent-entry]").boundingBox())!;
+  expect(entry.x + entry.width - box.x - box.width).toBeLessThanOrEqual(16);
+  expect(entry.y + entry.height - box.y - box.height).toBeLessThanOrEqual(16);
+  const viewport = page.viewportSize()!;
+  expect(viewport.width - box.x - box.width).toBeLessThanOrEqual(64);
+  expect(viewport.height - box.y - box.height).toBeLessThanOrEqual(64);
+  const appearance = await logo.evaluate((image) => {
+    const style = getComputedStyle(image.parentElement!);
+    return { background: style.backgroundColor, borderWidth: style.borderTopWidth };
+  });
+  expect(appearance.background).toBe("rgba(0, 0, 0, 0)");
+  expect(appearance.borderWidth).toBe("0px");
+}
+
 async function sendPrivateMessage(page: Page, content: string) {
   await page.getByRole("textbox", { name: "消息", exact: true }).fill(content);
   const accepted = page.waitForResponse((reply) => new URL(reply.url()).pathname === "/api/agent/conversation/messages");
@@ -216,10 +237,12 @@ test("GLB pending 时普通入口可开窗，释放真实二进制后沿用面�
   await page.route(`**${modelPath}`, async (route) => { await gate; await route.continue().catch(() => undefined); });
   try {
     await page.goto("/home");
+    await expectLogoFallback(page);
     await openDialog(page);
     await page.getByRole("textbox", { name: "消息", exact: true }).fill("加载时的草稿");
     release();
     await expectReady(page);
+    await expect(page.locator('[data-agent-entry] button img[src="/brand/logo_transparent.svg"]')).toHaveCount(0);
     await expect(page.getByRole("textbox", { name: "消息", exact: true })).toHaveValue("加载时的草稿");
     await closeDialog(page);
     await page.getByRole("link", { name: "Chat", exact: true }).click();
@@ -254,6 +277,7 @@ for (const failure of ["404", "损坏", "chunk", "context-lost", "webgl-create"]
     await page.goto("/home");
     if (failure === "context-lost") await expectReady(page);
     else if (failure !== "webgl-create") await expect.poll(() => failedRequest).toBe(true);
+    if (failure === "404") await expectLogoFallback(page);
     await openDialog(page);
     await page.getByRole("textbox", { name: "消息", exact: true }).fill("视觉失败也保留");
     if (failure === "context-lost") {
@@ -304,6 +328,77 @@ test("触摸、320px 和极短视口保留输入与小人，减少动态偏好�
 });
 
 if (e2eAgentEntryTheme() === "default") {
+  test("归位清除小助手位置记录并恢复默认点，刷新后仍可拖拽", async ({ page }) => {
+    await page.goto("/home");
+    await expectReady(page);
+    const initial = await entryBox(page);
+    const dropped = { x: initial.x - 140, y: initial.y - 100 };
+    await moveEntryWithMouse(page, dropped);
+    await expectEntryAt(page, dropped);
+    expect(await savedEntryPosition(page)).not.toBeNull();
+    await page.evaluate(() => localStorage.setItem("other-preference", "keep"));
+    await openDialog(page);
+    await page.getByRole("textbox", { name: "消息", exact: true }).fill("归位时保留草稿");
+    const reset = page.getByRole("button", { name: "归位", exact: true });
+    await expect(reset).toBeVisible();
+    await expect(reset.locator("svg")).toBeVisible();
+    const clear = page.getByRole("button", { name: "清空与小助手的聊天记录" });
+    expect((await reset.boundingBox())!.width).toBe((await clear.boundingBox())!.width);
+    const resetHint = reset.getByText("归位", { exact: true });
+    await expect(resetHint).toHaveCSS("opacity", "0");
+    await reset.hover();
+    await expect(resetHint).toHaveCSS("opacity", "1");
+    await page.mouse.move(0, 0);
+    await expect(resetHint).toHaveCSS("opacity", "0");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Tab");
+    await expect(reset).toBeFocused();
+    await expect(resetHint).toHaveCSS("opacity", "1");
+    await page.keyboard.press("Enter");
+    await expectEntryAt(page, initial);
+    expect(await savedEntryPosition(page)).toBeNull();
+    expect(await page.evaluate(() => localStorage.getItem("other-preference"))).toBe("keep");
+    await expect(page.getByRole("textbox", { name: "消息", exact: true })).toHaveValue("归位时保留草稿");
+    await closeDialog(page);
+    await page.reload();
+    await expectReady(page);
+    await expectEntryAt(page, initial);
+    await moveEntryWithMouse(page, dropped);
+    await expectEntryAt(page, dropped);
+    expect(await savedEntryPosition(page)).not.toBeNull();
+  });
+
+  test("窄屏私聊归位保留临时顶部布局，关闭后恢复默认点", async ({ browser, baseURL }) => {
+    const context = await browser.newContext({
+      baseURL, storageState: E2E_USERS[0].storageState, viewport: { width: 320, height: 320 },
+      hasTouch: true, isMobile: true, deviceScaleFactor: 1.5,
+    });
+    const page = await context.newPage();
+    try {
+      await page.goto("/home");
+      await expectReady(page);
+      const initial = await entryBox(page);
+      await moveEntryWithTouch(page, { x: -60, y: -50 });
+      expect(await savedEntryPosition(page)).not.toBeNull();
+      await page.getByRole("button", { name: entryName }).tap();
+      await expect(page.getByRole("dialog")).toBeVisible();
+      const compact = await entryBox(page);
+      expect(compact.y).toBeLessThan(100);
+      const reset = page.getByRole("button", { name: "归位", exact: true });
+      await expect(reset).toBeInViewport();
+      await reset.tap();
+      await expect(reset.getByText("归位", { exact: true })).toHaveCSS("opacity", "1");
+      await expectEntryAt(page, compact);
+      expect(await savedEntryPosition(page)).toBeNull();
+      await page.getByRole("button", { name: "关闭对话", exact: true }).tap();
+      await expectEntryAt(page, initial);
+      await page.reload();
+      await expectReady(page);
+      await expectEntryAt(page, initial);
+    } finally { await context.close(); }
+  });
+
   test("拖拽超过阈值才移动，真实模型反馈原地回稳且刷新和 Chat 回返记住放置点", async ({ page }, testInfo) => {
     const observed = observeEntry(page);
     await observeModelFrames(page);
@@ -718,11 +813,14 @@ test("两位用户的私聊持久隔离，关闭后任务完成、重新打开�
     await openDialog(page);
     const sentA = await sendPrivateMessage(page, `备忘录：${markerA}`);
     createdRooms.push(sentA.roomId);
+    await expect(page.getByRole("tooltip")).toContainText("小助手正在思考…");
     await closeDialog(page);
+    await expect(page.getByRole("tooltip")).toContainText("小助手正在思考…");
     await runPrivateTask(sentA.task.id, databaseUrl);
     const completedA = await db.agentTask.findUniqueOrThrow({ where: { id: sentA.task.id } });
     expect(completedA.status).toBe("completed");
     const replyA = await db.message.findUniqueOrThrow({ where: { id: completedA.finalMessageId! } });
+    await expect(page.getByRole("tooltip")).toContainText("回复准备好啦。");
     await openDialog(page);
     await expect(page.getByRole("dialog").getByText(replyA.content, { exact: true })).toBeVisible();
     const memo = await db.memo.findFirstOrThrow({ where: { roomId: sentA.roomId } });
@@ -776,6 +874,46 @@ test("两位用户的私聊持久隔离，关闭后任务完成、重新打开�
     await second.request.post("/api/auth/logout", { headers: { origin: baseURL! } }).catch(() => undefined);
     await second.close();
     await db.room.deleteMany({ where: { id: { in: createdRooms } } });
+    await db.$disconnect();
+  }
+});
+
+test("小助手清空按钮删除数据库私聊记录，刷新后为空且可重新发送", async ({ page }) => {
+  const databaseUrl = await privateDatabaseUrl();
+  const db = new PrismaClient({ datasources: { db: { url: databaseUrl } } });
+  let roomId: string | undefined;
+  try {
+    await page.goto("/about");
+    await openDialog(page);
+    const sent = await sendPrivateMessage(page, `清空验证-${randomUUID()}`);
+    roomId = sent.roomId;
+    await expect(page.getByRole("dialog").getByText(sent.message.content, { exact: true })).toBeVisible();
+    const clear = page.getByRole("button", { name: "清空与小助手的聊天记录" });
+    const close = page.getByRole("button", { name: "关闭对话", exact: true });
+    const clearBox = (await clear.boundingBox())!;
+    const closeBox = (await close.boundingBox())!;
+    expect(clearBox.x + clearBox.width).toBeLessThanOrEqual(closeBox.x);
+    page.once("dialog", (dialog) => dialog.accept());
+    const deleted = page.waitForResponse((response) => new URL(response.url()).pathname === "/api/agent/conversation"
+      && response.request().method() === "DELETE");
+    await clear.focus();
+    await page.keyboard.press("Enter");
+    expect((await deleted).status()).toBe(200);
+    await expect(page.getByRole("dialog").getByText(sent.message.content, { exact: true })).toHaveCount(0);
+    await expect(page.getByText("今天有什么想聊的？直接告诉我就好。")).toBeVisible();
+    expect(await db.message.count({ where: { roomId } })).toBe(0);
+    expect(await db.agentTask.count({ where: { roomId } })).toBe(0);
+    expect(await db.eventLog.count({ where: { roomId } })).toBe(0);
+    await page.reload();
+    await openDialog(page);
+    await expect(page.getByText("今天有什么想聊的？直接告诉我就好。")).toBeVisible();
+    await expect(page.getByRole("dialog").getByText(sent.message.content, { exact: true })).toHaveCount(0);
+    const next = await sendPrivateMessage(page, "清空后的新消息");
+    expect(next.roomId).toBe(roomId);
+    await expect(page.getByRole("dialog").getByText("清空后的新消息", { exact: true })).toBeVisible();
+  } finally {
+    await page.close();
+    if (roomId) await db.room.deleteMany({ where: { id: roomId } });
     await db.$disconnect();
   }
 });

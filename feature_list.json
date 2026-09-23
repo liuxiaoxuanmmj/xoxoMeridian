@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "updatedAt": "2026-09-23",
-  "featuresNumber": 32,
+  "featuresNumber": 36,
   "priorityPolicy": "P2 以用户体验为首要指标：综合核心操作受阻或结果失真程度、当前产品入口的影响范围、触发频率与恢复成本排序；同等影响时优先已有直接行为证据的问题。priorityRank 表示本批 P2 的执行建议顺序，数字越小越优先，不改变 QAM 严重级别；频率是基于代码路径与触发条件的定性判断，不是线上统计。dependencies 只表达实现前置条件，不用依赖链代替排名。本批登记前 10 项，按 priorityRank 逐项实施；当前状态与验收证据以各 feature 为准。",
   "archivedFeatureFiles": [
     "docs/harness/archive/features-001-053.json"
@@ -614,6 +614,74 @@
         "添加缺陷回归，覆盖同一发起者多条日志、不同发起者、历史日志及无发起者记录；运行启动基线、标准门禁与风险匹配的真实 PostgreSQL 和生产浏览器验证，记录证据与交接"
       ],
       "evidence": "2026-09-23 用户授权登记与修复，依赖 feat-075 已完成。AgentTask.requestedById 经服务端批量投影为 agentRequesterId；新日志优先 Post.agentTaskId，旧日志由 metadata.taskId 追溯，核对任务与 Post.roomId 一致；无发起者或失联任务居中，Post.authorId/权限与可见性不变。Timeline 按文章相同的 leftUserId 映射分侧，移除日志序号交替。启动 ./scripts/run-node22.sh ./init.sh exit 0（95 文件/915 项）；定向真实 PostgreSQL 1 文件/2 项通过；定向生产 Playwright 2/2（含 setup）通过；sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/915 项单元与组件测试、生产构建、覆盖率 statements/branches/functions/lines 57.20/52.46/62.10/57.71、真实 PostgreSQL 39 文件/163 项、生产 Playwright 59/59。next-env 恢复原开发引用后 typecheck exit 0，3000 健康 200、ok/db=true。记录与边界见 progress.md#feat-085；本轮未改 schema、迁移、依赖或 Worker，未运行 Compose smoke。2026-09-23 Review P2 复核：搜索回归新增首页可见、搜索结果必排除的第七张文章卡片；响应 200 后校验返回的 6 个 ID，并等待筛选外卡片消失与页面实际渲染 6 张卡片，之后才验证左右分侧，关闭旧列表假阳性窗口。./scripts/run-node22.sh ./init.sh exit 0（95 文件/915 项）；定向生产 Playwright 2/2；sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/915 项、生产构建、真实 PostgreSQL 39 文件/163 项、生产 Playwright 59/59；本次仅修改浏览器回归，产品代码不变，详见 progress.md#feat-085。"
+    },
+    {
+      "id": "feat-086",
+      "name": "小助手窗口清空私聊记录",
+      "description": "在小助手弹窗关闭按钮左侧增加清空按钮，清除当前用户私聊消息及其持久化任务与上下文记录。",
+      "priority": "P1",
+      "priorityReason": "用户明确要求可从小助手窗口清空当前对话及数据库相关记录，涉及私密历史和后续对话上下文。",
+      "status": "done",
+      "dependencies": ["feat-080"],
+      "acceptanceCriteria": [
+        "小助手窗口标题栏的小垃圾桶按钮位于 × 左侧，可通过键盘操作且有明确可访问名称；悬停、聚焦或触摸显示“清空”；点击确认后清空当前对话并显示空状态，取消确认或请求失败保留原记录",
+        "服务端只允许当前认证用户清空本人 agent_private 房间；清除该房间的消息、任务及其步骤/调用/审批/事件、对话摘要与记忆，不影响其他用户或共享房间，不删除独立的备忘录和计划",
+        "执行中的任务不能在清空后回写旧消息；并发读写不使旧记录重新出现在窗口中，刷新页面后仍为空，可继续新对话",
+        "通过组件、真实 PostgreSQL 集成和生产浏览器回归，并运行 ./init.sh 与 npm run check:full，记录结果与交接"
+      ],
+      "evidence": "2026-09-23 用户要求登记与实现，并补充垃圾桶图标和触摸“清空”提示；依赖 feat-080 已完成。标题栏图标位于 × 左侧，支持键盘、悬停/聚焦/触摸提示与删除确认。DELETE /api/agent/conversation 使用认证用户及预期身份头，事务锁定私聊房间和任务；执行中任务 409，删除本人消息、任务及级联步骤/调用/审批、事件、摘要和记忆，保留独立备忘录/计划及其他房间。客户端清空确认结果与迟到 GET 隔离。./scripts/run-node22.sh ./init.sh exit 0（实施前基线 95 文件/915 项）；组件定向 21/21、真实 PostgreSQL 清空定向 2/2、生产浏览器定向 2/2（含 setup）。sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/917 项单元与组件测试×2、生产构建、覆盖率 statements/branches/functions/lines 56.96/52.39/61.80/57.43、真实 PostgreSQL 39 文件/165 项、生产 Playwright 60/60。next-env 生成引用恢复后 typecheck exit 0，开发健康端点 HTTP 200 且 ok/db=true。迭代失败及清理详见 progress.md#feat-086。未改 schema/迁移/依赖/Worker，未运行 Compose smoke 或生产部署。"
+    },
+    {
+      "id": "feat-087",
+      "name": "小助手私聊归位与透明产品 Logo 占位",
+      "description": "在小助手私聊窗口增加“归位”按钮，恢复默认主题小助手的放置位置并删除浏览器中对应的位置记录；把模型加载中与加载失败时的旧星形卡片替换为透明背景、与现有品牌标识同尺寸的产品 Logo。",
+      "priority": "P2",
+      "priorityReason": "用户可自由拖动并跨刷新保存小助手位置，目前缺少找回默认位置的入口；现有星形占位卡片过大且与产品视觉语言不一致，尤其在模型加载失败时会长期显示。",
+      "status": "done",
+      "dependencies": [
+        "feat-080",
+        "feat-082"
+      ],
+      "acceptanceCriteria": [
+        "小助手私聊窗口提供可见文案为“归位”的按钮，具备可访问名称及键盘操作；与现有“清空”和关闭操作清晰区分，在窄屏窗口中仍可使用",
+        "点击“归位”后删除当前默认主题的小助手位置 localStorage 记录，并使放置点恢复当前视口下的默认位置；桌面打开窗口时立即反映，移动端打开窗口时保留临时顶部布局、关闭后呈现默认位置；刷新及路由往返后仍为默认位置，后续拖拽可重新保存位置",
+        "归位仅作用于小助手放置位置，不清除私聊消息、任务记录、身份会话或浏览器其他存储；位置存储不可用时按钮仍能恢复本次挂载中的默认位置",
+        "模型加载中和加载失败时，入口使用现有 /brand/logo_transparent.svg，图形显示尺寸与 BrandBadge 已应用的 24×24 Logo 一致，背景透明且不保留旧星形卡片的边框、底色和大号文案；模型就绪后占位消失，加载失败时按钮仍可打开私聊",
+        "补充位置归位、存储删除及异常、窄屏布局和加载失败入口的可观察行为回归；实施时运行 ./init.sh、npm run check 与风险匹配的生产浏览器测试，并把结果写入状态和交接"
+      ],
+      "evidence": "2026-09-23：依赖 feat-080、feat-082 均为 done。私聊标题栏新增可见且可键盘操作的“归位”；仅删除 xoxo:agent-entry:position:default:v1 并恢复当前视口默认点，手机开窗临时顶部位置在关闭后恢复，存储删除失败仍恢复本次挂载。加载中/失败占位改为现有透明 /brand/logo_transparent.svg 24×24，保留故障私聊入口。./scripts/run-node22.sh ./init.sh exit 0（95 文件/917 项）；定向组件 3 文件/52 项通过；./scripts/run-node22.sh npm run check exit 0（95 文件/920 项、生产构建、覆盖率 56.91/52.36/61.80/57.43）。Docker Desktop 启动后定向生产 Playwright 5/5；最终 sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0（95 文件/920 项、生产构建、真实 PostgreSQL 39 文件/165 项、生产 Playwright 62/62）。首次完整门禁的既有 feat-086 清空用例因 30 秒超时使门禁 exit 1；同用例定向 2/2、原完整命令复跑 exit 0，期间未更改产品或测试代码。构建改写的 next-env.d.ts 已恢复，typecheck exit 0。失败及范围详情见 progress.md#feat-087；未改数据库、依赖或部署配置。"
+    },
+    {
+      "id": "feat-088",
+      "name": "小助手占位贴近右下角与归位图标化",
+      "description": "根据 feat-087 的页面验收反馈，把模型加载与失败时的透明 Logo 占位移到入口区域右下角；私聊标题栏的归位操作改成图标按钮，沿用清空按钮的提示方式。",
+      "priority": "P2",
+      "priorityReason": "用户指出新占位在页面中太靠上，且归位文字按钮与清空图标的视觉语言不一致，直接影响小助手入口和私聊标题栏的观感。",
+      "status": "done",
+      "dependencies": ["feat-087"],
+      "acceptanceCriteria": [
+        "默认放置时，加载中与模型失败后的 24×24 透明产品 Logo 靠近页面可视区域右下角；占位跟随入口放置、拖拽及手机弹窗布局，不改变默认模型就绪后的显示和故障私聊入口",
+        "私聊标题栏用与清空按钮同尺寸、同背景的归位图标替换常显文字；有明确可访问名称，悬停、键盘聚焦或触摸时显示“归位”提示，图标与清空含义可区分，窄屏可用",
+        "归位仍仅清除小助手专用位置记录并恢复默认点，私聊内容、其他存储和清空按钮行为保持；生日主题不新增归位入口",
+        "补充组件与真实浏览器的可观察视觉/交互回归，运行 ./init.sh、npm run check 和风险匹配的生产浏览器验证，记录结果与交接"
+      ],
+      "evidence": "2026-09-23：依赖 feat-087 已 done。将 24×24 透明 Logo 占位由 208×208 入口居中改为距入口右/底各 12px；默认视口距页面右/底不超过 64px，跟随入口放置。归位改为与清空同尺寸/背景的 LocateFixed 图标，保留 aria-label“归位”，悬停、键盘聚焦和触摸显示提示；清空提示沿用同一呈现规则。归位存储语义和生日主题不变。./scripts/run-node22.sh ./init.sh exit 0（95 文件/920 项）；定向组件 3 文件/52 项通过；生产 Playwright 定向 5/5（加载中、404、桌面归位、320px 触摸），增补键盘聚焦提示后同用例定向 2/2。./scripts/run-node22.sh npm run check exit 0：95 文件/920 项、生产构建、覆盖率 56.96/52.39/61.80/57.43；构建生成的 next-env.d.ts 已恢复，typecheck exit 0。未改数据库/服务端/依赖/部署路径，故未重复 check:full 与 Compose；详情见 progress.md#feat-088。"
+    },
+    {
+      "id": "feat-089",
+      "name": "小助手思考气泡与关窗后任务完成提醒",
+      "description": "私聊任务等待或执行时在小助手入口显示持续的思考气泡；关闭私聊窗口后继续观察已知进行中任务，并在完成或失败时显示提醒气泡。",
+      "priority": "P1",
+      "priorityReason": "关窗会停止任务状态读取，使完成提醒恰好在用户离开聊天窗口时失效；用户不能及时知道回复已准备好。",
+      "status": "done",
+      "dependencies": ["feat-080", "feat-088"],
+      "acceptanceCriteria": [
+        "已确认发送且任务处于等待或执行状态时，小助手入口显示持续可见的思考气泡；任务结束后思考气泡消失，完成或失败显示现有短时提醒，不重复播报旧任务",
+        "关闭私聊窗口后，当前页面仍继续读取已知进行中任务状态；任务完成时显示“回复准备好啦”，失败时显示失败提示，重新打开窗口可见最新消息与状态；任务结束后停止关窗后台轮询",
+        "页面隐藏时暂停读取，可见后恢复；身份切换、清空和迟到请求不会泄露旧用户任务或产生虚假提醒；无已知任务的关窗状态不持续请求",
+        "补充组件与真实浏览器回归，运行 ./init.sh、npm run check 和风险匹配的生产浏览器验证，并记录结果与交接"
+      ],
+      "evidence": "2026-09-23 完成；依赖 feat-080、feat-088 均为 done。私聊快照在关窗后仅对已知 pending/running 任务持续读取，终态后停止；页面隐藏时暂停、恢复可见后继续，原有身份与迟到请求栅栏保留。入口持续显示“小助手正在思考…”，完成/失败显示短时反馈，确认任务与快照时间戳相同也以快照终态为准。组件定向 2 文件/36 项通过；./scripts/run-node22.sh ./init.sh exit 0（实施前 95 文件/920 项）；首次 npm run check 因旧拖拽断言仍要求压制任务结果而 exit 1，更新预期与点击后失败提醒回归后 ./scripts/run-node22.sh npm run check exit 0（95 文件/922 项、生产构建、覆盖率 56.96/52.39/61.80/57.43）。定向生产 Playwright 2/2（含 setup）验证关窗完成提醒；sudo -n -g docker -u dadalv ./scripts/run-node22.sh env E2E_SOFTWARE_WEBGL=true npm run check:full exit 0：95 文件/922 项、生产构建、真实 PostgreSQL 39 文件/165 项、生产 Playwright 62/62。开发 /api/health HTTP 200、ok/db=true；next-env 生成引用已恢复，工件清理与详细命令见 progress.md#feat-089。未改数据库、Worker、依赖或部署配置，未运行 Compose smoke。"
     }
   ]
 }
